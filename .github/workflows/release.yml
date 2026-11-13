@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # actions/checkout v4
+      - uses: actions/checkout@v4
+
+      # actions/setup-node v4 (Node version comes from .nvmrc)
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck, lint and test
+        run: |
+          npm run typecheck
+          npm run lint
+          npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Package the web build
+        run: |
+          cd dist
+          zip -r "../kekenik-tree-${GITHUB_REF_NAME}-web.zip" .
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Kekenik Tree $GITHUB_REF_NAME" \
+            --generate-notes \
+            "kekenik-tree-${GITHUB_REF_NAME}-web.zip"

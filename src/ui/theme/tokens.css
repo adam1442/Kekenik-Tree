@@ -1,0 +1,171 @@
+/*
+ * Kekenik Tree design tokens (dark theme). Values are tuned for readability on dark backgrounds.
+ * RULE: no hardcoded colours/radii/spacing anywhere else in the UI CSS — use these variables.
+ */
+:root {
+  /* Typography */
+  --kt-font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --kt-fs-xxs: 9px;
+  --kt-fs-xs: 10px;
+  --kt-fs-sm: 11px;
+  --kt-fs-md: 12px;
+  --kt-fs-lg: 13px;
+  --kt-fs-xl: 14px;
+  --kt-fw-regular: 400;
+  --kt-fw-medium: 500;
+  --kt-fw-semibold: 600;
+
+  /* Spacing / sizing */
+  --kt-space-1: 2px;
+  --kt-space-2: 4px;
+  --kt-space-3: 6px;
+  --kt-space-4: 8px;
+  --kt-space-5: 12px;
+  --kt-space-6: 16px;
+  --kt-gap: 4px;
+  --kt-row-h: 24px;
+  --kt-input-h: 20px;
+  --kt-header-h: 24px;
+  --kt-titlebar-h: 28px;
+  --kt-docbar-h: 28px;
+  --kt-toolbar-h: 36px;
+  --kt-statusbar-h: 22px;
+  --kt-splitter: 4px;
+
+  /* Radii */
+  --kt-radius-xs: 2px;
+  --kt-radius-sm: 3px;
+  --kt-radius-md: 5px;
+  --kt-radius-lg: 8px;
+  --kt-radius-panel: 6px;
+
+  /* Surfaces */
+  --kt-bg-app: #1c1c1c;
+  --kt-bg-titlebar: #1c1c1c;
+  --kt-bg-header: #2a2a2a;
+  --kt-bg-panel: #3c3c3c;
+  --kt-bg-panel-alt: #353535;
+  --kt-bg-card: #434343;
+  --kt-bg-card-border: #2e2e2e;
+  --kt-bg-input: #2a2a2a;
+  --kt-bg-input-hover: #303030;
+  --kt-bg-toolbar: #2a2a2a;
+  --kt-bg-hover: #4a4a4a;
+  --kt-bg-active: #505050;
+  --kt-bg-menu: #2f2f2f;
+  --kt-bg-dialog: #333333;
+  --kt-bg-checker-a: #4a4a4a;
+  --kt-bg-checker-b: #3a3a3a;
+
+  /* Lines */
+  --kt-border: #565656;
+  --kt-border-soft: #2e2e2e;
+  --kt-border-strong: #141414;
+  --kt-divider: #2f2f2f;
+
+  /* Text */
+  --kt-text: #d6d6d6;
+  --kt-text-strong: #ffffff;
+  --kt-text-dim: #9b9b9b;
+  --kt-text-disabled: #6b6b6b;
+
+  /* Accents */
+  --kt-accent: #4a7fc8;
+  --kt-gizmo-orange: #ffa91f;
+  --kt-gizmo-ink: #1b1b1b;
+  --kt-orphan: #ff9b9b;
+  --kt-accent-strong: #5b86cf;
+  --kt-accent-soft: #3a5f9a;
+  --kt-curve: #a2d36b;
+  --kt-curve-dim: #6d8a8f;
+  --kt-curve-profile: #73a4bf;
+  --kt-curve-ghost: #8a8a8a77;
+  --kt-curve-variance-fill: #a2d36b24;
+  --kt-curve-variance-stroke: #a2d36b66;
+  --kt-curve-point: #12d600;
+  --kt-curve-point-border: #0a2600;
+  --kt-curve-point-selected: #ffffff;
+  --kt-curve-tangent-line: #b8c4a8;
+  --kt-curve-tangent-handle: #f0b83a;
+  --kt-curve-tangent-active: #ffffff;
+  --kt-curve-outer-bg: #262626;
+  --kt-curve-domain-bg: #353535;
+  --kt-curve-grid-minor: #2c2c2c;
+  --kt-curve-grid-major: #1f1f1f;
+  --kt-curve-ruler-text: #8a8a8a;
+  --kt-curve-range-track: #2b2b2b;
+  --kt-curve-range-bar: #474747;
+  --kt-curve-marquee-fill: #4a7fc833;
+  --kt-curve-marquee-stroke: #6c9be0;
+  --kt-hue-gradient: linear-gradient(to right, #ff0000 0%, #ffff00 17%, #00ff00 33%, #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%);
+  --kt-tool-purple: #a47df0;
+  --kt-tool-yellow: #c9c23a;
+  --kt-tool-green: #6fbf57;
+  --kt-danger: #c0392b;
+  --kt-select-ring: #ecd531;
+  --kt-slider-track: #5a5a5a;
+  --kt-slider-thumb: #cfcfcf;
+  --kt-slider-fill: #6c9be038;
+  --kt-modified-bar: #5b86cf;
+  --kt-prop-label-w: 92px;
+  --kt-prop-label-w-compact: 68px;
+
+  /* Node colours (graph) */
+  --kt-node-branch: #b32d13;
+  --kt-node-leaf: #86b868;
+  --kt-node-cap: #e8821f;
+  --kt-node-tree: #3d8ac6;
+  --kt-node-root: #8d5426;
+  --kt-node-frond: #1e8574;
+  --kt-node-decoration: #9a7a2e;
+  --kt-node-cluster: #2f6b4a;
+  --kt-node-force: #7a63c9;
+  --kt-node-material: #c25b8f;
+  --kt-node-mesh: #3f98a6;
+  --kt-node-wind: #5aa0d6;
+  --kt-node-modifier: #d0a02a;
+  --kt-node-utility: #7f8a96;
+  --kt-node-disabled: #121212;
+  --kt-node-outline: #0d0d0d;
+  --kt-graph-bg-a: #7b7b7b;
+  --kt-graph-bg-b: #555555;
+  --kt-graph-edge: #e6e6e6;
+  --kt-graph-edge-hover: #ffffff;
+  --kt-graph-edge-select: #ecd531;
+  --kt-graph-grid: #ffffff14;
+  --kt-graph-valid: #6fcf4a;
+  --kt-graph-invalid: #e0533f;
+  --kt-graph-warn: #f0b33a;
+  --kt-graph-info: #9aa6b4;
+  --kt-graph-guide: #4a8ff0;
+  --kt-ann-blue: #3d6fb5;
+  --kt-ann-green: #4f9a52;
+  --kt-ann-yellow: #d9b83a;
+  --kt-ann-red: #c0503b;
+  --kt-ann-gray: #8a8a8a;
+
+  /* Viewport */
+  --kt-viewport-top: #c4c6c8;
+  --kt-viewport-mid: #a9aaa5;
+  --kt-viewport-bottom: #7a7c4c;
+  --kt-viewport-label: #2a2a2a;
+  --kt-overlay-bg: #4a4a4aee;
+  --kt-axis-x: #e0533f;
+  --kt-axis-y: #6fcf4a;
+  --kt-axis-z: #4a8ff0;
+  --kt-skel-gen-0: #ff9f2e;
+  --kt-skel-gen-1: #36c5f0;
+  --kt-skel-gen-2: #3ddc84;
+  --kt-skel-gen-3: #c77dff;
+  --kt-skel-gen-4: #ff6b8b;
+  --kt-skel-gen-5: #ffe66d;
+
+  /* Shadows */
+  --kt-shadow-menu: 0 6px 18px #000000aa;
+  --kt-shadow-window: 0 10px 34px #000000b3, 0 0 0 1px #000000;
+  --kt-shadow-ghost: 0 4px 12px #00000099;
+
+  /* Drop zones */
+  --kt-drop-fill: #4a7fc855;
+  --kt-drop-border: #6c9be0;
+}

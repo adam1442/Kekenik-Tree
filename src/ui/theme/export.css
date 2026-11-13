@@ -1,0 +1,224 @@
+/* ===== Export dialog, LOD editor. Tokens only. ===== */
+.kt-export-dialog .kt-fw-body {
+  display: flex;
+  flex-direction: column;
+  background: var(--kt-bg-dialog);
+}
+.kt-xp-dialog {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  font-size: var(--kt-fs-md);
+  color: var(--kt-text);
+}
+.kt-xp-tabs-root {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.kt-xp-tabs {
+  display: flex;
+  gap: 1px;
+  background: var(--kt-bg-header);
+  border-bottom: 1px solid var(--kt-border-strong);
+}
+.kt-xp-tab {
+  height: var(--kt-header-h);
+  padding: 0 var(--kt-space-5);
+  border: 0;
+  background: transparent;
+  color: var(--kt-text-dim);
+}
+.kt-xp-tab:hover {
+  color: var(--kt-text);
+  background: var(--kt-bg-hover);
+}
+.kt-xp-tab.active {
+  color: var(--kt-text-strong);
+  background: var(--kt-bg-panel);
+  box-shadow: inset 0 -2px 0 var(--kt-accent);
+}
+.kt-xp-tab-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--kt-bg-panel);
+}
+.kt-xp-page,
+.kt-xp-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kt-space-4);
+  padding: var(--kt-space-4);
+}
+.kt-xp-panel {
+  height: 100%;
+  overflow: auto;
+  background: var(--kt-bg-panel);
+  color: var(--kt-text);
+  font-size: var(--kt-fs-md);
+}
+.kt-xp-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kt-gap);
+  padding: var(--kt-space-3);
+  background: var(--kt-bg-card);
+  border: 1px solid var(--kt-bg-card-border);
+  border-radius: var(--kt-radius-md);
+}
+.kt-xp-section-title {
+  font-weight: var(--kt-fw-semibold);
+  color: var(--kt-text-strong);
+  padding-bottom: var(--kt-space-1);
+}
+.kt-xp-row {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  align-items: center;
+  gap: var(--kt-space-4);
+  min-height: var(--kt-row-h);
+}
+.kt-xp-label {
+  color: var(--kt-text-dim);
+  white-space: nowrap;
+}
+.kt-xp-control,
+.kt-xp-inline {
+  display: flex;
+  align-items: center;
+  gap: var(--kt-space-3);
+  min-width: 0;
+}
+.kt-xp-num {
+  width: 90px;
+}
+.kt-xp-text {
+  width: 100%;
+}
+.kt-xp-select {
+  min-width: 220px;
+}
+.kt-xp-slider {
+  width: 120px;
+  accent-color: var(--kt-accent);
+}
+.kt-xp-note {
+  padding: var(--kt-space-3);
+  color: var(--kt-text-dim);
+  border-left: 2px solid var(--kt-accent-soft);
+}
+.kt-xp-dim {
+  color: var(--kt-text-dim);
+}
+.kt-xp-ok {
+  color: var(--kt-curve);
+}
+.kt-xp-warn {
+  color: var(--kt-gizmo-orange);
+}
+.kt-xp-footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kt-space-3);
+  padding: var(--kt-space-4);
+  background: var(--kt-bg-panel-alt);
+  border-top: 1px solid var(--kt-border-strong);
+}
+.kt-xp-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 40px;
+}
+.kt-xp-stat-row {
+  display: grid;
+  grid-template-columns: 70px repeat(3, 1fr) 80px;
+  gap: var(--kt-space-3);
+}
+.kt-xp-stat-row.head {
+  color: var(--kt-text-dim);
+}
+.kt-xp-results {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 110px;
+  overflow: auto;
+}
+.kt-xp-progress {
+  position: relative;
+  height: 16px;
+  background: var(--kt-bg-input);
+  border-radius: var(--kt-radius-sm);
+  overflow: hidden;
+}
+.kt-xp-progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: var(--kt-accent);
+  transition: width 80ms linear;
+}
+.kt-xp-progress-label {
+  position: relative;
+  text-align: center;
+  line-height: 16px;
+  font-size: var(--kt-fs-sm);
+  color: var(--kt-text-strong);
+}
+.kt-xp-lodlist {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.kt-xp-lod-host {
+  overflow-x: auto;
+}
+.kt-lod {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kt-space-4);
+}
+.kt-lod-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--kt-space-3);
+}
+.kt-lod-bar .kt-em-btn {
+  min-width: 60px;
+  height: 22px;
+}
+.kt-lod-table {
+  display: grid;
+  grid-template-columns: 54px repeat(2, 70px) 60px repeat(2, 80px) 84px minmax(70px, 1fr) 26px;
+  gap: var(--kt-space-2) var(--kt-space-3);
+  align-items: center;
+}
+.kt-lod-table .kt-xp-num {
+  width: 100%;
+}
+.kt-lod-head {
+  color: var(--kt-text-dim);
+  font-size: var(--kt-fs-sm);
+}
+.kt-lod-name {
+  font-weight: var(--kt-fw-semibold);
+  color: var(--kt-text-strong);
+}
+.kt-lod-tris {
+  text-align: right;
+  color: var(--kt-text);
+}
+.kt-lod-remove {
+  min-width: 22px !important;
+  width: 22px;
+  padding: 0;
+}
+.kt-lod-status {
+  color: var(--kt-text-dim);
+  font-size: var(--kt-fs-sm);
+}

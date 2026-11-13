@@ -1,0 +1,12 @@
+@import "@fontsource/inter/latin-400.css";
+@import "@fontsource/inter/latin-500.css";
+@import "@fontsource/inter/latin-600.css";
+@import "./ui/theme/tokens.css";
+@import "./ui/theme/base.css";
+@import "./ui/theme/docking.css";
+@import "./ui/theme/panels.css";
+@import "./ui/theme/assets.css";
+@import "./ui/theme/graph.css";
+@import "./ui/theme/wind.css";
+@import "./ui/theme/export.css";
+@import "./ui/theme/library.css";

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Kekenik Tree">
+  <rect width="64" height="64" rx="14" fill="#1c1c1c"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M32 54V30M32 42l-9-8M32 36l10-9" stroke="#8a6a45" stroke-width="3.5"/>
+  </g>
+  <g fill="#7fbf4d">
+    <circle cx="32" cy="17" r="9"/>
+    <circle cx="21" cy="26" r="7.5"/>
+    <circle cx="43" cy="26" r="7.5"/>
+  </g>
+  <circle cx="29" cy="14" r="3" fill="#a2d36b" opacity=".8"/>
+</svg>

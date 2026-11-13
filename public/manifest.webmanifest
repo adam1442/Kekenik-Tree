@@ -1,0 +1,13 @@
+{
+  "name": "Kekenik Tree",
+  "short_name": "Kekenik Tree",
+  "description": "Node-based procedural plant and tree generator that runs entirely in your browser.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#1c1c1c",
+  "theme_color": "#1c1c1c",
+  "icons": [
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

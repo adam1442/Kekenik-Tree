@@ -1,0 +1,47 @@
+name: Bug report
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to report a problem.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the preset ...
+        2. Change the parameter ...
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and OS
+      placeholder: Chrome 130 on Windows 11
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Kekenik Tree version
+      description: Release tag, or "live demo" / commit hash.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console output or crash log
+      description: Use the "Copy log" button on the crash screen, or paste browser console errors.
+      render: text
+  - type: textarea
+    id: project
+    attributes:
+      label: Project file (optional)
+      description: Attach a `.ktree` file that reproduces the problem (drag it into this box, zipped if needed).

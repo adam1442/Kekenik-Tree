@@ -1,0 +1,410 @@
+/* ===== graph canvas (Generation panel) — all colours come from tokens.css ===== */
+.kt-graph-canvas {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 20%, var(--kt-graph-bg-a), var(--kt-graph-bg-b));
+}
+.kt-graph-canvas.show-grid {
+  background-image:
+    linear-gradient(var(--kt-graph-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--kt-graph-grid) 1px, transparent 1px),
+    linear-gradient(var(--kt-graph-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--kt-graph-grid) 1px, transparent 1px),
+    radial-gradient(ellipse at 50% 20%, var(--kt-graph-bg-a), var(--kt-graph-bg-b));
+  background-size:
+    var(--kt-grid) var(--kt-grid),
+    var(--kt-grid) var(--kt-grid),
+    var(--kt-grid-major) var(--kt-grid-major),
+    var(--kt-grid-major) var(--kt-grid-major),
+    100% 100%;
+  background-position:
+    var(--kt-grid-x) var(--kt-grid-y),
+    var(--kt-grid-x) var(--kt-grid-y),
+    var(--kt-grid-x) var(--kt-grid-y),
+    var(--kt-grid-x) var(--kt-grid-y),
+    0 0;
+}
+.kt-graph-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  outline: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.kt-graph-canvas.space .kt-graph-svg {
+  cursor: grab;
+}
+.kt-graph-canvas.panning .kt-graph-svg {
+  cursor: grabbing;
+}
+.kt-graph-canvas.linking .kt-graph-svg,
+.kt-graph-canvas.cutting .kt-graph-svg {
+  cursor: crosshair;
+}
+
+/* nodes */
+.kt-gn {
+  cursor: pointer;
+}
+.kt-gn .body {
+  fill: var(--kt-n-color);
+  stroke: var(--kt-node-outline);
+  stroke-width: 2;
+}
+.kt-gn:hover .body {
+  stroke: var(--kt-text-strong);
+}
+.kt-gn.selected .body {
+  stroke: var(--kt-select-ring);
+  stroke-width: 2.6;
+}
+.kt-gn .glyph {
+  color: var(--kt-text-strong);
+  pointer-events: none;
+}
+.kt-gn .label {
+  font-size: 7.5px;
+  text-anchor: middle;
+  fill: var(--kt-text-strong);
+  pointer-events: none;
+}
+.kt-gn.selected .label {
+  fill: var(--kt-select-ring);
+}
+.kt-gn.disabled .body {
+  fill: var(--kt-node-disabled);
+}
+.kt-gn.bypass {
+  opacity: 0.55;
+}
+.kt-gn.bypass .body {
+  stroke-dasharray: 3 2;
+}
+.kt-gn.solo .body {
+  stroke: var(--kt-tool-yellow);
+}
+.kt-gn.locked {
+  cursor: default;
+}
+.kt-gn.unknown .body {
+  stroke: var(--kt-graph-invalid);
+  stroke-dasharray: 3 2;
+}
+.kt-gn.hidden,
+.kt-ge.hidden {
+  display: none;
+}
+.kt-gn.drop-ok .body {
+  stroke: var(--kt-graph-valid);
+  stroke-width: 3;
+}
+.kt-gn.drop-bad .body {
+  stroke: var(--kt-graph-invalid);
+  stroke-width: 3;
+}
+.kt-gn .port {
+  fill: var(--kt-text-strong);
+  stroke: var(--kt-node-outline);
+  stroke-width: 1.2;
+  opacity: 0;
+  cursor: crosshair;
+}
+.kt-gn:hover .port,
+.kt-graph-canvas.linking .kt-gn .port {
+  opacity: 1;
+}
+.kt-gn .port:hover {
+  fill: var(--kt-graph-valid);
+}
+.kt-gn .badge circle {
+  fill: var(--kt-graph-info);
+  stroke: var(--kt-node-outline);
+  stroke-width: 1;
+}
+.kt-gn .badge text {
+  font-size: 6.5px;
+  font-weight: var(--kt-fw-semibold);
+  fill: var(--kt-node-outline);
+  text-anchor: middle;
+  pointer-events: none;
+}
+.kt-gn .badge.warn circle {
+  fill: var(--kt-graph-warn);
+}
+.kt-gn .badge.error circle {
+  fill: var(--kt-graph-invalid);
+}
+.kt-gn .badge.solo circle {
+  fill: var(--kt-tool-yellow);
+}
+.kt-gn .badge.lock {
+  color: var(--kt-node-outline);
+}
+.kt-gn .badge.collapsed rect {
+  fill: var(--kt-bg-active);
+  stroke: var(--kt-node-outline);
+  stroke-width: 1;
+}
+.kt-gn .badge.collapsed text {
+  fill: var(--kt-text-strong);
+}
+
+/* edges */
+.kt-ge .line {
+  fill: none;
+  stroke: var(--kt-graph-edge);
+  stroke-width: 1.4;
+  opacity: 0.85;
+  pointer-events: none;
+}
+.kt-ge .hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 10;
+  cursor: pointer;
+  pointer-events: stroke;
+}
+.kt-ge:hover .line {
+  stroke: var(--kt-graph-edge-hover);
+  stroke-width: 2.2;
+  opacity: 1;
+}
+.kt-ge.selected .line {
+  stroke: var(--kt-graph-edge-select);
+  stroke-width: 2.4;
+  opacity: 1;
+}
+.kt-ge.disabled .line {
+  stroke-dasharray: 3 3;
+  opacity: 0.5;
+}
+.kt-ge .dot {
+  fill: var(--kt-graph-edge);
+  pointer-events: none;
+}
+.kt-ge .count {
+  font-size: 6.5px;
+  fill: var(--kt-text-strong);
+  pointer-events: none;
+}
+.kt-graph-canvas.hide-edge-labels .kt-ge .count,
+.kt-graph-canvas.hide-labels .kt-gn .label,
+.kt-graph-canvas.lod-far .kt-ge .count,
+.kt-graph-canvas.lod-far .kt-gn .label,
+.kt-graph-canvas.lod-far .kt-ginfo {
+  display: none;
+}
+.kt-ginfo {
+  font-size: 7.5px;
+  text-anchor: end;
+  fill: var(--kt-text-strong);
+  pointer-events: none;
+}
+
+/* overlay */
+.kt-gwire {
+  fill: none;
+  stroke: var(--kt-graph-edge);
+  stroke-width: 2;
+  stroke-dasharray: 5 3;
+  pointer-events: none;
+}
+.kt-gwire.valid {
+  stroke: var(--kt-graph-valid);
+  stroke-dasharray: none;
+}
+.kt-gwire.invalid {
+  stroke: var(--kt-graph-invalid);
+}
+.kt-gguides .guide {
+  stroke: var(--kt-graph-guide);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+.kt-gcut {
+  fill: none;
+  stroke: var(--kt-graph-invalid);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+.kt-gmarquee {
+  position: absolute;
+  border: 1px solid var(--kt-accent-strong);
+  background: var(--kt-drop-fill);
+  pointer-events: none;
+}
+.kt-gtip {
+  position: absolute;
+  z-index: 5;
+  padding: 2px 6px;
+  border: 1px solid var(--kt-border);
+  border-radius: var(--kt-radius-sm);
+  background: var(--kt-bg-menu);
+  color: var(--kt-text);
+  font-size: var(--kt-fs-xs);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.kt-grename {
+  position: absolute;
+  z-index: 6;
+  width: 140px;
+  height: 20px;
+  text-align: center;
+}
+.kt-grename.multi {
+  text-align: left;
+  resize: none;
+  height: auto;
+}
+
+/* annotations */
+.kt-gann {
+  --kt-a: var(--kt-ann-blue);
+}
+.kt-gann.c-green {
+  --kt-a: var(--kt-ann-green);
+}
+.kt-gann.c-yellow {
+  --kt-a: var(--kt-ann-yellow);
+}
+.kt-gann.c-red {
+  --kt-a: var(--kt-ann-red);
+}
+.kt-gann.c-gray {
+  --kt-a: var(--kt-ann-gray);
+}
+.kt-gann .frame {
+  fill: var(--kt-a);
+  fill-opacity: 0.12;
+  stroke: var(--kt-a);
+  stroke-opacity: 0.6;
+  stroke-width: 1.2;
+}
+.kt-gann.sel .frame {
+  stroke: var(--kt-select-ring);
+  stroke-opacity: 1;
+  stroke-width: 1.8;
+}
+.kt-gann.group .frame {
+  pointer-events: none;
+}
+.kt-gann .head {
+  fill: var(--kt-a);
+  fill-opacity: 0.55;
+  cursor: move;
+}
+.kt-gann .title {
+  font-size: 9px;
+  font-weight: var(--kt-fw-semibold);
+  fill: var(--kt-text-strong);
+  pointer-events: none;
+}
+.kt-gann.comment .frame {
+  fill-opacity: 0.88;
+  cursor: move;
+}
+.kt-gann-text {
+  box-sizing: border-box;
+  height: 100%;
+  padding: 5px 6px;
+  overflow: hidden;
+  color: var(--kt-node-outline);
+  font-size: 9px;
+  line-height: 1.3;
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: move;
+}
+.kt-gann .resize {
+  fill: var(--kt-a);
+  fill-opacity: 0.9;
+  cursor: nwse-resize;
+}
+
+/* add-node popup */
+.kt-addnode {
+  position: fixed;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  width: 270px;
+  max-height: 380px;
+  padding: var(--kt-space-3);
+  gap: var(--kt-space-3);
+  background: var(--kt-bg-menu);
+  border: 1px solid var(--kt-border-strong);
+  border-radius: var(--kt-radius-md);
+  box-shadow: var(--kt-shadow-menu);
+  font-size: var(--kt-fs-md);
+}
+.kt-addnode-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.kt-addnode-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.kt-addnode-head {
+  padding: var(--kt-space-3) var(--kt-space-2) var(--kt-space-1);
+  color: var(--kt-text-dim);
+  font-size: var(--kt-fs-xs);
+  font-weight: var(--kt-fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.kt-addnode-row {
+  display: flex;
+  align-items: center;
+  gap: var(--kt-space-3);
+  height: 24px;
+  padding: 0 var(--kt-space-2);
+  border-radius: var(--kt-radius-sm);
+  color: var(--kt-text);
+  cursor: pointer;
+}
+.kt-addnode-row.active {
+  background: var(--kt-accent-soft);
+  color: var(--kt-text-strong);
+}
+.kt-addnode-name {
+  flex: none;
+  white-space: nowrap;
+}
+.kt-addnode-cat {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  color: var(--kt-text-dim);
+  font-size: var(--kt-fs-xs);
+}
+.kt-addnode-empty {
+  padding: var(--kt-space-4);
+  color: var(--kt-text-dim);
+  text-align: center;
+}
+.kt-node-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--kt-n-color);
+  border: 1.5px solid var(--kt-node-outline);
+  box-sizing: border-box;
+  color: var(--kt-text-strong);
+}

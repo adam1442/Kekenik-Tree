@@ -1,0 +1,57 @@
+{
+  "name": "kekenik-tree",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "licenses": "node scripts/generate-licenses.mjs"
+  },
+  "dependencies": {
+    "@fontsource/inter": "^5.3.0",
+    "fflate": "^0.8.3",
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "22.19.17",
+    "@types/three": "^0.187.0",
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0",
+    "jsdom": "^29.1.1",
+    "typescript": "5.9.3",
+    "typescript-eslint": "^8.72.2",
+    "vite": "7.3.2",
+    "vite-plugin-singlefile": "2.3.0",
+    "vitest": "^4.1.12"
+  },
+  "description": "Node-based procedural plant and tree generator that runs entirely in the browser (TypeScript + Three.js).",
+  "license": "MIT",
+  "author": "adam1442 <hossein.r.1442@gmail.com>",
+  "homepage": "https://adam1442.github.io/Kekenik-Tree/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adam1442/Kekenik-Tree.git"
+  },
+  "bugs": {
+    "url": "https://github.com/adam1442/Kekenik-Tree/issues"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "keywords": [
+    "threejs",
+    "typescript",
+    "vite",
+    "procedural-generation",
+    "tree-generator",
+    "node-based",
+    "vegetation",
+    "gamedev"
+  ]
+}
