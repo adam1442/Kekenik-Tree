@@ -27,7 +27,7 @@
     "typescript": "5.9.3",
     "typescript-eslint": "^8.72.2",
     "vite": "7.3.2",
-    "vite-plugin-singlefile": "2.3.0",
+    "vite-plugin-singlefile": "2.3.4",
     "vitest": "^4.1.12"
   },
   "description": "Node-based procedural plant and tree generator that runs entirely in the browser (TypeScript + Three.js).",
