@@ -183,6 +183,11 @@ function heightDef(assetId: string) {
 /** Cache-key extra of the Leaf node: changes when a material Height image (or its decoding) changes. */
 export function leafDependencyKey(p: NodeParams): string {
   if (getNumber(p, 'deformHeight', 0) === 0) return '';
+  return materialHeightKey();
+}
+
+/** Stamp of every material Height texture (changes when an image or its decoding changes). */
+export function materialHeightKey(): string {
   const mats = getMaterialSource()?.materials() ?? [];
   const parts: string[] = [];
   for (const m of mats) {

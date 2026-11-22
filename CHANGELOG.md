@@ -9,6 +9,9 @@ All notable changes to this project are documented here. The format is based on
 ### Fixed
 - Edit Mesh dialog, shared dialog buttons/footers (info, prompt, choice, Export, LOD editor) and a few inspector widgets were missing their stylesheet rules in the published build; the rules now live in `ui/theme/editmesh.css` and `panels.css`.
 
+### Changed
+- Frond generator rebuilt on ribs: a left and a right rib runs across the parent spine at every length segment, and the cutout mesh of the assigned material (or a plain ribbon) is mapped onto them. The length always comes from the parent spine. New Shape tab (Unification, Height: Amount / Offset / Gravity / Fold / Curl / Roll, Boundary: Start / End, Scale: Width / Height), Segments tab (Accuracy, Width: Absolute / + Relative), Forces tab (Gravity, Up / Down, Ancestor with strength curves, Align) and Material: Flip, Two sided, Mesh Index / Resolution. Older Frond graphs and the built-in presets are migrated automatically (the old Droop becomes the Gravity force; Arch, Twist, Crease, Sink and length scaling were dropped).
+
 ### Added
 - Leaf generator *Lighting* tab: Style (Global / Local) and a normal-editing pass run after deformation (Smooth, Parent puffiness with Global / Deep / Intermediate / Local / None / Height / Surface X-Y-Z anchors, Anchor shift, Puffiness, Unify, Up / Right / Out adjustments with variance, World up). Global style reads a shared group on the Tree node (new *Lighting* tab). The pass is `applyLeafLighting` (reusable by the Frond). The old Spherize / Bend controls did nothing and were removed.
 - *Batched Leaf* node: the Leaf evaluator without Mesh LOD offset, vertex-noise Seed, Unify and World up, always at the highest detail, merged into one slot per material (`mergeByMaterial`) with an index table (`MeshData.parts`) that resolves every triangle back to its source leaf.

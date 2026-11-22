@@ -373,11 +373,11 @@ describe('generators read the Material list', () => {
     };
     const ctx: NodeContext = { nodeId: 'f', name: 'f', rng: new Rng(1), seed: 1, cancel: new CancellationSource().token, lod: 0, logger: createLogger('dev', 'error') };
     const withMesh = buildFrondSpecs(ctx, stem(), params([{ material: 'm', mesh: 'primary', weight: 1 }]));
-    expect(withMesh.cards.length).toBeGreaterThan(0);
-    expect(withMesh.specs.length).toBe(0);
+    expect(withMesh.specs.length).toBeGreaterThan(0);
+    expect(withMesh.specs.every((s) => s.mesh !== null)).toBe(true);
     const ribbon = buildFrondSpecs(ctx, stem(), params([{ material: '', mesh: 'any', weight: 1 }]));
-    expect(ribbon.cards.length).toBe(0);
     expect(ribbon.specs.length).toBeGreaterThan(0);
+    expect(ribbon.specs.every((s) => s.mesh === null)).toBe(true);
     const out = run('generator.frond', { leafTypes: [{ material: 'm', mesh: 'primary', weight: 1 }] });
     expect(indexCount(out)).toBeGreaterThan(0);
   });

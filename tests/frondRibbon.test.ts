@@ -4,7 +4,7 @@ import type { V3 } from '@/geometry/math3';
 import { buildRibbonFrames, buildRibbonMesh, DEFAULT_RIBBON_OPTIONS, type RibbonSpec } from '@/geometry/ribbonMesher';
 import { GraphEvaluator, snapshotGraph } from '@/graph/engine';
 import { getNodeDef, registerDiscoveredNodes } from '@/graph/registry';
-import { migrateFrondParams, tryInstance, trimPolyline } from '@/nodes/generators/frond';
+import { migrateFrondParams, trimPolyline } from '@/nodes/generators/frond';
 import { buildGraph, type NodeSpec } from './helpers/graphSpec';
 
 beforeAll(() => registerDiscoveredNodes());
@@ -119,13 +119,6 @@ describe('ribbon mesher', () => {
     expect(mesh.slots.map((s) => s.materialId).sort()).toEqual(['a', 'b']);
     expect(mesh.slots.reduce((s, x) => s + x.indexCount, 0)).toBe(mesh.indices.length);
   });
-
-  it('instances identical blades and refuses different ones', () => {
-    const mk = (x: number, y = 0.5): RibbonSpec => spec({}, [[x, 0, 0], [x, 0, y], [x + 0.1, 0, y * 2]]);
-    const same = tryInstance([mk(0), mk(1), mk(2)], { ...DEFAULT_RIBBON_OPTIONS, lengthSegments: 4 });
-    expect(same?.instanced?.count).toBe(3);
-    expect(tryInstance([mk(0), mk(1, 0.9)], { ...DEFAULT_RIBBON_OPTIONS, lengthSegments: 4 })).toBeNull();
-  });
 });
 
 describe('Frond node', () => {
@@ -136,18 +129,20 @@ describe('Frond node', () => {
     { id: 'frond', type: 'generator.frond', parent: 'spine', params: frond ?? {} },
   ];
 
-  it('is a ribbon per spine (no pinnae): Spine(6) -> Frond yields 6 ribbons', async () => {
-    const r = await run(graph(6, { frondLengthSegments: 4, frondInstancing: false }));
+  it('is one frond per spine: Spine(6) -> Frond yields 6 fronds with ribs of every length segment', async () => {
+    const r = await run(graph(6, { frondWidthAbsolute: 2 }));
     const d = r.diagnostics.get('frond')!;
     expect(d.state).not.toBe('error');
     expect(d.instances).toBe(6);
-    expect(d.triangles).toBe(6 * 4 * 2);
+    expect(d.triangles).toBeGreaterThan(0);
+    expect(d.triangles % (6 * 4)).toBe(0);
   });
 
   it('planes per spine multiplies the geometry and is deterministic', async () => {
-    const a = await run(graph(5, { frondPlanes: 3, frondLengthSegments: 3, frondInstancing: false }));
-    const b = await run(graph(5, { frondPlanes: 3, frondLengthSegments: 3, frondInstancing: false }));
-    expect(a.diagnostics.get('frond')!.triangles).toBe(5 * 3 * 3 * 2);
+    const one = await run(graph(5, { frondPlanes: 1 }));
+    const a = await run(graph(5, { frondPlanes: 3 }));
+    const b = await run(graph(5, { frondPlanes: 3 }));
+    expect(a.diagnostics.get('frond')!.triangles).toBe(3 * one.diagnostics.get('frond')!.triangles);
     expect(a.diagnostics.get('frond')!.triangles).toBe(b.diagnostics.get('frond')!.triangles);
   });
 
@@ -160,13 +155,15 @@ describe('Frond node', () => {
 
   it('migrates old pinnae-style graphs to ribbon params', () => {
     const def = getNodeDef('generator.frond')!;
-    expect(def.version).toBe(2);
+    expect(def.version).toBe(3);
     const old = { frondPinnaLength: { value: 0.3 }, frondDroop: { value: 0.4 }, frondCurl: { value: 0.5 }, first: { value: 0.2 }, number: { value: 4 }, frondFins: { value: 10 } };
     const m = migrateFrondParams(old, 1);
     expect(m.frondWidth?.value).toBeCloseTo(0.42);
-    expect(m.frondArch?.value).toBeCloseTo(22.5);
     expect(m.first).toBeUndefined();
     expect(m.frondFins).toBeUndefined();
-    expect(migrateFrondParams(m, 2)).toBe(m);
+    expect(m.frondBoundaryStart).toBeUndefined();
+    expect(m.frondForceGravityOn?.value).toBe(true);
+    expect(m.frondForceGravity?.value).toBeCloseTo(0.64);
+    expect(migrateFrondParams(m, 3)).toBe(m);
   });
 });

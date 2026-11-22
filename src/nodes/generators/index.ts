@@ -1,5 +1,5 @@
 import type { NodeDef } from '@/contracts/nodes';
-import type { NodeParams } from '@/contracts/params';
+import { getNumber, type NodeParams } from '@/contracts/params';
 import type { ParamDef } from '@/contracts/params';
 import type { PortDef } from '@/contracts/ports';
 import { attachIns, childrenOut, parentIn } from '../shared/ports';
@@ -41,7 +41,7 @@ import {
 } from './params';
 import { anchorPlacementParams } from './cutoutPlacement';
 import { leafPlacementParams } from './leafPlacementParams';
-import { leafDeformParams, leafDependencyKey } from './leafDeformParams';
+import { leafDeformParams, leafDependencyKey, materialHeightKey } from './leafDeformParams';
 import { leafLightingParams } from './leafLightingParams';
 import { migrateLeafParams } from './foliage';
 import { withLineage } from './lineageHook';
@@ -265,14 +265,14 @@ export const nodeDefs: NodeDef[] = [
     label: 'Frond',
     icon: 'nodeFrond',
     color: 'var(--kt-node-frond)',
-    description: 'A flat ribbon that follows the whole length of every parent spine: grass blades, moss, ferns, palm and banana leaves, reeds.',
+    description: 'Ribs run across every parent spine and a cutout mesh (or a plain ribbon) is mapped onto them: grass blades, ferns, palm and banana leaves, reeds.',
     statsGroup: 'fronds/fins',
-    version: 2,
+    version: 3,
     migrate: migrateFrondParams,
     ports: leafOnly,
     params: frondParams(),
     evaluate: withDisplacementWarning(evaluateFrond),
-    dependencyKey: displacementDeps,
+    dependencyKey: (params: NodeParams): string => `${displacementDeps(params)}#${getNumber(params, 'frondHeightOffset', 0) === 0 ? '' : materialHeightKey()}`,
   },
   {
     type: 'generator.decoration',
