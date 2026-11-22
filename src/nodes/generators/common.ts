@@ -6,6 +6,7 @@ import { getBool, getNumber, getString, type NodeParams } from '@/contracts/para
 import type { PortValue } from '@/contracts/ports';
 import { emptySkeleton, type Skeleton } from '@/contracts/skeleton';
 import { clamp } from '@/core/math';
+import { RADIAL_BASIS, radialSegmentCount } from '@/generators/spine';
 import { applyGeneratorForces } from './forcesHook';
 import { displacedSides, tubeDisplacementOptions } from './displacement';
 import { resolveMaterialRef } from '@/materials/materialSource';
@@ -72,11 +73,27 @@ export function tubeOptionsFromParams(
   parent: Skeleton | null,
   materialId: string,
   seed: number,
+  skeleton?: Skeleton,
 ): TubeOptions {
   const displacement = tubeDisplacementOptions(params, lod, parent);
   const displaced = displacement.displace !== undefined;
-  const baseSides = getNumber(params, 'sides', 8);
-  const sides = displaced && getBool(params, 'displaceAutoSubdivide', true) ? Math.max(baseSides, Math.round(getNumber(params, 'displaceMinSides', 16))) : baseSides;
+  const radialAbsolute = getNumber(params, 'sides', 8);
+  const radialRelative = getNumber(params, 'radialRelative', 0);
+  const radialBasis = getString(params, 'radialBasis', RADIAL_BASIS.radius);
+  const segmentScalar = clamp(getNumber(params, 'segmentScalar', 1), 0.1, 4);
+  const stored = skeleton?.attributes.get('radialSides');
+  const autoSubdivide = displaced && getBool(params, 'displaceAutoSubdivide', true);
+  const minSides = Math.round(getNumber(params, 'displaceMinSides', 16));
+  /** Radial segments of a branch: the count the spine stored (Segments > Radial), or the formula without a parent. */
+  const sidesOf = (radius: number, branchIndex: number | undefined): number => {
+    const branch = branchIndex === undefined ? undefined : skeleton?.branches[branchIndex];
+    const own = branch && stored ? (stored[branch.start] as number) : 0;
+    const base =
+      own > 0
+        ? own
+        : radialSegmentCount({ absolute: radialAbsolute, relative: radialRelative, basis: radialBasis, radius, parentSides: 0, scalar: segmentScalar });
+    return autoSubdivide ? Math.max(base, minSides) : base;
+  };
   const rawTint = params.tint?.value;
   const tint = Array.isArray(rawTint) && rawTint.length >= 3 ? (rawTint as number[]) : [0.36, 0.26, 0.18, 1];
   const section: SectionShape = {
@@ -92,21 +109,22 @@ export function tubeOptionsFromParams(
   const capBase = getString(params, 'capBase', 'auto');
   return {
     maxGeneration: 64,
-    radialSegments: (_gen, radius) =>
-      lodRadialSides(
+    radialSegments: (_gen, radius, branchIndex) => {
+      const sides = sidesOf(radius, branchIndex);
+      return lodRadialSides(
         displaced && displacement.maxSegmentLength ? displacedSides(radius, displacement.maxSegmentLength, sides) : sides,
         lod,
         getNumber(params, 'lodSides', 0.5),
-      ),
+      );
+    },
     color: (gen, t) => barkRingColor(tint, gen, t),
     uvMetres: 1,
     materialId,
     ...(parent ? { parent } : {}),
-    lengthSegments: Math.round(getNumber(params, 'lengthSegments', 0)),
     segmentKeep: lodSegmentKeep(lod, getNumber(params, 'lodSegments', 0.5)),
     section,
     uv: {
-      normalized: getString(params, 'uvMode', 'metric') === 'normalized' || getString(params, 'matchOneVTile', 'generated') === 'yes',
+      normalized: getString(params, 'uvMode', 'metric') === 'normalized' || getBool(params, 'matchOneVTile', false),
       scaleU: Math.max(0.01, getNumber(params, 'uvScaleU', 1)),
       scaleV: Math.max(0.01, getNumber(params, 'uvScaleV', 1)),
       offsetU: getNumber(params, 'uvOffsetU', 0),
@@ -156,7 +174,7 @@ export function emitStructureOutput(
     spineOnly || skeleton.count === 0
       ? emptyMeshData()
       : buildTubeMesh(skeleton, {
-          ...tubeOptionsFromParams(params, lod, parent ?? null, resolvedMaterial, seed),
+          ...tubeOptionsFromParams(params, lod, parent ?? null, resolvedMaterial, seed, skeleton),
           ...(hiddenBranches ? { skipBranch: (bi: number) => hiddenBranches.has(bi) } : {}),
         });
 

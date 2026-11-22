@@ -46,7 +46,6 @@ const HELP: Record<string, string> = {
   seed: 'Random seed. Change it to get a different variation of the same settings.',
   distMinDistance: 'Minimum distance between first-generation elements placed on the ground.',
   length: 'Length of each child in metres.',
-  lengthRelative: 'Makes the length depend on the length of the parent.',
   lengthPercent: 'Adds a percentage of the parent length to the absolute length.',
   lengthLimit: 'Prevents children from becoming longer than the parent.',
   lean: 'Tilts the whole stem away from vertical (degrees).',

@@ -153,36 +153,34 @@ Main stem with crown height, buttress flare, lean, gnarliness, and profile curve
 
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
-| Length | Absolute | `length` | 0.02..500 (slider 0.02..40) m | 12 | yes | yes | Length of each child in metres. |
-| Length | Relative to parent | `lengthRelative` | bool | false |  |  | Makes the length depend on the length of the parent. |
-| Length | + % of parent | `lengthPercent` | 0..2 (slider 0..1) | 0 |  | yes | Adds a percentage of the parent length to the absolute length. |
+| Length | Absolute | `length` | 0..500 (slider 0..40) m | 12 | yes | yes | Fixed part of the length in metres. The curve scales the length along the parent. |
+| Length | + % of parent | `lengthPercent` | 0..2 (slider 0..1) | 0 |  | yes | Adds this fraction of the parent length (1 = as long as the parent). |
 | Length | + % of radius | `lengthPercentRadius` | 0..500 (slider 0..100) | 0 |  |  | Adds this many parent radii to the length. |
-| Length | Match one v tile | `matchOneVTile` | Generated / Yes / No | generated |  |  | Yes: the bark texture is stretched so it tiles exactly once along the spine. |
-| Length | Shape scale | `shapeScale` | 0..5 (slider 0..2) | 1 |  |  | Multiplies curvature and noise amounts of the spine. |
-| Length | Limit length | `lengthLimit` | bool | false |  |  | Prevents children from becoming longer than the parent. |
+| Length | Match one V tile | `matchOneVTile` | bool | false |  |  | Sets the length to exactly one V tile of the material, from its aspect ratio and the branch radius, and maps V from 0 to 1. |
+| Length | Stop shape control | `stopShapeControl` | bool | false |  |  | Ignores the crown shape envelope and the generation damping, so this node is not shaped by its ancestors. |
+| Length | Shape scale | `shapeScale` | 0..5 (slider 0..2) | 1 |  |  | Strength of the crown shape on the length: 0 = off, 1 = as drawn, above 1 = exaggerated. |
+| Length | Limit length | `lengthLimit` | bool | false |  |  | Prevents children from becoming longer than the Absolute length. |
 | Length | Crown height | `crownHeight` | 0..0.95 | 0.22 |  |  | Normalized height where the lower trunk transitions into the crown. |
 | Clamp | Min | `lengthMin` | 0..500 (slider 0..20) m | 0 |  |  | 0 = no minimum. |
 | Clamp | Max | `lengthMax` | 0..500 (slider 0..20) m | 0 |  |  | 0 = no maximum. |
 | Orientation | Lean | `lean` | 0..60 ° | 2 | yes |  | Tilts the whole stem away from vertical (degrees). |
 | Orientation | Lean direction | `leanAzimuth` | -180..180 ° | 25 | yes |  | Compass direction of the lean. |
-| Orientation | Spread | `spread` | 0..180 ° | 12 | yes | yes | Angle between the child and its parent (degrees, 0 = parallel). |
-| Orientation | Start roll | `startRoll` | -180..180 ° | 0 | yes | yes | Rotation of the child around its own axis at the start. |
+| Orientation | Spread | `spread` | 0..180 ° | 12 | yes | yes | Angle between the trunk and the vertical, in degrees. |
+| Orientation | Start roll | `startRoll` | -180..180 ° | 0 | yes | yes | Rotates the direction the Start angle is applied in (+ clockwise, - counter-clockwise). |
 | Orientation | Pitch | `pitch` | -90..90 ° | 0 | yes | yes | Tilts the starting direction up or down (degrees). |
-| Orientation | Roll | `spineRoll` | -180..180 ° | 0 |  |  | Rotation of the spine around its own axis. |
-| Orientation | Alignment | `alignment` | 0..1 | 0 |  |  | Rotates children towards the sun / up direction. |
+| Orientation | Roll | `spineRoll` | -180..180 ° | 0 |  |  | Rotates the branch around its own axis by a fixed amount, after Alignment. |
+| Orientation | Alignment | `alignment` | 0..1 | 0 |  |  | Blends a random up (0) with the world up (1), so the top of the branch points up. |
 | Orientation | Up / down | `upDown` | -2..2 (slider -1..1) | 0.04 |  | yes | Pushes the growth direction up (+) or down (−) along the length. |
-| Shape | Gravity | `gravity` | -2..3 (slider -1..1.5) | 0 |  | yes | Bends the child downward (+) or upward (−) under gravity. |
+| Shape | Gravity | `gravity` | -2..3 (slider -1..1.5) | 0 |  | yes | A downward force on the spine (+ bends down, - bends up). |
 | Shape | Curvature | `curvature` | -2..2 (slider -1..1) | 0.03 | yes | yes | Overall bend of the child along its length. |
-| Shape | Straightness | `straightness` | 0..1 | 0.35 |  |  | How strongly the child resists bending; 1 = ruler straight. |
-| Shape | Twist | `twist` | -720..720 (slider -180..180) ° | 0 | yes | yes | Adds a rotation around the axis along the path. |
-| Parent Curl | Up | `curlUp` | -3..3 (slider -1..1) | 0 |  |  | Curl toward the parent direction (up the parent). |
-| Parent Curl | Right | `curlRight` | -3..3 (slider -1..1) | 0 |  |  | Curl sideways relative to the parent. |
-| Parent Curl | Out | `curlOut` | -3..3 (slider -1..1) | 0 |  |  | Curl away from the parent axis (negative = toward it). |
-| Zigzag | Intensity | `zigzag` | 0..3 (slider 0..1) | 0 |  |  | Alternating bend at every segment (zig-zag stem). |
-| Segment length | Absolute | `segments` | 2..512 | 24 |  |  | Number of segments along the spine. |
-| Segment length | + Relative | `relativeSegments` | 0..20 (slider 0..4) /m | 0 |  |  | Extra segments scaled by the length of the child. |
-| Segment length | Accuracy | `accuracy` | 8..128 | 36 |  |  | Number of sample points used to follow the spine (higher = smoother, slower). |
-| Segment length | Optimization | `optimization` | 0..30 ° | 0 |  |  | Curvature-aware adaptive simplification threshold (0 = keep all segments). |
+| Shape | Straightness | `straightness` | 0..1 | 0.35 |  |  | Removes noise: fully at the base, fading to none at the tip. |
+| Shape | Twist | `twist` | -720..720 (slider -180..180) ° | 0 | yes | yes | Total twist of the branch around its axis, in degrees. |
+| Parent Curl | Up | `curlUp` | -3..3 (slider -1..1) | 0 |  |  | Curl around the parent direction (the branch winds around its parent). |
+| Parent Curl | Right | `curlRight` | -3..3 (slider -1..1) | 0 |  |  | Curl around the axis perpendicular to the parent direction and the initial direction. |
+| Parent Curl | Out | `curlOut` | -3..3 (slider -1..1) | 0 |  |  | Curl around the axis pointing straight out of the parent. |
+| Zigzag | Intensity | `zigzag` | 0..3 (slider 0..1) | 0 |  |  | How sharply the spine changes direction at every zigzag corner (0 = off). |
+| Segment length | Absolute | `zigzagLengthAbsolute` | 0..50 (slider 0..2) m | 0 |  | yes | Fixed part of the distance between two zigzag corners. The curve scales the length along the branch. |
+| Segment length | + Relative | `zigzagLengthRelative` | 0..1 | 0.1 |  |  | Adds this fraction of the branch length to the distance between two zigzag corners. |
 | Radius | Radius | `radius` | 0.001..20 (slider 0.001..2) m | 0.32 | yes | yes | Size: the radius of the cross-section at the base (metres), or the range of an effect. |
 | Radius | Radius profile | `radiusProfile` | curve | curve |  |  | Normalized radius multiplier from base (0) to tip (1). |
 | Radius | Taper | `taper` | 0..1 | 0.88 |  | yes | How much the radius shrinks from base to tip (1 = pointed). |
@@ -235,8 +233,6 @@ Main stem with crown height, buttress flare, lean, gnarliness, and profile curve
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
 | Geometry | Spine only | `spineOnly` | bool | false |  |  | Emit pure skeleton spines without building polygon tube geometry. |
-| Geometry | Sides | `sides` | 3..64 | 12 |  |  | Number of sides of the tube cross-section. Fewer sides = fewer triangles. |
-| Geometry | Length segments | `lengthSegments` | 0..512 | 0 |  |  | 0 = use the Spine segments |
 | Geometry | Close end | `capEnd` | bool | true |  |  | Closes the tip of the tube with a cap. |
 | Geometry | Tip rings | `tipRings` | 1..8 | 2 |  |  | Rings of the rounded tip cap. |
 | Geometry | Close base | `capBase` | Auto / Yes / No | auto |  |  | Auto closes branches that do not grow from a parent. |
@@ -315,7 +311,22 @@ Main stem with crown height, buttress flare, lean, gnarliness, and profile curve
 | Amount | Amount | `windAmount` | 0..10 (slider 0..2) | 1 |  | yes | Strength multiplier of the wind on this node. |
 | Amount | Phase variance | `windPhaseVariance` | 0..1 | 0.5 |  |  | Random phase offset so neighbours do not sway in sync. |
 
-### Tab: Segments _(not implemented yet - shown disabled)_
+### Tab: Segments
+
+| Section | Parameter | id | Range | Default | Var | Curve | Meaning |
+|---|---|---|---|---|---|---|---|
+|  | Accuracy | `accuracy` | 4..256 | 36 |  |  | Exact number of points of the high-resolution spine the branch is built from (higher = smoother, slower). |
+|  | Influence | `segmentInfluence` | 0..4 (slider 0..2) | 1 |  |  | Scales how strongly forces and spine properties act per accurate segment. 1 keeps the shape when Accuracy changes. |
+|  | Scalar | `segmentScalar` | 0.1..4 (slider 0.1..2) | 1 |  |  | Multiplies the polygon count of the mesh (length and radial segments). |
+| Length | Style | `lengthStyle` | Default / Legacy | default |  |  | Default builds the accurate layout with the relative basis; Legacy keeps the older layout (relative segments per metre). |
+| Length | Absolute | `segments` | 1..512 | 24 |  |  | Minimum number of length segments. |
+| Length | + Relative | `relativeSegments` | 0..20 (slider 0..2) | 0 |  |  | Adds more length segments, multiplied by the Relative basis. |
+| Length | Relative basis | `relativeBasis` | Length only / Length/radius ratio / Parent's length segments | length-radius-ratio |  |  | What + Relative is multiplied by: the branch length, its length / radius ratio (recommended) or the length segments of the parent. |
+| Length | Weld scalar | `weldScalar` | 0..4 (slider 0..2) | 1 |  |  | Scales the number of segments in the weld part, where the branch is fused to its parent. |
+| Length | Optimization | `optimization` | 0..45 ° | 0 |  |  | Drops segments where the spine is nearly straight: the larger the value, the bigger the bend must be to keep a segment (0 = keep all). |
+| Radial | Absolute | `sides` | 0..64 | 12 |  |  | Minimum number of radial segments (sides). |
+| Radial | + Relative | `radialRelative` | 0..200 (slider 0..40) | 0 |  |  | Adds radial segments, multiplied by the Relative basis. |
+| Radial | Relative basis | `radialBasis` | Radius / Parent's radial segments | radius |  |  | What + Relative is multiplied by: the branch radius in metres or the radial segments of the parent. |
 
 ### Tab: Physics _(not implemented yet - shown disabled)_
 
@@ -403,37 +414,36 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
-| Length | Absolute | `length` | 0.02..500 (slider 0.02..20) m | 3.2 | yes | yes | Length of each child in metres. |
-| Length | Relative to parent | `lengthRelative` | bool | false |  |  | Makes the length depend on the length of the parent. |
-| Length | + % of parent | `lengthPercent` | 0..2 (slider 0..1) | 0.08 |  | yes | Adds a percentage of the parent length to the absolute length. |
+| Length | Absolute | `length` | 0..500 (slider 0..20) m | 3.2 | yes | yes | Fixed part of the length in metres. The curve scales the length along the parent. |
+| Length | + % of parent | `lengthPercent` | 0..2 (slider 0..1) | 0.08 |  | yes | Adds this fraction of the parent length (1 = as long as the parent). |
 | Length | + % of radius | `lengthPercentRadius` | 0..500 (slider 0..100) | 0 |  |  | Adds this many parent radii to the length. |
-| Length | Match one v tile | `matchOneVTile` | Generated / Yes / No | generated |  |  | Yes: the bark texture is stretched so it tiles exactly once along the spine. |
-| Length | Shape scale | `shapeScale` | 0..5 (slider 0..2) | 1 |  |  | Multiplies curvature and noise amounts of the spine. |
-| Length | Limit length | `lengthLimit` | bool | false |  |  | Prevents children from becoming longer than the parent. |
+| Length | Match one V tile | `matchOneVTile` | bool | false |  |  | Sets the length to exactly one V tile of the material, from its aspect ratio and the branch radius, and maps V from 0 to 1. |
+| Length | Stop shape control | `stopShapeControl` | bool | false |  |  | Ignores the crown shape envelope and the generation damping, so this node is not shaped by its ancestors. |
+| Length | Shape scale | `shapeScale` | 0..5 (slider 0..2) | 1 |  |  | Strength of the crown shape on the length: 0 = off, 1 = as drawn, above 1 = exaggerated. |
+| Length | Limit length | `lengthLimit` | bool | false |  |  | Prevents children from becoming longer than the Absolute length. |
 | Length | Crown envelope | `crownShape` | Natural / Conical / Oval / Vase / Columnar / Custom | natural |  |  | Branch length as a function of the normalised height on the parent: cone (conifer), oval (oak), vase, column or a custom curve. |
 | Length | Crown curve | `crownCurve` | curve | curve |  |  | Length multiplier from parent base (0) to tip (1). |
 | Clamp | Min | `lengthMin` | 0..500 (slider 0..20) m | 0 |  |  | 0 = no minimum. |
 | Clamp | Max | `lengthMax` | 0..500 (slider 0..20) m | 0 |  |  | 0 = no maximum. |
-| Orientation | Start angle | `spread` | 0..180 ° | 48 | yes | yes | Angle between the child and its parent (degrees, 0 = parallel). |
-| Orientation | Start roll | `startRoll` | -180..180 ° | 0 | yes | yes | Rotation of the child around its own axis at the start. |
+| Orientation | Start angle | `spread` | 0..180 ° | 48 | yes | yes | Angle to the parent in degrees: 0 = parent direction, 90 = perpendicular, 180 = opposite. |
+| Orientation | Start roll | `startRoll` | -180..180 ° | 0 | yes | yes | Rotates the direction the Start angle is applied in (+ clockwise, - counter-clockwise). |
 | Orientation | Pitch | `pitch` | -90..90 ° | 0 | yes | yes | Tilts the starting direction up or down (degrees). |
-| Orientation | Roll | `spineRoll` | -180..180 ° | 0 |  |  | Rotation of the spine around its own axis. |
-| Orientation | Alignment | `alignment` | 0..1 | 0.2 |  |  | Rotates children towards the sun / up direction. |
+| Orientation | Roll | `spineRoll` | -180..180 ° | 0 |  |  | Rotates the branch around its own axis by a fixed amount, after Alignment. |
+| Orientation | Alignment | `alignment` | 0..1 | 0.2 |  |  | Blends a random up (0) with the world up (1), so the top of the branch points up. |
 | Orientation | Up / down | `upDown` | -2..2 (slider -1..1) | 0.06 |  | yes | Pushes the growth direction up (+) or down (−) along the length. |
-| Orientation | Weld start | `weldStart` | bool | false |  |  | Welds the child base into the parent surface to hide the seam. |
-| Shape | Gravity | `gravity` | -2..3 (slider -1..1.5) | 0.16 |  | yes | Bends the child downward (+) or upward (−) under gravity. |
-| Shape | Ancestor | `ancestor` | -1..1 | 0 |  | yes | Inherit part of the direction of the grandparent. |
+| Orientation | Unify | `unify` | bool | false |  |  | Nodes on opposite sides of the parent share the same orientation (mirrored roll). |
+| Orientation | Weld start | `weldStart` | bool | false |  |  | For Spine only branches: starts on the skin of the parent instead of on its spine. |
+| Shape | Gravity | `gravity` | -2..3 (slider -1..1.5) | 0.16 |  | yes | A downward force on the spine (+ bends down, - bends up). |
+| Shape | Ancestor | `ancestor` | -1..1 | 0 |  | yes | + grows towards the direction of the parent, like a bud; - grows away from it. |
 | Shape | Curvature | `curvature` | -2..2 (slider -1..1) | 0.06 | yes | yes | Overall bend of the child along its length. |
-| Shape | Straightness | `straightness` | 0..1 | 0.2 |  |  | How strongly the child resists bending; 1 = ruler straight. |
-| Shape | Twist | `twist` | -720..720 (slider -180..180) ° | 0 | yes | yes | Adds a rotation around the axis along the path. |
-| Parent Curl | Up | `curlUp` | -3..3 (slider -1..1) | 0 |  |  | Curl toward the parent direction (up the parent). |
-| Parent Curl | Right | `curlRight` | -3..3 (slider -1..1) | 0 |  |  | Curl sideways relative to the parent. |
-| Parent Curl | Out | `curlOut` | -3..3 (slider -1..1) | 0 |  |  | Curl away from the parent axis (negative = toward it). |
-| Zigzag | Intensity | `zigzag` | 0..3 (slider 0..1) | 0 |  |  | Alternating bend at every segment (zig-zag stem). |
-| Segment length | Absolute | `segments` | 2..512 | 10 |  |  | Number of segments along the spine. |
-| Segment length | + Relative | `relativeSegments` | 0..20 (slider 0..4) /m | 0 |  |  | Extra segments scaled by the length of the child. |
-| Segment length | Accuracy | `accuracy` | 8..128 | 24 |  |  | Number of sample points used to follow the spine (higher = smoother, slower). |
-| Segment length | Optimization | `optimization` | 0..30 ° | 0 |  |  | Curvature-aware adaptive simplification threshold (0 = keep all segments). |
+| Shape | Straightness | `straightness` | 0..1 | 0.2 |  |  | Removes noise: fully at the base, fading to none at the tip. |
+| Shape | Twist | `twist` | -720..720 (slider -180..180) ° | 0 | yes | yes | Total twist of the branch around its axis, in degrees. |
+| Parent Curl | Up | `curlUp` | -3..3 (slider -1..1) | 0 |  |  | Curl around the parent direction (the branch winds around its parent). |
+| Parent Curl | Right | `curlRight` | -3..3 (slider -1..1) | 0 |  |  | Curl around the axis perpendicular to the parent direction and the initial direction. |
+| Parent Curl | Out | `curlOut` | -3..3 (slider -1..1) | 0 |  |  | Curl around the axis pointing straight out of the parent. |
+| Zigzag | Intensity | `zigzag` | 0..3 (slider 0..1) | 0 |  |  | How sharply the spine changes direction at every zigzag corner (0 = off). |
+| Segment length | Absolute | `zigzagLengthAbsolute` | 0..50 (slider 0..2) m | 0 |  | yes | Fixed part of the distance between two zigzag corners. The curve scales the length along the branch. |
+| Segment length | + Relative | `zigzagLengthRelative` | 0..1 | 0.1 |  |  | Adds this fraction of the branch length to the distance between two zigzag corners. |
 | Radius | Radius | `radius` | 0.001..20 (slider 0.001..0.5) m | 0.06 | yes | yes | Size: the radius of the cross-section at the base (metres), or the range of an effect. |
 | Radius | % of parent | `parentRadiusInfluence` | 0..1 | 0.4 |  | yes | Makes the radius a percentage of the parent radius at the attachment point. |
 | Radius | Max parent ratio | `parentRadiusMax` | 0.05..1.5 | 0.82 |  |  | Upper limit of the child radius relative to the parent. |
@@ -455,11 +465,11 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 | Splits & Termination | Max split depth | `splitMaxDepth` | 1..3 | 1 |  |  | Maximum number of successive forks. |
 | Splits & Termination | Break chance | `breakChance` | 0..1 | 0 |  |  | Probability that the spine snaps and ends early. |
 | Splits & Termination | Break spot | `breakSpot` | 0.1..0.98 | 0.68 | yes |  | Position along the spine where a break may happen. |
-| Prune | General | `pruneGeneral` | 0..1 | 0 |  |  | Removes children by general rules (crown shape). |
-| Prune | Interior | `pruneInterior` | 0..1 | 0 |  |  | Removes children pointing into the inside of the crown. |
-| Prune | Up | `pruneUp` | 0..1 | 0 |  |  | Removes children pointing upwards. |
-| Prune | Down | `pruneDown` | 0..1 | 0 |  |  | Removes children pointing downwards. |
-| Prune | Ground plane | `pruneGround` | bool | true |  |  | Removes children that would go below the ground plane. |
+| Prune | Interior | `pruneInterior` | 0..1 | 0 |  | yes | Removes branches that grow towards the inside of the model. The curve scales it along the parent. |
+| Prune | Up | `pruneUp` | 0..1 | 0 |  | yes | Removes branches that grow upwards (the steeper, the more likely). |
+| Prune | Down | `pruneDown` | 0..1 | 0 |  | yes | Removes branches that grow downwards (the steeper, the more likely). |
+| Prune | General | `pruneGeneral` | 0..1 | 0 |  | yes | Removes branches at random with this probability. |
+| Prune | Ground | `pruneGround` | 0..1 | 1 |  | yes | Removes branches that intersect the ground plane (strength = probability). |
 
 ### Tab: Forces
 
@@ -493,8 +503,6 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
 | Geometry | Spine only | `spineOnly` | bool | false |  |  | Emit pure skeleton spines without building polygon tube geometry. |
-| Geometry | Sides | `sides` | 3..64 | 8 |  |  | Number of sides of the tube cross-section. Fewer sides = fewer triangles. |
-| Geometry | Length segments | `lengthSegments` | 0..512 | 0 |  |  | 0 = use the Spine segments |
 | Geometry | Close end | `capEnd` | bool | true |  |  | Closes the tip of the tube with a cap. |
 | Geometry | Tip rings | `tipRings` | 1..8 | 2 |  |  | Rings of the rounded tip cap. |
 | Geometry | Close base | `capBase` | Auto / Yes / No | auto |  |  | Auto closes branches that do not grow from a parent. |
@@ -573,7 +581,22 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 | Amount | Amount | `windAmount` | 0..10 (slider 0..2) | 1 |  | yes | Strength multiplier of the wind on this node. |
 | Amount | Phase variance | `windPhaseVariance` | 0..1 | 0.5 |  |  | Random phase offset so neighbours do not sway in sync. |
 
-### Tab: Segments _(not implemented yet - shown disabled)_
+### Tab: Segments
+
+| Section | Parameter | id | Range | Default | Var | Curve | Meaning |
+|---|---|---|---|---|---|---|---|
+|  | Accuracy | `accuracy` | 4..256 | 24 |  |  | Exact number of points of the high-resolution spine the branch is built from (higher = smoother, slower). |
+|  | Influence | `segmentInfluence` | 0..4 (slider 0..2) | 1 |  |  | Scales how strongly forces and spine properties act per accurate segment. 1 keeps the shape when Accuracy changes. |
+|  | Scalar | `segmentScalar` | 0.1..4 (slider 0.1..2) | 1 |  |  | Multiplies the polygon count of the mesh (length and radial segments). |
+| Length | Style | `lengthStyle` | Default / Legacy | default |  |  | Default builds the accurate layout with the relative basis; Legacy keeps the older layout (relative segments per metre). |
+| Length | Absolute | `segments` | 1..512 | 10 |  |  | Minimum number of length segments. |
+| Length | + Relative | `relativeSegments` | 0..20 (slider 0..2) | 0 |  |  | Adds more length segments, multiplied by the Relative basis. |
+| Length | Relative basis | `relativeBasis` | Length only / Length/radius ratio / Parent's length segments | length-radius-ratio |  |  | What + Relative is multiplied by: the branch length, its length / radius ratio (recommended) or the length segments of the parent. |
+| Length | Weld scalar | `weldScalar` | 0..4 (slider 0..2) | 1 |  |  | Scales the number of segments in the weld part, where the branch is fused to its parent. |
+| Length | Optimization | `optimization` | 0..45 ° | 0 |  |  | Drops segments where the spine is nearly straight: the larger the value, the bigger the bend must be to keep a segment (0 = keep all). |
+| Radial | Absolute | `sides` | 0..64 | 8 |  |  | Minimum number of radial segments (sides). |
+| Radial | + Relative | `radialRelative` | 0..200 (slider 0..40) | 0 |  |  | Adds radial segments, multiplied by the Relative basis. |
+| Radial | Relative basis | `radialBasis` | Radius / Parent's radial segments | radius |  |  | What + Relative is multiplied by: the branch radius in metres or the radial segments of the parent. |
 
 ### Tab: Physics _(not implemented yet - shown disabled)_
 
@@ -659,37 +682,36 @@ Lightweight spine-only structural guides for attaching foliage or child branches
 
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
-| Length | Absolute | `length` | 0.02..500 (slider 0.02..20) m | 1.8 | yes | yes | Length of each child in metres. |
-| Length | Relative to parent | `lengthRelative` | bool | false |  |  | Makes the length depend on the length of the parent. |
-| Length | + % of parent | `lengthPercent` | 0..2 (slider 0..1) | 0.08 |  | yes | Adds a percentage of the parent length to the absolute length. |
+| Length | Absolute | `length` | 0..500 (slider 0..20) m | 1.8 | yes | yes | Fixed part of the length in metres. The curve scales the length along the parent. |
+| Length | + % of parent | `lengthPercent` | 0..2 (slider 0..1) | 0.08 |  | yes | Adds this fraction of the parent length (1 = as long as the parent). |
 | Length | + % of radius | `lengthPercentRadius` | 0..500 (slider 0..100) | 0 |  |  | Adds this many parent radii to the length. |
-| Length | Match one v tile | `matchOneVTile` | Generated / Yes / No | generated |  |  | Yes: the bark texture is stretched so it tiles exactly once along the spine. |
-| Length | Shape scale | `shapeScale` | 0..5 (slider 0..2) | 1 |  |  | Multiplies curvature and noise amounts of the spine. |
-| Length | Limit length | `lengthLimit` | bool | false |  |  | Prevents children from becoming longer than the parent. |
+| Length | Match one V tile | `matchOneVTile` | bool | false |  |  | Sets the length to exactly one V tile of the material, from its aspect ratio and the branch radius, and maps V from 0 to 1. |
+| Length | Stop shape control | `stopShapeControl` | bool | false |  |  | Ignores the crown shape envelope and the generation damping, so this node is not shaped by its ancestors. |
+| Length | Shape scale | `shapeScale` | 0..5 (slider 0..2) | 1 |  |  | Strength of the crown shape on the length: 0 = off, 1 = as drawn, above 1 = exaggerated. |
+| Length | Limit length | `lengthLimit` | bool | false |  |  | Prevents children from becoming longer than the Absolute length. |
 | Length | Crown envelope | `crownShape` | Natural / Conical / Oval / Vase / Columnar / Custom | natural |  |  | Branch length as a function of the normalised height on the parent: cone (conifer), oval (oak), vase, column or a custom curve. |
 | Length | Crown curve | `crownCurve` | curve | curve |  |  | Length multiplier from parent base (0) to tip (1). |
 | Clamp | Min | `lengthMin` | 0..500 (slider 0..20) m | 0 |  |  | 0 = no minimum. |
 | Clamp | Max | `lengthMax` | 0..500 (slider 0..20) m | 0 |  |  | 0 = no maximum. |
-| Orientation | Start angle | `spread` | 0..180 ° | 42 | yes | yes | Angle between the child and its parent (degrees, 0 = parallel). |
-| Orientation | Start roll | `startRoll` | -180..180 ° | 0 | yes | yes | Rotation of the child around its own axis at the start. |
+| Orientation | Start angle | `spread` | 0..180 ° | 42 | yes | yes | Angle to the parent in degrees: 0 = parent direction, 90 = perpendicular, 180 = opposite. |
+| Orientation | Start roll | `startRoll` | -180..180 ° | 0 | yes | yes | Rotates the direction the Start angle is applied in (+ clockwise, - counter-clockwise). |
 | Orientation | Pitch | `pitch` | -90..90 ° | 0 | yes | yes | Tilts the starting direction up or down (degrees). |
-| Orientation | Roll | `spineRoll` | -180..180 ° | 0 |  |  | Rotation of the spine around its own axis. |
-| Orientation | Alignment | `alignment` | 0..1 | 0.2 |  |  | Rotates children towards the sun / up direction. |
+| Orientation | Roll | `spineRoll` | -180..180 ° | 0 |  |  | Rotates the branch around its own axis by a fixed amount, after Alignment. |
+| Orientation | Alignment | `alignment` | 0..1 | 0.2 |  |  | Blends a random up (0) with the world up (1), so the top of the branch points up. |
 | Orientation | Up / down | `upDown` | -2..2 (slider -1..1) | 0.05 |  | yes | Pushes the growth direction up (+) or down (−) along the length. |
-| Orientation | Weld start | `weldStart` | bool | false |  |  | Welds the child base into the parent surface to hide the seam. |
-| Shape | Gravity | `gravity` | -2..3 (slider -1..1.5) | 0.12 |  | yes | Bends the child downward (+) or upward (−) under gravity. |
-| Shape | Ancestor | `ancestor` | -1..1 | 0 |  | yes | Inherit part of the direction of the grandparent. |
+| Orientation | Unify | `unify` | bool | false |  |  | Nodes on opposite sides of the parent share the same orientation (mirrored roll). |
+| Orientation | Weld start | `weldStart` | bool | false |  |  | For Spine only branches: starts on the skin of the parent instead of on its spine. |
+| Shape | Gravity | `gravity` | -2..3 (slider -1..1.5) | 0.12 |  | yes | A downward force on the spine (+ bends down, - bends up). |
+| Shape | Ancestor | `ancestor` | -1..1 | 0 |  | yes | + grows towards the direction of the parent, like a bud; - grows away from it. |
 | Shape | Curvature | `curvature` | -2..2 (slider -1..1) | 0.06 | yes | yes | Overall bend of the child along its length. |
-| Shape | Straightness | `straightness` | 0..1 | 0.2 |  |  | How strongly the child resists bending; 1 = ruler straight. |
-| Shape | Twist | `twist` | -720..720 (slider -180..180) ° | 0 | yes | yes | Adds a rotation around the axis along the path. |
-| Parent Curl | Up | `curlUp` | -3..3 (slider -1..1) | 0 |  |  | Curl toward the parent direction (up the parent). |
-| Parent Curl | Right | `curlRight` | -3..3 (slider -1..1) | 0 |  |  | Curl sideways relative to the parent. |
-| Parent Curl | Out | `curlOut` | -3..3 (slider -1..1) | 0 |  |  | Curl away from the parent axis (negative = toward it). |
-| Zigzag | Intensity | `zigzag` | 0..3 (slider 0..1) | 0 |  |  | Alternating bend at every segment (zig-zag stem). |
-| Segment length | Absolute | `segments` | 2..512 | 8 |  |  | Number of segments along the spine. |
-| Segment length | + Relative | `relativeSegments` | 0..20 (slider 0..4) /m | 0 |  |  | Extra segments scaled by the length of the child. |
-| Segment length | Accuracy | `accuracy` | 8..128 | 24 |  |  | Number of sample points used to follow the spine (higher = smoother, slower). |
-| Segment length | Optimization | `optimization` | 0..30 ° | 0 |  |  | Curvature-aware adaptive simplification threshold (0 = keep all segments). |
+| Shape | Straightness | `straightness` | 0..1 | 0.2 |  |  | Removes noise: fully at the base, fading to none at the tip. |
+| Shape | Twist | `twist` | -720..720 (slider -180..180) ° | 0 | yes | yes | Total twist of the branch around its axis, in degrees. |
+| Parent Curl | Up | `curlUp` | -3..3 (slider -1..1) | 0 |  |  | Curl around the parent direction (the branch winds around its parent). |
+| Parent Curl | Right | `curlRight` | -3..3 (slider -1..1) | 0 |  |  | Curl around the axis perpendicular to the parent direction and the initial direction. |
+| Parent Curl | Out | `curlOut` | -3..3 (slider -1..1) | 0 |  |  | Curl around the axis pointing straight out of the parent. |
+| Zigzag | Intensity | `zigzag` | 0..3 (slider 0..1) | 0 |  |  | How sharply the spine changes direction at every zigzag corner (0 = off). |
+| Segment length | Absolute | `zigzagLengthAbsolute` | 0..50 (slider 0..2) m | 0 |  | yes | Fixed part of the distance between two zigzag corners. The curve scales the length along the branch. |
+| Segment length | + Relative | `zigzagLengthRelative` | 0..1 | 0.1 |  |  | Adds this fraction of the branch length to the distance between two zigzag corners. |
 | Radius | Radius | `radius` | 0.001..20 (slider 0.001..0.5) m | 0.02 | yes | yes | Size: the radius of the cross-section at the base (metres), or the range of an effect. |
 | Radius | % of parent | `parentRadiusInfluence` | 0..1 | 0.4 |  | yes | Makes the radius a percentage of the parent radius at the attachment point. |
 | Radius | Max parent ratio | `parentRadiusMax` | 0.05..1.5 | 0.82 |  |  | Upper limit of the child radius relative to the parent. |
@@ -711,11 +733,11 @@ Lightweight spine-only structural guides for attaching foliage or child branches
 | Splits & Termination | Max split depth | `splitMaxDepth` | 1..3 | 1 |  |  | Maximum number of successive forks. |
 | Splits & Termination | Break chance | `breakChance` | 0..1 | 0 |  |  | Probability that the spine snaps and ends early. |
 | Splits & Termination | Break spot | `breakSpot` | 0.1..0.98 | 0.68 | yes |  | Position along the spine where a break may happen. |
-| Prune | General | `pruneGeneral` | 0..1 | 0 |  |  | Removes children by general rules (crown shape). |
-| Prune | Interior | `pruneInterior` | 0..1 | 0 |  |  | Removes children pointing into the inside of the crown. |
-| Prune | Up | `pruneUp` | 0..1 | 0 |  |  | Removes children pointing upwards. |
-| Prune | Down | `pruneDown` | 0..1 | 0 |  |  | Removes children pointing downwards. |
-| Prune | Ground plane | `pruneGround` | bool | true |  |  | Removes children that would go below the ground plane. |
+| Prune | Interior | `pruneInterior` | 0..1 | 0 |  | yes | Removes branches that grow towards the inside of the model. The curve scales it along the parent. |
+| Prune | Up | `pruneUp` | 0..1 | 0 |  | yes | Removes branches that grow upwards (the steeper, the more likely). |
+| Prune | Down | `pruneDown` | 0..1 | 0 |  | yes | Removes branches that grow downwards (the steeper, the more likely). |
+| Prune | General | `pruneGeneral` | 0..1 | 0 |  | yes | Removes branches at random with this probability. |
+| Prune | Ground | `pruneGround` | 0..1 | 1 |  | yes | Removes branches that intersect the ground plane (strength = probability). |
 
 ### Tab: Forces
 
@@ -749,8 +771,6 @@ Lightweight spine-only structural guides for attaching foliage or child branches
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
 | Geometry | Spine only | `spineOnly` | bool | true |  |  | Emit pure skeleton spines without building polygon tube geometry. |
-| Geometry | Sides | `sides` | 3..64 | 6 |  |  | Number of sides of the tube cross-section. Fewer sides = fewer triangles. |
-| Geometry | Length segments | `lengthSegments` | 0..512 | 0 |  |  | 0 = use the Spine segments |
 | Geometry | Close end | `capEnd` | bool | true |  |  | Closes the tip of the tube with a cap. |
 | Geometry | Tip rings | `tipRings` | 1..8 | 2 |  |  | Rings of the rounded tip cap. |
 | Geometry | Close base | `capBase` | Auto / Yes / No | auto |  |  | Auto closes branches that do not grow from a parent. |
@@ -829,7 +849,22 @@ Lightweight spine-only structural guides for attaching foliage or child branches
 | Amount | Amount | `windAmount` | 0..10 (slider 0..2) | 1 |  | yes | Strength multiplier of the wind on this node. |
 | Amount | Phase variance | `windPhaseVariance` | 0..1 | 0.5 |  |  | Random phase offset so neighbours do not sway in sync. |
 
-### Tab: Segments _(not implemented yet - shown disabled)_
+### Tab: Segments
+
+| Section | Parameter | id | Range | Default | Var | Curve | Meaning |
+|---|---|---|---|---|---|---|---|
+|  | Accuracy | `accuracy` | 4..256 | 24 |  |  | Exact number of points of the high-resolution spine the branch is built from (higher = smoother, slower). |
+|  | Influence | `segmentInfluence` | 0..4 (slider 0..2) | 1 |  |  | Scales how strongly forces and spine properties act per accurate segment. 1 keeps the shape when Accuracy changes. |
+|  | Scalar | `segmentScalar` | 0.1..4 (slider 0.1..2) | 1 |  |  | Multiplies the polygon count of the mesh (length and radial segments). |
+| Length | Style | `lengthStyle` | Default / Legacy | default |  |  | Default builds the accurate layout with the relative basis; Legacy keeps the older layout (relative segments per metre). |
+| Length | Absolute | `segments` | 1..512 | 8 |  |  | Minimum number of length segments. |
+| Length | + Relative | `relativeSegments` | 0..20 (slider 0..2) | 0 |  |  | Adds more length segments, multiplied by the Relative basis. |
+| Length | Relative basis | `relativeBasis` | Length only / Length/radius ratio / Parent's length segments | length-radius-ratio |  |  | What + Relative is multiplied by: the branch length, its length / radius ratio (recommended) or the length segments of the parent. |
+| Length | Weld scalar | `weldScalar` | 0..4 (slider 0..2) | 1 |  |  | Scales the number of segments in the weld part, where the branch is fused to its parent. |
+| Length | Optimization | `optimization` | 0..45 ° | 0 |  |  | Drops segments where the spine is nearly straight: the larger the value, the bigger the bend must be to keep a segment (0 = keep all). |
+| Radial | Absolute | `sides` | 0..64 | 6 |  |  | Minimum number of radial segments (sides). |
+| Radial | + Relative | `radialRelative` | 0..200 (slider 0..40) | 0 |  |  | Adds radial segments, multiplied by the Relative basis. |
+| Radial | Relative basis | `radialBasis` | Radius / Parent's radial segments | radius |  |  | What + Relative is multiplied by: the branch radius in metres or the radial segments of the parent. |
 
 ### Tab: Physics _(not implemented yet - shown disabled)_
 

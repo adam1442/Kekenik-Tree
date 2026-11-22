@@ -33,6 +33,7 @@ import {
   orientationParams,
   postParams,
   shapeParams,
+  segmentParams,
   skinParams,
   spineParams,
   splitHelperParams,
@@ -46,6 +47,8 @@ import { leafDeformParams, leafDependencyKey, materialHeightKey } from './leafDe
 import { leafLightingParams } from './leafLightingParams';
 import { migrateLeafParams } from './foliage';
 import { withGenerationMigration } from './generationMigration';
+import { migrateSpineParams } from '@/generators/spine';
+import { vTileDependencyKey } from './vTile';
 import { withGenerationCommon } from './generationEnv';
 import { withLineage } from './lineageHook';
 import { evaluateRoot } from './root';
@@ -85,7 +88,7 @@ const withDisplacementWarning =
   };
 
 /** Cache-key hook shared by every node that has a Displacement tab. */
-const displacementDeps = (params: NodeParams): string => displacementDependencyKey(params);
+const displacementDeps = (params: NodeParams): string => `${displacementDependencyKey(params)}|${vTileDependencyKey(params)}`;
 
 const withChildren: PortDef[] = [parentIn, childrenOut, ...attachIns];
 const leafOnly: PortDef[] = [parentIn, ...attachIns];
@@ -100,9 +103,10 @@ const structureParams = (
 ): ParamDef[] => [
   ...generationParams(gen),
   ...spineParams(spine),
+  ...segmentParams(spine.kind, spine.segments, sides),
   ...forcesParams(),
   ...shapeParams(flareRadius, flareHeight),
-  ...skinParams(sides, spineOnly),
+  ...skinParams(spineOnly),
   ...uvParams(),
   ...lodParams(),
   ...displacementParams(),
@@ -143,8 +147,8 @@ const baseNodeDefs: NodeDef[] = [
     description: 'Main stem with crown height, buttress flare, lean, gnarliness, and profile curves.',
     statsGroup: 'branches',
     ports: withChildren,
-    version: 2,
-    migrate: withGenerationMigration(),
+    version: 3,
+    migrate: withGenerationMigration((params) => migrateSpineParams(params)),
     params: structureParams(
       { number: 1, first: 0, last: 1, placement: true },
       { kind: 'trunk', length: 12, radius: 0.32, taper: 0.88, segments: 24, spread: 12, gravity: 0, upDown: 0.04, noiseAmount: 0.16 },
@@ -164,8 +168,8 @@ const baseNodeDefs: NodeDef[] = [
     description: 'Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifurcations, and pruning.',
     statsGroup: 'branches',
     ports: withChildren,
-    version: 2,
-    migrate: withGenerationMigration(),
+    version: 3,
+    migrate: withGenerationMigration((params) => migrateSpineParams(params)),
     params: structureParams(
       { number: 12, first: 0.2, last: 0.95, jumble: 0.2, includeBranchExtended: true, placement: true, extend: true },
       { kind: 'branch', length: 3.2, radius: 0.06, taper: 0.88, segments: 10, spread: 48, gravity: 0.16, upDown: 0.06, noiseAmount: 0.2 },
@@ -183,8 +187,8 @@ const baseNodeDefs: NodeDef[] = [
     description: 'Subterranean and buttress roots grown below ground or blended into the trunk base.',
     statsGroup: 'roots',
     ports: withChildren,
-    version: 2,
-    migrate: withGenerationMigration(),
+    version: 3,
+    migrate: withGenerationMigration((params) => migrateSpineParams(params)),
     params: structureParams(
       { number: 6, first: 0, last: 0.12, jumble: 0.28, includeBranchExtended: true },
       { kind: 'root', length: 3.4, radius: 0.09, taper: 0.92, segments: 12, spread: 68, gravity: 0.2, upDown: -0.25, noiseAmount: 0.28 },
@@ -228,8 +232,8 @@ const baseNodeDefs: NodeDef[] = [
     description: 'Lightweight spine-only structural guides for attaching foliage or child branches without tube geometry.',
     statsGroup: 'branches',
     ports: withChildren,
-    version: 2,
-    migrate: withGenerationMigration(),
+    version: 3,
+    migrate: withGenerationMigration((params) => migrateSpineParams(params)),
     params: structureParams(
       { number: 8, first: 0.15, last: 0.95, jumble: 0.2, includeBranchExtended: true, placement: true },
       { kind: 'spine', length: 1.8, radius: 0.02, taper: 0.9, segments: 8, spread: 42, gravity: 0.12, upDown: 0.05, noiseAmount: 0.12 },
@@ -333,7 +337,7 @@ const baseNodeDefs: NodeDef[] = [
     ports: leafOnly,
     version: 2,
     migrate: withGenerationMigration(),
-    params: [...generationParams({ number: 1, first: 1, last: 1, extend: true }), ...capParams(), ...skinParams(8), ...uvParams(), ...displacementParams(), ...materialTabParams()],
+    params: [...generationParams({ number: 1, first: 1, last: 1, extend: true }), ...capParams(), ...skinParams(false, 8), ...uvParams(), ...displacementParams(), ...materialTabParams()],
     evaluate: withDisplacementWarning(evaluateCap),
     dependencyKey: displacementDeps,
   },

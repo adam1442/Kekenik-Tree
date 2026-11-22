@@ -4,6 +4,7 @@ import { getBool, getNumber, type NodeParams } from '@/contracts/params';
 import { emptySkeleton, type Skeleton } from '@/contracts/skeleton';
 import { clamp, deg2rad } from '@/core/math';
 import { sampleVariance } from '@/graph/engine/seeds';
+import { alignedNormal, randomUpRoll, startAngleFromDegrees, unifiedStartRoll } from '@/generators/spine';
 import { InstanceScope, type InstanceHandle } from '@/instances/scope';
 import { emitStructureOutput, extractParentSkeleton, extractParentTable, isGeneratorActive, MAX_BRANCHES_PER_NODE } from './common';
 import { createInstanceConfigResolver } from './instanceSupport';
@@ -11,9 +12,12 @@ import { generateChildPlacements } from './distribution';
 import { createGenerationEnv, sampledSink } from './generationEnv';
 import {
   buildChildInitialFrame,
+  orthonormalNormal,
   prepareParentBranch,
+  rotateAroundAxis,
   sampleParentBranch,
   v3Add,
+  v3Cross,
   v3Norm,
   v3Scale,
   type Vec3,
@@ -76,27 +80,32 @@ function growOneLevel(
       const spreadDeg = pl.isExtension
         ? 0
         : sampleVariance(childRng.fork('spr'), icfg.spreadDeg, icfg.spreadVar) * evalParentCurve(inst.params, 'spread', u, 1);
-      const startRollDeg =
-        sampleVariance(childRng.fork('srl'), icfg.startRollDeg, icfg.startRollVar, 45) *
-        evalParentCurve(inst.params, 'startRoll', u, 1);
+      const startRollDeg = unifiedStartRoll(
+        sampleVariance(childRng.fork('srl'), icfg.startRollDeg, icfg.startRollVar, 45) * evalParentCurve(inst.params, 'startRoll', u, 1),
+        pl.side ?? 0,
+        icfg.unify,
+      );
       const pitchDeg =
         sampleVariance(childRng.fork('pit'), icfg.pitchDeg, icfg.pitchVar, 30) *
         evalParentCurve(inst.params, 'pitch', u, 1);
 
-      const frame = buildChildInitialFrame(
+      const start = buildChildInitialFrame(
         { tangent: sample.tangent, normal: sample.normal, binormal: sample.binormal },
         {
           azimuthRad: pl.azimuthRad + inst.rotationOffsetRad,
-          spreadRad: deg2rad(clamp(spreadDeg, 0, 179)),
+          spreadRad: startAngleFromDegrees(spreadDeg),
           startRollRad: deg2rad(startRollDeg),
           pitchRad: deg2rad(pitchDeg),
-          rollRad: deg2rad(icfg.spineRollDeg + inst.rollOffsetDeg),
-          alignment: effectiveAlignment,
         },
       );
+      // Orientation order: random up -> Alignment (towards world up) -> Roll
+      const upRoll = randomUpRoll(branchRng.fork(`up:${pl.groupIndex ?? pl.slotIndex}`), childRng.fork('up'), icfg.unify);
+      const aligned = alignedNormal(start.tangent, start.normal, effectiveAlignment, upRoll);
+      const rolled = orthonormalNormal(start.tangent, rotateAroundAxis(aligned, start.tangent, deg2rad(icfg.spineRollDeg + inst.rollOffsetDeg)));
+      const frame = { tangent: start.tangent, normal: rolled, binormal: v3Norm(v3Cross(start.tangent, rolled), [0, 1, 0]) };
 
       let origin: Vec3 = sample.position;
-      if (cfg.weldStart && !pl.isExtension) {
+      if (icfg.weldStart && !pl.isExtension) {
         const ca = Math.cos(pl.azimuthRad);
         const sa = Math.sin(pl.azimuthRad);
         const radial = v3Norm([
@@ -104,7 +113,7 @@ function growOneLevel(
           sample.normal[1] * ca + sample.binormal[1] * sa,
           sample.normal[2] * ca + sample.binormal[2] * sa,
         ]);
-        origin = v3Add(origin, v3Scale(radial, sample.radius * 0.85));
+        origin = v3Add(origin, v3Scale(radial, sample.radius));
       }
       const sink = sampledSink(params, childRng);
       if (Math.abs(sink) > 1e-5) {
@@ -129,6 +138,8 @@ function growOneLevel(
           lengthScale: inst.lengthScale,
           radiusScale: inst.radiusScale,
           side: pl.side,
+          parentLengthSegments: Math.max(0, pb.count - 1),
+          parentRadialSegments: parentSk.attributes.get('radialSides')?.[pb.start] ?? 0,
         },
         childRng,
         builder,
@@ -160,6 +171,7 @@ function mergeSkeletons(levels: readonly Skeleton[]): Skeleton {
     const nz = sk.attributes.get('rmfNormalZ');
     const tw = sk.attributes.get('twist');
     const sd = sk.attributes.get('side');
+    const rs = sk.attributes.get('radialSides');
     const curPointOffset = builder.pointCount;
     const curBranchOffset = builder.branchCount;
 
@@ -186,6 +198,7 @@ function mergeSkeletons(levels: readonly Skeleton[]): Skeleton {
         twists,
         initialNormalHint: hint,
         ...(sd && (sd[b.start] as number) !== 0 ? { side: sd[b.start] as number } : {}),
+        ...(rs && (rs[b.start] as number) > 0 ? { radialSides: rs[b.start] as number } : {}),
       });
     }
 

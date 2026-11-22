@@ -22,7 +22,8 @@ export interface TubeOptions {
   /** Skip a skeleton branch (by index) without meshing it, e.g. instances hidden in Node mode. */
   skipBranch?: (branchIndex: number) => boolean;
   /** Ring sides of a branch; `maxRadius` is its thickest radius (for sizing sides to the radius, e.g. displacement). */
-  radialSegments(generation: number, maxRadius: number): number;
+  /** Radial segments of a branch; `branchIndex` is its index in the skeleton (stored per-branch counts). */
+  radialSegments(generation: number, maxRadius: number, branchIndex?: number): number;
   /** Linear RGB colour of a ring. */
   color(generation: number, t: number): [number, number, number];
   /** Metres of branch length per UV v unit. */
@@ -259,7 +260,7 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
     if (b.generation > opts.maxGeneration || b.count < 2 || opts.skipBranch?.(bi) === true) continue;
     let maxR = 0;
     for (let k = 0; k < b.count; k++) maxR = Math.max(maxR, sk.radius[b.start + k] as number);
-    const sides = Math.max(3, Math.round(opts.radialSegments(b.generation, maxR)));
+    const sides = Math.max(3, Math.round(opts.radialSegments(b.generation, maxR, bi)));
     const V = sides + 1;
     const junction = b.parentPoint >= 0;
     const collarAmount = junction ? collarAmountOpt : 0;

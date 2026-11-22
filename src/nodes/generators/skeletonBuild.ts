@@ -1,6 +1,14 @@
 import type { Branch, Skeleton } from '@/contracts/skeleton';
 import { advanceRMF, orthonormalNormal, rotateAroundAxis, v3Norm, type Vec3 } from './frames';
 
+/** First `n` entries of `src`, zero-padded when the source is shorter. */
+function fitLength(src: Float32Array, n: number): Float32Array {
+  if (src.length >= n) return src.slice(0, n);
+  const out = new Float32Array(n);
+  out.set(src);
+  return out;
+}
+
 const safe = (v: number, fallback = 0): number => (Number.isFinite(v) ? v : fallback);
 
 /**
@@ -27,6 +35,8 @@ export class StructureSkeletonBuilder {
   private ageArr: Float32Array;
   /** Left / right side (+1 / -1) per point; null until a branch with a side is added. */
   private sideArr: Float32Array | null = null;
+  /** Radial segments of the branch per point; null until a branch with a stored count is added. */
+  private sidesArr: Float32Array | null = null;
   private readonly branches: Branch[] = [];
 
   constructor(initialPointCapacity = 1024) {
@@ -109,6 +119,8 @@ export class StructureSkeletonBuilder {
     initialNormalHint?: Vec3;
     /** Left / right side (+1 / -1) of the branch on its parent; stored as the `side` skeleton attribute. */
     side?: number;
+    /** Final radial segment count of the branch; stored as the `radialSides` skeleton attribute (used by the mesher and by children). */
+    radialSides?: number;
   }): { branchId: number; start: number; end: number; length: number } {
     const n = opts.count;
     if (n < 2) {
@@ -202,6 +214,15 @@ export class StructureSkeletonBuilder {
       this.sideArr.fill(opts.side > 0 ? 1 : -1, start, start + n);
     }
 
+    if (opts.radialSides !== undefined && opts.radialSides > 0) {
+      if (!this.sidesArr || this.sidesArr.length < this.cap) {
+        const grown = new Float32Array(this.cap);
+        if (this.sidesArr) grown.set(this.sidesArr);
+        this.sidesArr = grown;
+      }
+      this.sidesArr.fill(opts.radialSides, start, start + n);
+    }
+
     this.len += n;
     const branch: Branch = {
       id: branchId,
@@ -224,7 +245,8 @@ export class StructureSkeletonBuilder {
       attributes.set('rmfNormalY', this.nrmY.slice(0, n));
       attributes.set('rmfNormalZ', this.nrmZ.slice(0, n));
       attributes.set('twist', this.tws.slice(0, n));
-      if (this.sideArr) attributes.set('side', this.sideArr.slice(0, n));
+      if (this.sideArr) attributes.set('side', fitLength(this.sideArr, n));
+      if (this.sidesArr) attributes.set('radialSides', fitLength(this.sidesArr, n));
     }
     return {
       count: n,

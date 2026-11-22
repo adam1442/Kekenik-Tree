@@ -35,6 +35,9 @@ export function installMaterialSystem(app: AppContext): () => void {
     for (const m of lib.materials()) {
       const id = m.slots.height?.texture?.assetId;
       if (id && !hasDisplacementSource(id)) void tm.loadPixels(id);
+      // Spine > Length > Match one V tile reads the aspect ratio of the colour texture.
+      const colorId = m.slots.color?.texture?.assetId;
+      if (colorId && !hasDisplacementSource(colorId)) void tm.loadPixels(colorId);
     }
   };
 

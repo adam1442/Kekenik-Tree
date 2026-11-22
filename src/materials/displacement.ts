@@ -99,6 +99,12 @@ export function registerDisplacementSource(assetId: string, src: DisplacementSou
 }
 
 export const hasDisplacementSource = (assetId: string): boolean => sources.has(assetId);
+
+/** Pixel size of a decoded image asset, or null while it is not decoded. */
+export function getSourceSize(assetId: string): { width: number; height: number } | null {
+  const src = sources.get(assetId);
+  return src ? { width: src.width, height: src.height } : null;
+}
 export function onDisplacementSourcesChanged(fn: () => void): () => void {
   listeners.add(fn);
   return () => listeners.delete(fn);

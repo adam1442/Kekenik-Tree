@@ -5,6 +5,28 @@ import { clamp, deg2rad } from '@/core/math';
 import { createSimplex, type SimplexNoise } from '@/core/noise';
 import type { Rng } from '@/core/rng';
 import { sampleVariance } from '@/graph/engine/seeds';
+import {
+  LENGTH_BASIS,
+  RADIAL_BASIS,
+  accurateStepCount,
+  clampLength,
+  curlStepAngle,
+  directionalPruneChance,
+  generalPruneChance,
+  groundPrunes,
+  influenceGain,
+  intersectsGround,
+  lengthSegmentCount,
+  noiseKeep,
+  oneVTileLength,
+  pruneStrength,
+  radialSegmentCount,
+  reshapeWeldSamples,
+  shapedEnvelope,
+  spineLength,
+  zigzagKick,
+  zigzagSegmentLength,
+} from '@/generators/spine';
 import { compileSpineForceHook, type CompiledSpineForceHook } from './forcesHook';
 import {
   advanceRMF,
@@ -20,6 +42,7 @@ import {
   type Vec3,
 } from './frames';
 import type { StructureSkeletonBuilder } from './skeletonBuild';
+import { barkTextureAspect } from './vTile';
 
 const LOD_SEG_SCALE = [1, 0.75, 0.5, 0.35] as const;
 
@@ -44,13 +67,26 @@ export interface CompiledSpineConfig {
   readonly forceHook: CompiledSpineForceHook;
 
   readonly accuracy: number;
+  /** Segments tab: Style Legacy keeps the old layout (relative segments per metre, accuracy scaled by the split position). */
+  readonly legacyStyle: boolean;
+  /** Influence: scales the per-accurate-segment effect of forces and spine properties. */
+  readonly influence: number;
+  /** Scalar: polygon count multiplier (already folded into `baseSegments` / `relativeSegments`, applied to the radial count). */
+  readonly segmentScalar: number;
   readonly baseSegments: number;
   readonly relativeSegments: number;
+  readonly relativeBasis: string;
+  readonly weldScalar: number;
   readonly optimizationRad: number;
+  readonly radialAbsolute: number;
+  readonly radialRelative: number;
+  readonly radialBasis: string;
 
   readonly lengthBase: number;
   readonly lengthVar: number;
-  readonly lengthRelative: boolean;
+  readonly matchOneVTile: boolean;
+  readonly vTileAspect: number;
+  readonly stopShapeControl: boolean;
   readonly lengthPercent: number;
   readonly lengthPercentRadius: number;
   readonly lengthMin: number;
@@ -62,6 +98,9 @@ export interface CompiledSpineConfig {
   readonly curlRight: number;
   readonly curlOut: number;
   readonly zigzag: number;
+  readonly zigzagLengthAbsolute: number;
+  readonly zigzagLengthRelative: number;
+  readonly zigzagLengthLut: Float32Array | null;
   readonly lengthLimit: boolean;
   readonly crownHeight: number;
 
@@ -81,6 +120,7 @@ export interface CompiledSpineConfig {
   readonly spineRollDeg: number;
   readonly alignment: number;
   readonly weldStart: boolean;
+  readonly unify: boolean;
 
   readonly curvatureBase: number;
   readonly curvatureVar: number;
@@ -118,7 +158,8 @@ export interface CompiledSpineConfig {
   readonly pruneInterior: number;
   readonly pruneUp: number;
   readonly pruneDown: number;
-  readonly pruneGround: boolean;
+  /** Probability (0..1) that a branch intersecting the ground plane is removed. */
+  readonly pruneGround: number;
 
   // Root-specific parameters
   readonly isRoot: boolean;
@@ -161,11 +202,13 @@ export function compileSpineConfig(
           1,
         );
 
-  const rawAccuracy = Math.max(8, Math.min(128, Math.round(getNumber(params, 'accuracy', 32))));
-  const accuracy = lod >= 2 ? Math.max(8, Math.round(rawAccuracy * 0.5)) : rawAccuracy;
-  const baseSegments = Math.max(1, Math.round(getNumber(params, 'segments', 12) * lodFactor));
-  const relativeSegments = Math.max(0, getNumber(params, 'relativeSegments', 0) * lodFactor);
+  const rawAccuracy = Math.max(4, Math.min(256, Math.round(getNumber(params, 'accuracy', 32))));
+  const accuracy = lod >= 2 ? Math.max(4, Math.round(rawAccuracy * 0.5)) : rawAccuracy;
+  const segmentScalar = clamp(getNumber(params, 'segmentScalar', 1), 0.1, 4);
+  const baseSegments = Math.max(1, Math.round(getNumber(params, 'segments', 12) * lodFactor * segmentScalar));
+  const relativeSegments = Math.max(0, getNumber(params, 'relativeSegments', 0) * lodFactor * segmentScalar);
   const optimizationRad = deg2rad(clamp(getNumber(params, 'optimization', 0), 0, 45));
+  const matchOneVTile = getBool(params, 'matchOneVTile', false);
 
   const radiusProfileCurve = getCurveValue(params, 'radiusProfile');
 
@@ -177,13 +220,23 @@ export function compileSpineConfig(
     forceHook,
 
     accuracy,
+    legacyStyle: getString(params, 'lengthStyle', 'default') === 'legacy',
+    influence: clamp(getNumber(params, 'segmentInfluence', 1), 0, 4),
+    segmentScalar,
     baseSegments,
     relativeSegments,
+    relativeBasis: getString(params, 'relativeBasis', LENGTH_BASIS.ratio),
+    weldScalar: clamp(getNumber(params, 'weldScalar', 1), 0, 4),
     optimizationRad,
+    radialAbsolute: Math.max(0, getNumber(params, 'sides', 8)),
+    radialRelative: Math.max(0, getNumber(params, 'radialRelative', 0)),
+    radialBasis: getString(params, 'radialBasis', RADIAL_BASIS.radius),
 
-    lengthBase: Math.max(0.01, getNumber(params, 'length', 4)),
+    lengthBase: Math.max(0, getNumber(params, 'length', 4)),
     lengthVar: params.length?.variance ?? 0,
-    lengthRelative: getBool(params, 'lengthRelative', false),
+    matchOneVTile,
+    vTileAspect: matchOneVTile ? barkTextureAspect(params) : 1,
+    stopShapeControl: getBool(params, 'stopShapeControl', false),
     lengthPercent: Math.max(0, getNumber(params, 'lengthPercent', 0)),
     lengthPercentRadius: Math.max(0, getNumber(params, 'lengthPercentRadius', 0)),
     lengthMin: Math.max(0, getNumber(params, 'lengthMin', 0)),
@@ -195,6 +248,9 @@ export function compileSpineConfig(
     curlRight: getNumber(params, 'curlRight', 0),
     curlOut: getNumber(params, 'curlOut', 0),
     zigzag: Math.max(0, getNumber(params, 'zigzag', 0)),
+    zigzagLengthAbsolute: Math.max(0, getNumber(params, 'zigzagLengthAbsolute', 0)),
+    zigzagLengthRelative: Math.max(0, getNumber(params, 'zigzagLengthRelative', 0.1)),
+    zigzagLengthLut: params.zigzagLengthAbsolute?.curve ? curveToLUT(params.zigzagLengthAbsolute.curve, 256) : null,
     lengthLimit: getBool(params, 'lengthLimit', false),
     crownHeight: clamp(getNumber(params, 'crownHeight', 0.25), 0, 0.95),
 
@@ -213,9 +269,10 @@ export function compileSpineConfig(
     pitchVar: params.pitch?.variance ?? 0,
     spineRollDeg: getNumber(params, 'spineRoll', 0),
     alignment: clamp(getNumber(params, 'alignment', 0), 0, 1),
-    weldStart: getBool(params, 'weldStart', false),
+    weldStart: getBool(params, 'weldStart', false) && getBool(params, 'spineOnly', false),
+    unify: getBool(params, 'unify', false),
 
-    curvatureBase: getNumber(params, 'curvature', 0) * Math.max(0, getNumber(params, 'shapeScale', 1)),
+    curvatureBase: getNumber(params, 'curvature', 0),
     curvatureVar: params.curvature?.variance ?? 0,
     straightness: clamp(getNumber(params, 'straightness', 0.2), 0, 1),
     twistDeg: getNumber(params, 'twist', 0),
@@ -223,7 +280,7 @@ export function compileSpineConfig(
 
     earlyNoiseAmount: Math.max(0, getNumber(params, 'earlyNoiseAmount', 0.08)),
     earlyNoiseFreq: Math.max(0.05, getNumber(params, 'earlyNoiseFrequency', 1.2)),
-    noiseAmountBase: Math.max(0, getNumber(params, 'noiseAmount', 0.2)) * Math.max(0, getNumber(params, 'shapeScale', 1)),
+    noiseAmountBase: Math.max(0, getNumber(params, 'noiseAmount', 0.2)),
     noiseFrequency: Math.max(0, getNumber(params, 'noiseFrequency', 1)),
     noiseTwist: getNumber(params, 'noiseTwist', 0),
     noiseSmooth: clamp(getNumber(params, 'noiseSmooth', 0), 0, 1),
@@ -251,7 +308,7 @@ export function compileSpineConfig(
     pruneInterior: clamp(getNumber(params, 'pruneInterior', 0), 0, 1),
     pruneUp: clamp(getNumber(params, 'pruneUp', 0), 0, 1),
     pruneDown: clamp(getNumber(params, 'pruneDown', 0), 0, 1),
-    pruneGround: isRoot ? false : getBool(params, 'pruneGround', false),
+    pruneGround: isRoot ? 0 : pruneStrength(params.pruneGround?.value, 0),
 
     isRoot,
     rootSpread: clamp(getNumber(params, 'rootSpread', 1), 0, 3),
@@ -294,6 +351,10 @@ export interface SpineSpawnSpec {
   radiusScale?: number;
   /** Left / right side (+1 / -1) of the spine on its parent (Interval / Phyllotaxy), stored as the `side` attribute. */
   side?: number;
+  /** Length segments of the parent branch (Relative basis: Parent's length segments). */
+  parentLengthSegments?: number;
+  /** Radial segments of the parent branch (Relative basis: Parent's radial segments). */
+  parentRadialSegments?: number;
 }
 
 /**
@@ -301,26 +362,13 @@ export interface SpineSpawnSpec {
  * Returns true if this candidate branch should be pruned before integration.
  */
 export function shouldPruneBranch(cfg: CompiledSpineConfig, spec: SpineSpawnSpec, rng: Rng): boolean {
-  if (cfg.pruneGeneral > 0 && rng.fork('pg').next() < cfg.pruneGeneral) {
-    return true;
-  }
+  const curve = (id: string): number => evalParentCurve(cfg.params, id, spec.parentU, 1);
+  if (cfg.pruneGeneral > 0 && rng.fork('pg').next() < generalPruneChance(cfg.pruneGeneral, curve('pruneGeneral'))) return true;
   const T = spec.initialFrame.tangent;
-  if (cfg.pruneUp > 0 && T[2] > 0.1) {
-    if (rng.fork('pu').next() < cfg.pruneUp * clamp(T[2], 0, 1)) return true;
-  }
-  if (cfg.pruneDown > 0 && T[2] < -0.05) {
-    if (rng.fork('pd').next() < cfg.pruneDown * clamp(-T[2], 0, 1)) return true;
-  }
+  if (cfg.pruneUp > 0 && rng.fork('pu').next() < directionalPruneChance('up', cfg.pruneUp, curve('pruneUp'), T, spec.origin)) return true;
+  if (cfg.pruneDown > 0 && rng.fork('pd').next() < directionalPruneChance('down', cfg.pruneDown, curve('pruneDown'), T, spec.origin)) return true;
   if (cfg.pruneInterior > 0 && spec.hasParent) {
-    const rHorizLen = Math.hypot(spec.origin[0], spec.origin[1]);
-    if (rHorizLen > 0.05) {
-      const outX = spec.origin[0] / rHorizLen;
-      const outY = spec.origin[1] / rHorizLen;
-      const horizDot = outX * T[0] + outY * T[1];
-      if (horizDot < 0) {
-        if (rng.fork('pi').next() < cfg.pruneInterior * clamp(-horizDot, 0, 1)) return true;
-      }
-    }
+    if (rng.fork('pi').next() < directionalPruneChance('interior', cfg.pruneInterior, curve('pruneInterior'), T, spec.origin)) return true;
   }
   return false;
 }
@@ -328,35 +376,36 @@ export function shouldPruneBranch(cfg: CompiledSpineConfig, spec: SpineSpawnSpec
 /**
  * Computes effective branch length from Absolute + Relative (% of parent) + Crown shape + Variance.
  */
-export function computeBranchLength(cfg: CompiledSpineConfig, spec: SpineSpawnSpec, rng: Rng): number {
+export function computeBranchLength(cfg: CompiledSpineConfig, spec: SpineSpawnSpec, rng: Rng, baseRadius = 0): number {
   if (spec.lengthOverride !== undefined) return Math.max(0.02, spec.lengthOverride);
 
-  const sampledAbs = Math.max(0.02, sampleVariance(rng.fork('len'), cfg.lengthBase, cfg.lengthVar));
+  const sampledAbs = Math.max(0, sampleVariance(rng.fork('len'), cfg.lengthBase, cfg.lengthVar));
   const parentCurveScale = Math.max(0.02, evalParentCurve(cfg.params, 'length', spec.parentU, 1));
+  const terms = {
+    absolute: sampledAbs,
+    percentParent: cfg.lengthPercent,
+    percentRadius: cfg.lengthPercentRadius,
+    parentLength: spec.parentLength,
+    parentRadius: spec.parentRadius,
+  };
 
   let len: number;
-  if (!spec.hasParent) {
+  if (cfg.matchOneVTile && baseRadius > 0) {
+    len = oneVTileLength(baseRadius, cfg.vTileAspect);
+  } else if (!spec.hasParent) {
     len = sampledAbs * parentCurveScale;
   } else if (cfg.isRoot) {
     // Roots near ground (low parentU) are longest
-    len = (sampledAbs + cfg.lengthPercent * spec.parentLength) * parentCurveScale * (1 - spec.parentU * 0.25);
+    len = spineLength(terms) * parentCurveScale * (1 - spec.parentU * 0.25);
   } else {
-    // Natural conical/crown envelope along parent unless overridden by an explicit curve
+    // Natural conical/crown envelope along parent unless overridden by an explicit curve or by Stop shape control
     const hasExplicitCurve = Boolean(cfg.params.length?.curve);
-    const naturalEnvelope = hasExplicitCurve ? 1 : crownEnvelope(cfg, spec.parentU);
-    const relPart = cfg.lengthRelative
-      ? (cfg.lengthPercent > 0 ? cfg.lengthPercent : 0.35) * spec.parentLength
-      : cfg.lengthPercent * spec.parentLength;
-    const absPart = cfg.lengthRelative && cfg.lengthPercent > 0 ? 0 : sampledAbs;
-    const genDamping = spec.generation > 1 ? Math.pow(0.82, spec.generation - 1) : 1;
-    len = (absPart + relPart + cfg.lengthPercentRadius * spec.parentRadius) * parentCurveScale * naturalEnvelope * genDamping;
-    if (cfg.lengthLimit) {
-      len = Math.min(len, cfg.lengthBase);
-    }
+    const envelope = cfg.stopShapeControl ? 1 : shapedEnvelope(hasExplicitCurve ? 1 : crownEnvelope(cfg, spec.parentU), cfg.shapeScale);
+    const genDamping = !cfg.stopShapeControl && spec.generation > 1 ? Math.pow(0.82, spec.generation - 1) : 1;
+    len = spineLength(terms) * parentCurveScale * envelope * genDamping;
+    if (cfg.lengthLimit) len = Math.min(len, cfg.lengthBase);
   }
-  if (cfg.lengthMax > 0) len = Math.min(len, cfg.lengthMax);
-  if (cfg.lengthMin > 0) len = Math.max(len, cfg.lengthMin);
-  return Math.max(0.02, len);
+  return Math.max(0.02, clampLength(len, cfg.lengthMin, cfg.lengthMax));
 }
 
 /** Branch length multiplier as a function of the normalised height `u` on the parent (crown silhouette). */
@@ -469,8 +518,8 @@ export function growSpineIntoBuilder(
     return 0;
   }
 
-  const fullLength = computeBranchLength(cfg, spec, rng) * Math.max(0.01, spec.lengthScale ?? 1);
   const baseRadius = computeBaseRadius(cfg, spec, rng) * Math.max(0.01, spec.radiusScale ?? 1);
+  const fullLength = computeBranchLength(cfg, spec, rng, baseRadius) * Math.max(0.01, spec.lengthScale ?? 1);
 
   // Determine break / termination behavior
   const isForkMode = cfg.termination === 'fork' && splitDepth === 0;
@@ -497,7 +546,9 @@ export function growSpineIntoBuilder(
   const totalTwistRad = deg2rad(sampleVariance(rng.fork('tws'), cfg.twistDeg, cfg.twistVar, 45));
   const noisePhase = rng.fork('nph').range(-100, 100);
 
-  const steps = Math.max(4, Math.round(cfg.accuracy * fEnd));
+  // Accuracy is the exact number of points of the high-resolution spine (Legacy style: scaled by the split position)
+  const steps = cfg.legacyStyle ? Math.max(4, Math.round(cfg.accuracy * fEnd)) : accurateStepCount(cfg.accuracy);
+  const gain = influenceGain(cfg.influence, steps);
   const denseCount = steps + 1;
   const densePos = new Float32Array(denseCount * 3);
   const denseTan = new Float32Array(denseCount * 3);
@@ -527,9 +578,8 @@ export function growSpineIntoBuilder(
   ];
   const curlOutV: Vec3 = v3Norm(curlOutRaw, spec.initialFrame.normal);
   const curlRightV: Vec3 = v3Norm(v3Cross(curlUpV, curlOutV), spec.initialFrame.normal);
-  const zigPeriod = Math.max(1, Math.round(steps / Math.max(2, cfg.baseSegments)));
   let zigFlip = 0;
-  let actualDenseCount = denseCount;
+  let sinceCorner = 0;
 
   // Pass 1: Stepwise tangent integration (Early noise + Curvature + Root dive + Forces)
   for (let s = 1; s <= steps; s++) {
@@ -541,7 +591,7 @@ export function growSpineIntoBuilder(
 
     // Early noise perturbs growth direction incrementally, damped near base by straightness
     if (cfg.earlyNoiseAmount > 0) {
-      const straightDamp = 1 - cfg.straightness * (1 - f);
+      const straightDamp = noiseKeep(f, cfg.straightness);
       const eCurve = cfg.earlyNoiseLut ? sampleCurveLUT(cfg.earlyNoiseLut, f) : 1;
       const eAmp = cfg.earlyNoiseAmount * eCurve * straightDamp * (1 / Math.sqrt(steps)) * 1.4;
       const nx = cfg.noise.noise3(f * cfg.earlyNoiseFreq * 2.3 + noisePhase, 1.7, splitDepth * 3.1);
@@ -552,24 +602,30 @@ export function growSpineIntoBuilder(
     // Curvature bends around local binormal
     if (Math.abs(curv) > 1e-5) {
       const cVal = curv * (cfg.curvatureLut ? sampleCurveLUT(cfg.curvatureLut, f) : 1);
-      nextDir = rotateAroundAxis(nextDir, curB, (cVal * 1.2) / steps);
+      nextDir = rotateAroundAxis(nextDir, curB, cVal * 1.2 * gain);
     }
 
-    // Parent curl: bend relative to the parent's frame (up = parent tangent, out = away from the parent axis)
+    // Parent curl: rotations around the parent's axes (Up = parent direction, Right = perpendicular to parent and start direction, Out = away from the parent)
     if (curlActive) {
-      const w = (0.5 + f) * (1.4 / steps);
-      nextDir = [
-        nextDir[0] + (curlUpV[0] * cfg.curlUp + curlRightV[0] * cfg.curlRight + curlOutV[0] * cfg.curlOut) * w,
-        nextDir[1] + (curlUpV[1] * cfg.curlUp + curlRightV[1] * cfg.curlRight + curlOutV[1] * cfg.curlOut) * w,
-        nextDir[2] + (curlUpV[2] * cfg.curlUp + curlRightV[2] * cfg.curlRight + curlOutV[2] * cfg.curlOut) * w,
-      ];
+      if (cfg.curlUp !== 0) nextDir = rotateAroundAxis(nextDir, curlUpV, curlStepAngle(cfg.curlUp, f, steps, cfg.influence));
+      if (cfg.curlRight !== 0) nextDir = rotateAroundAxis(nextDir, curlRightV, curlStepAngle(cfg.curlRight, f, steps, cfg.influence));
+      if (cfg.curlOut !== 0) nextDir = rotateAroundAxis(nextDir, curlOutV, curlStepAngle(cfg.curlOut, f, steps, cfg.influence));
     }
 
-    // Zigzag: alternate the heading at every final segment (first kick +a, then -2a, +2a ...)
-    if (cfg.zigzag > 0 && s % zigPeriod === 0 && s < steps) {
-      const a = cfg.zigzag * 0.45;
-      const flip = zigFlip++;
-      nextDir = rotateAroundAxis(nextDir, curB, flip === 0 ? a : flip % 2 === 1 ? -2 * a : 2 * a);
+    // Zigzag: change the heading every `Segment length` metres (first kick +a, then -2a, +2a ...)
+    sinceCorner += dtStep;
+    if (cfg.zigzag > 0 && s < steps) {
+      const cornerEvery = zigzagSegmentLength(
+        cfg.zigzagLengthAbsolute,
+        cfg.zigzagLengthRelative,
+        fullLength,
+        cfg.zigzagLengthLut ? sampleCurveLUT(cfg.zigzagLengthLut, f) : 1,
+        Math.max(0.01, dtStep),
+      );
+      if (sinceCorner + 1e-9 >= cornerEvery) {
+        sinceCorner = 0;
+        nextDir = rotateAroundAxis(nextDir, curB, zigzagKick(zigFlip++, cfg.zigzag * 0.45));
+      }
     }
 
     // Root subterranean profile: hug surface horizontally near trunk, then dive underground
@@ -581,16 +637,16 @@ export function growSpineIntoBuilder(
       nextDir = [
         nextDir[0] * (1 + (horizScale - 1) * 0.12),
         nextDir[1] * (1 + (horizScale - 1) * 0.12),
-        nextDir[2] + (targetDown - nextDir[2]) * (1.8 / steps),
+        nextDir[2] + (targetDown - nextDir[2]) * 1.8 * gain,
       ];
     }
 
     // Built-in & external spine forces
     const forceVec = cfg.forceHook.sample(curPos, nextDir, spec.parentTangent, f, spec.parentU);
     nextDir = v3Norm([
-      nextDir[0] + (forceVec[0] * 1.35) / steps,
-      nextDir[1] + (forceVec[1] * 1.35) / steps,
-      nextDir[2] + (forceVec[2] * 1.35) / steps,
+      nextDir[0] + forceVec[0] * 1.35 * gain,
+      nextDir[1] + forceVec[1] * 1.35 * gain,
+      nextDir[2] + forceVec[2] * 1.35 * gain,
     ], curT);
 
     const nextPos: Vec3 = [
@@ -598,13 +654,6 @@ export function growSpineIntoBuilder(
       curPos[1] + nextDir[1] * dtStep,
       curPos[2] + nextDir[2] * dtStep,
     ];
-
-    // Ground plane pruning / clipping for aerial branches
-    if (cfg.pruneGround && spec.hasParent && nextPos[2] < 0.01) {
-      if (s <= 2) return 0; // Entire branch immediately hits ground -> prune cleanly
-      actualDenseCount = s;
-      break;
-    }
 
     const nextN = advanceRMF(curPos, curT, curN, nextPos, nextDir);
 
@@ -623,16 +672,14 @@ export function growSpineIntoBuilder(
     curN = nextN;
   }
 
-  if (actualDenseCount < 2) return 0;
-
   // Pass 2: Late noise / gnarliness displacement in local RMF (N, B) plane, pinned at s = 0
   const lateAmpScale = cfg.noiseAmountBase * (1 - cfg.noiseSmooth);
   if (lateAmpScale > 1e-5 && cfg.noiseFrequency > 1e-5) {
-    for (let s = 1; s < actualDenseCount; s++) {
-      const localU = s / (actualDenseCount - 1);
+    for (let s = 1; s < denseCount; s++) {
+      const localU = s / (denseCount - 1);
       const f = localU * fEnd;
       // Smoothly ramp from 0 at base so attachment point never detaches from parent!
-      const pinEnvelope = Math.min(1, f * 3.5) * (1 - cfg.straightness * (1 - f) * 0.7);
+      const pinEnvelope = Math.min(1, f * 3.5) * noiseKeep(f, cfg.straightness);
       const lCurve = cfg.noiseAmountLut ? Math.max(0, sampleCurveLUT(cfg.noiseAmountLut, f)) : 1;
       // Scale proportional to branch length so gnarliness looks proportional across trunk & twigs
       const amp = lateAmpScale * lCurve * pinEnvelope * Math.min(1.8, 0.12 + fullLength * 0.08);
@@ -657,12 +704,37 @@ export function growSpineIntoBuilder(
     }
   }
 
+  // Ground prune: a branch that intersects the ground plane is removed with the Ground probability
+  if (
+    spec.hasParent &&
+    cfg.pruneGround > 0 &&
+    groundPrunes(
+      cfg.pruneGround,
+      evalParentCurve(cfg.params, 'pruneGround', spec.parentU, 1),
+      intersectsGround(densePos, denseCount, 0),
+      rng.fork('pgd'),
+    )
+  ) {
+    return 0;
+  }
+
   // Pass 3: Adaptive curvature-aware resampling to target segment count
-  const targetSegs = Math.max(
-    1,
-    Math.round((cfg.baseSegments + cfg.relativeSegments * activeLength) * Math.max(0.35, fEnd)),
-  );
-  const sampleIdx = selectAdaptiveSampleIndices(densePos, actualDenseCount, targetSegs, cfg.optimizationRad);
+  const targetSegs = cfg.legacyStyle
+    ? Math.max(1, Math.round((cfg.baseSegments + cfg.relativeSegments * activeLength) * Math.max(0.35, fEnd)))
+    : lengthSegmentCount({
+        style: 'default',
+        absolute: cfg.baseSegments,
+        relative: cfg.relativeSegments,
+        basis: cfg.relativeBasis,
+        length: activeLength,
+        radius: baseRadius,
+        parentSegments: spec.parentLengthSegments ?? 0,
+        scalar: 1,
+      });
+  let sampleIdx = selectAdaptiveSampleIndices(densePos, denseCount, targetSegs, cfg.optimizationRad);
+  if (spec.hasParent && !spec.isExtension && Math.abs(cfg.weldScalar - 1) > 1e-3) {
+    sampleIdx = reshapeWeldSamples(densePos, denseCount, sampleIdx, Math.min(activeLength * 0.4, baseRadius * 4), cfg.weldScalar);
+  }
   const outCount = sampleIdx.length;
   if (outCount < 2) return 0;
 
@@ -676,7 +748,7 @@ export function growSpineIntoBuilder(
 
   for (let k = 0; k < outCount; k++) {
     const si = sampleIdx[k] as number;
-    const localU = si / (actualDenseCount - 1);
+    const localU = si / (denseCount - 1);
     const f = localU * fEnd;
     outPos[k * 3] = densePos[si * 3] as number;
     outPos[k * 3 + 1] = densePos[si * 3 + 1] as number;
@@ -698,6 +770,14 @@ export function growSpineIntoBuilder(
     twists: outTwists,
     initialNormalHint: spec.initialFrame.normal,
     ...(spec.side ? { side: spec.side } : {}),
+    radialSides: radialSegmentCount({
+      absolute: cfg.radialAbsolute,
+      relative: cfg.radialRelative,
+      basis: cfg.radialBasis,
+      radius: baseRadius,
+      parentSides: spec.parentRadialSegments ?? 0,
+      scalar: cfg.segmentScalar,
+    }),
   });
 
   if (added.branchId < 0) return 0;

@@ -382,14 +382,14 @@ export function spineParams(
   const crownCurveVisible = { param: 'crownShape', value: 'custom' } as const;
 
   const out: ParamDef[] = [
-    // Length
-    l.float('length', 'Absolute', opts.length, { min: 0.02, max: 500, softMax: isTrunk ? 40 : 20, unit: 'm', variance: 0.1, curve: true }),
-    l.bool('lengthRelative', 'Relative to parent', false),
-    l.float('lengthPercent', '+ % of parent', isTrunk ? 0 : 0.08, { min: 0, max: 2, softMax: 1, curve: true }),
+    // Length: Absolute + (% of parent) + (% of radius) are added
+    l.float('length', 'Absolute', opts.length, { min: 0, max: 500, softMax: isTrunk ? 40 : 20, unit: 'm', variance: 0.1, curve: true, tooltip: 'Fixed part of the length in metres. The curve scales the length along the parent.' }),
+    l.float('lengthPercent', '+ % of parent', isTrunk ? 0 : 0.08, { min: 0, max: 2, softMax: 1, curve: true, tooltip: 'Adds this fraction of the parent length (1 = as long as the parent).' }),
     l.float('lengthPercentRadius', '+ % of radius', 0, { min: 0, max: 500, softMax: 100, tooltip: 'Adds this many parent radii to the length.' }),
-    l.enumOf('matchOneVTile', 'Match one v tile', 'Generated', ['Generated', 'Yes', 'No'], { tooltip: 'Yes: the bark texture is stretched so it tiles exactly once along the spine.' }),
-    l.float('shapeScale', 'Shape scale', 1, { min: 0, max: 5, softMax: 2, tooltip: 'Multiplies curvature and noise amounts of the spine.' }),
-    l.bool('lengthLimit', 'Limit length', false),
+    l.bool('matchOneVTile', 'Match one V tile', false, { tooltip: 'Sets the length to exactly one V tile of the material, from its aspect ratio and the branch radius, and maps V from 0 to 1.' }),
+    l.bool('stopShapeControl', 'Stop shape control', false, { tooltip: 'Ignores the crown shape envelope and the generation damping, so this node is not shaped by its ancestors.' }),
+    l.float('shapeScale', 'Shape scale', 1, { min: 0, max: 5, softMax: 2, tooltip: 'Strength of the crown shape on the length: 0 = off, 1 = as drawn, above 1 = exaggerated.' }),
+    l.bool('lengthLimit', 'Limit length', false, { tooltip: 'Prevents children from becoming longer than the Absolute length.' }),
     ...(!isTrunk
       ? [
           l.enumOf('crownShape', 'Crown envelope', 'Natural', ['Natural', 'Conical', 'Oval', 'Vase', 'Columnar', 'Custom'], {
@@ -424,17 +424,6 @@ export function spineParams(
     r.float('taper', 'Taper', opts.taper, { min: 0, max: 1, curve: true }),
     r.float('minRadius', 'Min radius', isTrunk ? 0.008 : 0.002, { min: 0.0005, max: 1, softMax: 0.05, unit: 'm' }),
 
-    // Segments & Adaptive Resampling
-    s.int('segments', 'Absolute', opts.segments, { min: 2, max: 512, tooltip: 'Number of segments along the spine.' }),
-    s.float('relativeSegments', '+ Relative', 0, { min: 0, max: 20, softMax: 4, unit: '/m' }),
-    s.int('accuracy', 'Accuracy', isTrunk ? 36 : 24, { min: 8, max: 128 }),
-    s.float('optimization', 'Optimization', 0, {
-      min: 0,
-      max: 30,
-      unit: '°',
-      tooltip: 'Curvature-aware adaptive simplification threshold (0 = keep all segments).',
-    }),
-
     // Direction / Orientation
     ...(isTrunk
       ? [
@@ -448,26 +437,39 @@ export function spineParams(
       unit: '°',
       variance: 0.12,
       curve: true,
+      tooltip: isTrunk
+        ? 'Angle between the trunk and the vertical, in degrees.'
+        : 'Angle to the parent in degrees: 0 = parent direction, 90 = perpendicular, 180 = opposite.',
     }),
-    d.float('startRoll', 'Start roll', 0, { min: -180, max: 180, unit: '°', variance: 0, curve: true }),
+    d.float('startRoll', 'Start roll', 0, { min: -180, max: 180, unit: '°', variance: 0, curve: true, tooltip: 'Rotates the direction the Start angle is applied in (+ clockwise, - counter-clockwise).' }),
     d.float('pitch', 'Pitch', 0, { min: -90, max: 90, unit: '°', variance: 0.1, curve: true }),
-    d.float('spineRoll', 'Roll', 0, { min: -180, max: 180, unit: '°' }),
-    d.float('alignment', 'Alignment', isTrunk ? 0 : 0.2, { min: 0, max: 1 }),
+    d.float('spineRoll', 'Roll', 0, { min: -180, max: 180, unit: '°', tooltip: 'Rotates the branch around its own axis by a fixed amount, after Alignment.' }),
+    d.float('alignment', 'Alignment', isTrunk ? 0 : 0.2, { min: 0, max: 1, tooltip: 'Blends a random up (0) with the world up (1), so the top of the branch points up.' }),
     d.float('upDown', 'Up / down', opts.upDown ?? (isTrunk ? 0.05 : isRoot ? -0.25 : 0.06), { min: -2, max: 2, softMin: -1, softMax: 1, curve: true }),
-    ...(!isTrunk ? [d.bool('weldStart', 'Weld start', false)] : []),
+    ...(!isTrunk
+      ? [
+          d.bool('unify', 'Unify', false, { tooltip: 'Nodes on opposite sides of the parent share the same orientation (mirrored roll).' }),
+          d.bool('weldStart', 'Weld start', false, {
+            visibleIf: { param: 'spineOnly', value: true },
+            tooltip: 'For Spine only branches: starts on the skin of the parent instead of on its spine.',
+          }),
+        ]
+      : []),
 
     // Shape (Curvature, Gravity bend hook, Twist)
-    sh.float('gravity', 'Gravity', opts.gravity ?? (isTrunk ? 0 : isRoot ? 0.2 : 0.16), { min: -2, max: 3, softMin: -1, softMax: 1.5, curve: true }),
-    ...(!isTrunk ? [sh.float('ancestor', 'Ancestor', 0, { min: -1, max: 1, curve: true })] : []),
+    sh.float('gravity', 'Gravity', opts.gravity ?? (isTrunk ? 0 : isRoot ? 0.2 : 0.16), { min: -2, max: 3, softMin: -1, softMax: 1.5, curve: true, tooltip: 'A downward force on the spine (+ bends down, - bends up).' }),
+    ...(!isTrunk ? [sh.float('ancestor', 'Ancestor', 0, { min: -1, max: 1, curve: true, tooltip: '+ grows towards the direction of the parent, like a bud; - grows away from it.' })] : []),
     sh.float('curvature', 'Curvature', isTrunk ? 0.03 : isRoot ? -0.12 : 0.06, { min: -2, max: 2, softMin: -1, softMax: 1, variance: 0.15, curve: true }),
-    sh.float('straightness', 'Straightness', isTrunk ? 0.35 : 0.2, { min: 0, max: 1 }),
-    sh.float('twist', 'Twist', 0, { min: -720, max: 720, softMin: -180, softMax: 180, unit: '°', variance: 0, curve: true }),
+    sh.float('straightness', 'Straightness', isTrunk ? 0.35 : 0.2, { min: 0, max: 1, tooltip: 'Removes noise: fully at the base, fading to none at the tip.' }),
+    sh.float('twist', 'Twist', 0, { min: -720, max: 720, softMin: -180, softMax: 180, unit: '°', variance: 0, curve: true, tooltip: 'Total twist of the branch around its axis, in degrees.' }),
 
-    // Parent curl: bends the spine relative to its parent's frame
-    pc.float('curlUp', 'Up', 0, { min: -3, max: 3, softMin: -1, softMax: 1, tooltip: 'Curl toward the parent direction (up the parent).' }),
-    pc.float('curlRight', 'Right', 0, { min: -3, max: 3, softMin: -1, softMax: 1, tooltip: 'Curl sideways relative to the parent.' }),
-    pc.float('curlOut', 'Out', 0, { min: -3, max: 3, softMin: -1, softMax: 1, tooltip: 'Curl away from the parent axis (negative = toward it).' }),
-    zz.float('zigzag', 'Intensity', 0, { min: 0, max: 3, softMax: 1, tooltip: 'Alternating bend at every segment (zig-zag stem).' }),
+    // Parent curl: rotates the spine around axes of the parent's frame
+    pc.float('curlUp', 'Up', 0, { min: -3, max: 3, softMin: -1, softMax: 1, tooltip: 'Curl around the parent direction (the branch winds around its parent).' }),
+    pc.float('curlRight', 'Right', 0, { min: -3, max: 3, softMin: -1, softMax: 1, tooltip: 'Curl around the axis perpendicular to the parent direction and the initial direction.' }),
+    pc.float('curlOut', 'Out', 0, { min: -3, max: 3, softMin: -1, softMax: 1, tooltip: 'Curl around the axis pointing straight out of the parent.' }),
+    zz.float('zigzag', 'Intensity', 0, { min: 0, max: 3, softMax: 1, tooltip: 'How sharply the spine changes direction at every zigzag corner (0 = off).' }),
+    s.float('zigzagLengthAbsolute', 'Absolute', 0, { min: 0, max: 50, softMax: 2, unit: 'm', curve: true, tooltip: 'Fixed part of the distance between two zigzag corners. The curve scales the length along the branch.' }),
+    s.float('zigzagLengthRelative', '+ Relative', 0.1, { min: 0, max: 1, tooltip: 'Adds this fraction of the branch length to the distance between two zigzag corners.' }),
 
     // Noise / Gnarliness (Early + Late)
     n.float('earlyNoiseAmount', 'Early amount', isTrunk ? 0.05 : isRoot ? 0.16 : 0.08, { min: 0, max: 2, softMax: 0.8, curve: true }),
@@ -499,11 +501,11 @@ export function spineParams(
     );
   } else if (!isTrunk) {
     out.push(
-      pr.float('pruneGeneral', 'General', 0, { min: 0, max: 1 }),
-      pr.float('pruneInterior', 'Interior', 0, { min: 0, max: 1 }),
-      pr.float('pruneUp', 'Up', 0, { min: 0, max: 1 }),
-      pr.float('pruneDown', 'Down', 0, { min: 0, max: 1 }),
-      pr.bool('pruneGround', 'Ground plane', true),
+      pr.float('pruneInterior', 'Interior', 0, { min: 0, max: 1, curve: true, tooltip: 'Removes branches that grow towards the inside of the model. The curve scales it along the parent.' }),
+      pr.float('pruneUp', 'Up', 0, { min: 0, max: 1, curve: true, tooltip: 'Removes branches that grow upwards (the steeper, the more likely).' }),
+      pr.float('pruneDown', 'Down', 0, { min: 0, max: 1, curve: true, tooltip: 'Removes branches that grow downwards (the steeper, the more likely).' }),
+      pr.float('pruneGeneral', 'General', 0, { min: 0, max: 1, curve: true, tooltip: 'Removes branches at random with this probability.' }),
+      pr.float('pruneGround', 'Ground', 1, { min: 0, max: 1, curve: true, tooltip: 'Removes branches that intersect the ground plane (strength = probability).' }),
     );
   }
 
@@ -549,7 +551,54 @@ export function shapeParams(defaultFlareRadius = 0, defaultFlareHeight = 0.14): 
   ];
 }
 
-export function skinParams(sides: number, defaultSpineOnly = false): ParamDef[] {
+/**
+ * "Segments" tab of Trunk / Branch / Root / Spine: the exact resolution of the spine (Accuracy, Influence), the polygon count
+ * (Scalar) and the final length / radial segment counts (`Absolute + Relative x basis`). `sides` keeps its id: it is the radial Absolute.
+ */
+export function segmentParams(kind: SpineDefaults['kind'], segments: number, sides: number): ParamDef[] {
+  const g = section('Segments');
+  const l = section('Segments', 'Length');
+  const r = section('Segments', 'Radial');
+  const isDefaultStyle = { param: 'lengthStyle', value: 'default' } as const;
+  return [
+    g.int('accuracy', 'Accuracy', kind === 'trunk' ? 36 : 24, {
+      min: 4,
+      max: 256,
+      tooltip: 'Exact number of points of the high-resolution spine the branch is built from (higher = smoother, slower).',
+    }),
+    g.float('segmentInfluence', 'Influence', 1, {
+      min: 0,
+      max: 4,
+      softMax: 2,
+      tooltip: 'Scales how strongly forces and spine properties act per accurate segment. 1 keeps the shape when Accuracy changes.',
+    }),
+    g.float('segmentScalar', 'Scalar', 1, { min: 0.1, max: 4, softMax: 2, tooltip: 'Multiplies the polygon count of the mesh (length and radial segments).' }),
+    l.enumOf('lengthStyle', 'Style', 'Default', ['Default', 'Legacy'], {
+      tooltip: 'Default builds the accurate layout with the relative basis; Legacy keeps the older layout (relative segments per metre).',
+    }),
+    l.int('segments', 'Absolute', segments, { min: 1, max: 512, tooltip: 'Minimum number of length segments.' }),
+    l.float('relativeSegments', '+ Relative', 0, { min: 0, max: 20, softMax: 2, tooltip: 'Adds more length segments, multiplied by the Relative basis.' }),
+    l.enumOf('relativeBasis', 'Relative basis', 'Length/radius ratio', ['Length only', 'Length/radius ratio', "Parent's length segments"], {
+      visibleIf: isDefaultStyle,
+      tooltip: 'What + Relative is multiplied by: the branch length, its length / radius ratio (recommended) or the length segments of the parent.',
+    }),
+    l.float('weldScalar', 'Weld scalar', 1, { min: 0, max: 4, softMax: 2, tooltip: 'Scales the number of segments in the weld part, where the branch is fused to its parent.' }),
+    l.float('optimization', 'Optimization', 0, {
+      min: 0,
+      max: 45,
+      unit: '°',
+      tooltip: 'Drops segments where the spine is nearly straight: the larger the value, the bigger the bend must be to keep a segment (0 = keep all).',
+    }),
+    r.int('sides', 'Absolute', sides, { min: 0, max: 64, tooltip: 'Minimum number of radial segments (sides).' }),
+    r.float('radialRelative', '+ Relative', 0, { min: 0, max: 200, softMax: 40, tooltip: 'Adds radial segments, multiplied by the Relative basis.' }),
+    r.enumOf('radialBasis', 'Relative basis', 'Radius', ['Radius', "Parent's radial segments"], {
+      tooltip: 'What + Relative is multiplied by: the branch radius in metres or the radial segments of the parent.',
+    }),
+  ];
+}
+
+/** Skin tab. `sides` adds the `Sides` row for nodes without a Segments tab (Cap). */
+export function skinParams(defaultSpineOnly = false, sides?: number): ParamDef[] {
   const g = section('Skin', 'Geometry');
   const n = section('Skin', 'Normals');
   const c = section('Skin', 'Vertex color');
@@ -558,8 +607,7 @@ export function skinParams(sides: number, defaultSpineOnly = false): ParamDef[] 
     g.bool('spineOnly', 'Spine only', defaultSpineOnly, {
       tooltip: 'Emit pure skeleton spines without building polygon tube geometry.',
     }),
-    g.int('sides', 'Sides', sides, { min: 3, max: 64 }),
-    g.int('lengthSegments', 'Length segments', 0, { min: 0, max: 512, tooltip: '0 = use the Spine segments' }),
+    ...(sides !== undefined ? [g.int('sides', 'Sides', sides, { min: 3, max: 64 })] : []),
     g.bool('capEnd', 'Close end', true),
     g.int('tipRings', 'Tip rings', 2, { min: 1, max: 8, tooltip: 'Rings of the rounded tip cap.' }),
     g.enumOf('capBase', 'Close base', 'Auto', ['Auto', 'Yes', 'No'], { tooltip: 'Auto closes branches that do not grow from a parent.' }),
@@ -693,7 +741,7 @@ export function splitHelperParams(): ParamDef[] {
     s.float('noiseAmount', 'Gnarliness', 0.15, { min: 0, max: 3, curve: true }),
     s.float('noiseFrequency', 'Noise frequency', 1.2, { min: 0, max: 20 }),
     ...forcesParams(),
-    ...skinParams(8, false),
+    ...skinParams(false, 8),
     ...uvParams(),
     ...materialTabParams(),
   ];
@@ -722,7 +770,7 @@ export function knotHelperParams(): ParamDef[] {
     kn.float('knotCurvature', 'Curvature', 0.25, { min: -1, max: 1 }),
     kn.float('spread', 'Angle', 82, { min: 15, max: 165, unit: '°', variance: 0.1 }),
     kn.int('segments', 'Segments', 5, { min: 2, max: 32 }),
-    ...skinParams(8, false),
+    ...skinParams(false, 8),
     ...uvParams(),
     ...materialTabParams(),
   ];

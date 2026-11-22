@@ -396,3 +396,11 @@ mode placement -> boundaries / clip -> position / rotation / sink -> pruning -> 
 **Size scalar.** `withGenerationCommon` multiplies the node's own `sizeScalar` into `StructureData.sizeScalar` of its parent (the Tree node starts it from its `scale`), scales the size parameters listed in `SIZE_PARAMS` for that node type and publishes the result (plus `StructureData.kind`, the node type) on its `children` output.
 
 **Migration.** `withGenerationCommon` bumps every generator's node version and chains `migrateCommonGeneration` (old scalar `pruning` is folded into `knockout`).
+
+## Spine and Segments (R10) — `src/generators/spine/`, `nodes/generators/spine.ts`
+
+* Pure helpers: `lengthMath` (additive length, clamp, one V tile, shape envelope), `segmentMath` (accurate point / step count, Influence gain, length and radial segment counts per Relative basis, weld sample spacing), `orientationMath` (Start angle, Alignment with a random up, Unify), `shapeMath` (straightness, Parent Curl step, zigzag spacing), `pruneMath` (directional and ground prune), `migrate` (`migrateSpineParams`).
+* Order of the spine operations in `growSpineIntoBuilder`: orientation (`branch.ts`: start angle -> start roll -> random up -> Alignment -> Roll) -> shape forces per accurate segment (curvature, Parent Curl rotations, zigzag by arc length, root dive, gravity / ancestor / forces; all scaled by `influenceGain`) -> noise (early noise during integration, late noise as displacement) -> Straightness (`noiseKeep`: removes noise, full at the base) -> ground prune -> resampling to the length segment count (+ weld part) -> Clamp is part of the length.
+* Accuracy = exact number of points of the dense spine (Legacy style: scaled by the split position). The final length segment count is `Absolute + Relative x basis`; Legacy keeps `Relative x length`.
+* Radial segments: the spine writes the final count per branch into the `radialSides` skeleton attribute (read by `tubeOptionsFromParams` and by children for the `Parent's radial segments` basis). `TubeOptions.radialSegments(generation, maxRadius, branchIndex?)`.
+* Start angle keeps the `spread` id and its degree unit (0 = parent direction, 90 = perpendicular, 180 = opposite). Prune strengths are 0..1; `pruneGround` accepts old booleans.
