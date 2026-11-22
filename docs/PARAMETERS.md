@@ -185,21 +185,33 @@ Main stem with crown height, buttress flare, lean, gnarliness, and profile curve
 | Radius | Radius profile | `radiusProfile` | curve | curve |  |  | Normalized radius multiplier from base (0) to tip (1). |
 | Radius | Taper | `taper` | 0..1 | 0.88 |  | yes | How much the radius shrinks from base to tip (1 = pointed). |
 | Radius | Min radius | `minRadius` | 0.0005..1 (slider 0.0005..0.05) m | 0.008 |  |  | Smallest radius the child may reach. |
-| Noise | Early amount | `earlyNoiseAmount` | 0..2 (slider 0..0.8) | 0.05 |  | yes | Noise strength near the base of the child. |
-| Noise | Early turbulence | `earlyNoiseFrequency` | 0.05..15 (slider 0.05..5) | 1.2 |  |  | Noise frequency near the base of the child. |
-| Noise | Amount | `noiseAmount` | 0..5 (slider 0..1.5) | 0.16 |  | yes | Strength of the random wobble along the spine. |
-| Noise | Frequency | `noiseFrequency` | 0..20 (slider 0..6) | 1.1 |  |  | How fast the wobble changes along the spine. |
-| Noise | Twist | `noiseTwist` | -2..2 (slider -1..1) | 0.1 |  |  | Rotates the noise as it travels along the spine. |
-| Noise | Smooth | `noiseSmooth` | 0..1 | 0 |  |  | Smooths the noise to avoid sharp kinks. |
-| Noise | Noise seed | `noiseSeed` | seed | 0 |  |  | Random seed of the noise pattern. |
+| Early | Amount | `earlyNoiseAmount` | 0..2 (slider 0..0.8) | 0.05 |  | yes | Strength of the noise that bends the spine while it grows (chaotic). The curve changes the strength along the spine. |
+| Early | Turbulence | `earlyNoiseFrequency` | 0.05..15 (slider 0.05..5) | 1.2 |  |  | How chaotic the early noise wave is: higher values change direction more often. |
+| Early | Threshold | `earlyNoiseThreshold` | 0..1 | 0 |  | yes | Point along the spine that must be passed before the early noise starts. The curve changes where it starts and ends. |
+| Late | Amount | `noiseAmount` | 0..5 (slider 0..1.5) | 0.16 |  | yes | Strength of the noise applied after the spine is shaped: organic yet controlled. The curve changes the strength along the spine. |
+| Late | Turbulence | `noiseFrequency` | 0..20 (slider 0..6) | 1.1 |  |  | How chaotic the late noise wave is: higher values change direction more often. |
+| Late | Smooth | `noiseSmooth` | 0..1 | 0 |  |  | Straightens the applied noise: 1 gives the spine as shaped, with no noise left. |
+| Late | Seed | `noiseSeed` | seed | 0 |  |  | Random seed of the late noise only; the early noise and everything else stay the same. |
+| Late | Twist | `noiseTwist` | -2..2 (slider -1..1) | 0.1 |  |  | Rotates the late noise as it travels along the spine. |
+| Jink | Amount | `jinkAmount` | 0..1 | 0 |  |  | Straightens the spine into linear segments: 0 leaves it unchanged, 1 makes it entirely long straight runs. |
+| Jink | Absolute | `jinkAbsolute` | 1..64 (slider 1..16) | 3 |  |  | Minimum number of straight segments. |
+| Jink | + Relative | `jinkRelative` | 0..20 (slider 0..4) | 0 |  |  | Adds this many straight segments per metre of branch length. |
+| Jink | Uniformity | `jinkUniformity` | 0..1 | 0.5 |  |  | How similar the segment lengths are. At 1 all segments are equally long and the seed has no effect. |
+| Jink | Seed | `jinkSeed` | seed | 0 |  |  | Random seed of the Jink segment lengths (no effect at Uniformity 1). |
+| Path | Amount | `pathAmount` | 0..20 (slider 0..1) m | 0 |  |  | Size of the path deformation in metres. The Profile curve is the shape of one tile. |
+| Path | Profile | `pathProfile` | curve | curve |  |  | Shape of one tile: sideways offset (vertical) along the tile length (horizontal). |
+| Path | Twist | `pathTwist` | -720..720 (slider -180..180) °/m | 0 |  |  | Turns the direction of the deformation around the spine, in degrees per metre. |
+| Path | Length | `pathLength` | 0.01..100 (slider 0.01..10) m | 1 |  |  | Length of exactly one tile. When it is shorter than the branch the tile repeats. |
+| Path | Offset | `pathOffset` | 0..1 | 0 | yes |  | Shifts the tiles along the spine (fraction of one tile). Use the variance to avoid visible repetition between branches. |
+| Break | Chance | `breakChance` | 0..1 | 0 |  |  | Probability that a node breaks and ends in an open end (a Cap can close it). |
+| Break | Spot | `breakSpot` | 0.02..0.99 | 0.68 | yes |  | Where along the spine the break happens (1 = at the tip). |
+| Break | Seed | `breakSeed` | seed | 0 |  |  | Random seed of which nodes break and where; nothing else changes. |
 | Splits & Termination | Tip behavior | `termination` | Taper / Blunt / Broken / Fork | taper |  |  | How the tip ends: taper, blunt, broken or forked. |
 | Splits & Termination | Split chance | `splitChance` | 0..1 | 0 |  |  | Probability that the spine forks into two. |
 | Splits & Termination | Split spread | `splitSpread` | 2..85 ° | 25 |  |  | Angle between the two forks (degrees). |
 | Splits & Termination | Split balance | `splitBalance` | 0.15..0.85 | 0.5 |  |  | Share of the radius that goes to the main fork. |
 | Splits & Termination | Split position | `splitStart` | 0.15..0.9 | 0.58 |  |  | Position along the spine from which forks may occur. |
 | Splits & Termination | Max split depth | `splitMaxDepth` | 1..3 | 1 |  |  | Maximum number of successive forks. |
-| Splits & Termination | Break chance | `breakChance` | 0..1 | 0 |  |  | Probability that the spine snaps and ends early. |
-| Splits & Termination | Break spot | `breakSpot` | 0.1..0.98 | 0.68 | yes |  | Position along the spine where a break may happen. |
 
 ### Tab: Forces
 
@@ -450,21 +462,33 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 | Radius | Radius profile | `radiusProfile` | curve | curve |  |  | Normalized radius multiplier from base (0) to tip (1). |
 | Radius | Taper | `taper` | 0..1 | 0.88 |  | yes | How much the radius shrinks from base to tip (1 = pointed). |
 | Radius | Min radius | `minRadius` | 0.0005..1 (slider 0.0005..0.05) m | 0.002 |  |  | Smallest radius the child may reach. |
-| Noise | Early amount | `earlyNoiseAmount` | 0..2 (slider 0..0.8) | 0.08 |  | yes | Noise strength near the base of the child. |
-| Noise | Early turbulence | `earlyNoiseFrequency` | 0.05..15 (slider 0.05..5) | 1.2 |  |  | Noise frequency near the base of the child. |
-| Noise | Amount | `noiseAmount` | 0..5 (slider 0..1.5) | 0.2 |  | yes | Strength of the random wobble along the spine. |
-| Noise | Frequency | `noiseFrequency` | 0..20 (slider 0..6) | 1.1 |  |  | How fast the wobble changes along the spine. |
-| Noise | Twist | `noiseTwist` | -2..2 (slider -1..1) | 0 |  |  | Rotates the noise as it travels along the spine. |
-| Noise | Smooth | `noiseSmooth` | 0..1 | 0 |  |  | Smooths the noise to avoid sharp kinks. |
-| Noise | Noise seed | `noiseSeed` | seed | 0 |  |  | Random seed of the noise pattern. |
+| Early | Amount | `earlyNoiseAmount` | 0..2 (slider 0..0.8) | 0.08 |  | yes | Strength of the noise that bends the spine while it grows (chaotic). The curve changes the strength along the spine. |
+| Early | Turbulence | `earlyNoiseFrequency` | 0.05..15 (slider 0.05..5) | 1.2 |  |  | How chaotic the early noise wave is: higher values change direction more often. |
+| Early | Threshold | `earlyNoiseThreshold` | 0..1 | 0 |  | yes | Point along the spine that must be passed before the early noise starts. The curve changes where it starts and ends. |
+| Late | Amount | `noiseAmount` | 0..5 (slider 0..1.5) | 0.2 |  | yes | Strength of the noise applied after the spine is shaped: organic yet controlled. The curve changes the strength along the spine. |
+| Late | Turbulence | `noiseFrequency` | 0..20 (slider 0..6) | 1.1 |  |  | How chaotic the late noise wave is: higher values change direction more often. |
+| Late | Smooth | `noiseSmooth` | 0..1 | 0 |  |  | Straightens the applied noise: 1 gives the spine as shaped, with no noise left. |
+| Late | Seed | `noiseSeed` | seed | 0 |  |  | Random seed of the late noise only; the early noise and everything else stay the same. |
+| Late | Twist | `noiseTwist` | -2..2 (slider -1..1) | 0 |  |  | Rotates the late noise as it travels along the spine. |
+| Jink | Amount | `jinkAmount` | 0..1 | 0 |  |  | Straightens the spine into linear segments: 0 leaves it unchanged, 1 makes it entirely long straight runs. |
+| Jink | Absolute | `jinkAbsolute` | 1..64 (slider 1..16) | 3 |  |  | Minimum number of straight segments. |
+| Jink | + Relative | `jinkRelative` | 0..20 (slider 0..4) | 0 |  |  | Adds this many straight segments per metre of branch length. |
+| Jink | Uniformity | `jinkUniformity` | 0..1 | 0.5 |  |  | How similar the segment lengths are. At 1 all segments are equally long and the seed has no effect. |
+| Jink | Seed | `jinkSeed` | seed | 0 |  |  | Random seed of the Jink segment lengths (no effect at Uniformity 1). |
+| Path | Amount | `pathAmount` | 0..20 (slider 0..1) m | 0 |  |  | Size of the path deformation in metres. The Profile curve is the shape of one tile. |
+| Path | Profile | `pathProfile` | curve | curve |  |  | Shape of one tile: sideways offset (vertical) along the tile length (horizontal). |
+| Path | Twist | `pathTwist` | -720..720 (slider -180..180) °/m | 0 |  |  | Turns the direction of the deformation around the spine, in degrees per metre. |
+| Path | Length | `pathLength` | 0.01..100 (slider 0.01..10) m | 1 |  |  | Length of exactly one tile. When it is shorter than the branch the tile repeats. |
+| Path | Offset | `pathOffset` | 0..1 | 0 | yes |  | Shifts the tiles along the spine (fraction of one tile). Use the variance to avoid visible repetition between branches. |
+| Break | Chance | `breakChance` | 0..1 | 0 |  |  | Probability that a node breaks and ends in an open end (a Cap can close it). |
+| Break | Spot | `breakSpot` | 0.02..0.99 | 0.68 | yes |  | Where along the spine the break happens (1 = at the tip). |
+| Break | Seed | `breakSeed` | seed | 0 |  |  | Random seed of which nodes break and where; nothing else changes. |
 | Splits & Termination | Tip behavior | `termination` | Taper / Blunt / Broken / Fork | taper |  |  | How the tip ends: taper, blunt, broken or forked. |
 | Splits & Termination | Split chance | `splitChance` | 0..1 | 0 |  |  | Probability that the spine forks into two. |
 | Splits & Termination | Split spread | `splitSpread` | 2..85 ° | 25 |  |  | Angle between the two forks (degrees). |
 | Splits & Termination | Split balance | `splitBalance` | 0.15..0.85 | 0.5 |  |  | Share of the radius that goes to the main fork. |
 | Splits & Termination | Split position | `splitStart` | 0.15..0.9 | 0.58 |  |  | Position along the spine from which forks may occur. |
 | Splits & Termination | Max split depth | `splitMaxDepth` | 1..3 | 1 |  |  | Maximum number of successive forks. |
-| Splits & Termination | Break chance | `breakChance` | 0..1 | 0 |  |  | Probability that the spine snaps and ends early. |
-| Splits & Termination | Break spot | `breakSpot` | 0.1..0.98 | 0.68 | yes |  | Position along the spine where a break may happen. |
 | Prune | Interior | `pruneInterior` | 0..1 | 0 |  | yes | Removes branches that grow towards the inside of the model. The curve scales it along the parent. |
 | Prune | Up | `pruneUp` | 0..1 | 0 |  | yes | Removes branches that grow upwards (the steeper, the more likely). |
 | Prune | Down | `pruneDown` | 0..1 | 0 |  | yes | Removes branches that grow downwards (the steeper, the more likely). |
@@ -718,21 +742,33 @@ Lightweight spine-only structural guides for attaching foliage or child branches
 | Radius | Radius profile | `radiusProfile` | curve | curve |  |  | Normalized radius multiplier from base (0) to tip (1). |
 | Radius | Taper | `taper` | 0..1 | 0.9 |  | yes | How much the radius shrinks from base to tip (1 = pointed). |
 | Radius | Min radius | `minRadius` | 0.0005..1 (slider 0.0005..0.05) m | 0.002 |  |  | Smallest radius the child may reach. |
-| Noise | Early amount | `earlyNoiseAmount` | 0..2 (slider 0..0.8) | 0.08 |  | yes | Noise strength near the base of the child. |
-| Noise | Early turbulence | `earlyNoiseFrequency` | 0.05..15 (slider 0.05..5) | 1.2 |  |  | Noise frequency near the base of the child. |
-| Noise | Amount | `noiseAmount` | 0..5 (slider 0..1.5) | 0.12 |  | yes | Strength of the random wobble along the spine. |
-| Noise | Frequency | `noiseFrequency` | 0..20 (slider 0..6) | 1.1 |  |  | How fast the wobble changes along the spine. |
-| Noise | Twist | `noiseTwist` | -2..2 (slider -1..1) | 0 |  |  | Rotates the noise as it travels along the spine. |
-| Noise | Smooth | `noiseSmooth` | 0..1 | 0 |  |  | Smooths the noise to avoid sharp kinks. |
-| Noise | Noise seed | `noiseSeed` | seed | 0 |  |  | Random seed of the noise pattern. |
+| Early | Amount | `earlyNoiseAmount` | 0..2 (slider 0..0.8) | 0.08 |  | yes | Strength of the noise that bends the spine while it grows (chaotic). The curve changes the strength along the spine. |
+| Early | Turbulence | `earlyNoiseFrequency` | 0.05..15 (slider 0.05..5) | 1.2 |  |  | How chaotic the early noise wave is: higher values change direction more often. |
+| Early | Threshold | `earlyNoiseThreshold` | 0..1 | 0 |  | yes | Point along the spine that must be passed before the early noise starts. The curve changes where it starts and ends. |
+| Late | Amount | `noiseAmount` | 0..5 (slider 0..1.5) | 0.12 |  | yes | Strength of the noise applied after the spine is shaped: organic yet controlled. The curve changes the strength along the spine. |
+| Late | Turbulence | `noiseFrequency` | 0..20 (slider 0..6) | 1.1 |  |  | How chaotic the late noise wave is: higher values change direction more often. |
+| Late | Smooth | `noiseSmooth` | 0..1 | 0 |  |  | Straightens the applied noise: 1 gives the spine as shaped, with no noise left. |
+| Late | Seed | `noiseSeed` | seed | 0 |  |  | Random seed of the late noise only; the early noise and everything else stay the same. |
+| Late | Twist | `noiseTwist` | -2..2 (slider -1..1) | 0 |  |  | Rotates the late noise as it travels along the spine. |
+| Jink | Amount | `jinkAmount` | 0..1 | 0 |  |  | Straightens the spine into linear segments: 0 leaves it unchanged, 1 makes it entirely long straight runs. |
+| Jink | Absolute | `jinkAbsolute` | 1..64 (slider 1..16) | 3 |  |  | Minimum number of straight segments. |
+| Jink | + Relative | `jinkRelative` | 0..20 (slider 0..4) | 0 |  |  | Adds this many straight segments per metre of branch length. |
+| Jink | Uniformity | `jinkUniformity` | 0..1 | 0.5 |  |  | How similar the segment lengths are. At 1 all segments are equally long and the seed has no effect. |
+| Jink | Seed | `jinkSeed` | seed | 0 |  |  | Random seed of the Jink segment lengths (no effect at Uniformity 1). |
+| Path | Amount | `pathAmount` | 0..20 (slider 0..1) m | 0 |  |  | Size of the path deformation in metres. The Profile curve is the shape of one tile. |
+| Path | Profile | `pathProfile` | curve | curve |  |  | Shape of one tile: sideways offset (vertical) along the tile length (horizontal). |
+| Path | Twist | `pathTwist` | -720..720 (slider -180..180) °/m | 0 |  |  | Turns the direction of the deformation around the spine, in degrees per metre. |
+| Path | Length | `pathLength` | 0.01..100 (slider 0.01..10) m | 1 |  |  | Length of exactly one tile. When it is shorter than the branch the tile repeats. |
+| Path | Offset | `pathOffset` | 0..1 | 0 | yes |  | Shifts the tiles along the spine (fraction of one tile). Use the variance to avoid visible repetition between branches. |
+| Break | Chance | `breakChance` | 0..1 | 0 |  |  | Probability that a node breaks and ends in an open end (a Cap can close it). |
+| Break | Spot | `breakSpot` | 0.02..0.99 | 0.68 | yes |  | Where along the spine the break happens (1 = at the tip). |
+| Break | Seed | `breakSeed` | seed | 0 |  |  | Random seed of which nodes break and where; nothing else changes. |
 | Splits & Termination | Tip behavior | `termination` | Taper / Blunt / Broken / Fork | taper |  |  | How the tip ends: taper, blunt, broken or forked. |
 | Splits & Termination | Split chance | `splitChance` | 0..1 | 0 |  |  | Probability that the spine forks into two. |
 | Splits & Termination | Split spread | `splitSpread` | 2..85 ° | 25 |  |  | Angle between the two forks (degrees). |
 | Splits & Termination | Split balance | `splitBalance` | 0.15..0.85 | 0.5 |  |  | Share of the radius that goes to the main fork. |
 | Splits & Termination | Split position | `splitStart` | 0.15..0.9 | 0.58 |  |  | Position along the spine from which forks may occur. |
 | Splits & Termination | Max split depth | `splitMaxDepth` | 1..3 | 1 |  |  | Maximum number of successive forks. |
-| Splits & Termination | Break chance | `breakChance` | 0..1 | 0 |  |  | Probability that the spine snaps and ends early. |
-| Splits & Termination | Break spot | `breakSpot` | 0.1..0.98 | 0.68 | yes |  | Position along the spine where a break may happen. |
 | Prune | Interior | `pruneInterior` | 0..1 | 0 |  | yes | Removes branches that grow towards the inside of the model. The curve scales it along the parent. |
 | Prune | Up | `pruneUp` | 0..1 | 0 |  | yes | Removes branches that grow upwards (the steeper, the more likely). |
 | Prune | Down | `pruneDown` | 0..1 | 0 |  | yes | Removes branches that grow downwards (the steeper, the more likely). |

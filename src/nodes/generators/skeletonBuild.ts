@@ -37,6 +37,7 @@ export class StructureSkeletonBuilder {
   private sideArr: Float32Array | null = null;
   /** Radial segments of the branch per point; null until a branch with a stored count is added. */
   private sidesArr: Float32Array | null = null;
+  private openArr: Float32Array | null = null;
   private readonly branches: Branch[] = [];
 
   constructor(initialPointCapacity = 1024) {
@@ -121,6 +122,8 @@ export class StructureSkeletonBuilder {
     side?: number;
     /** Final radial segment count of the branch; stored as the `radialSides` skeleton attribute (used by the mesher and by children). */
     radialSides?: number;
+    /** The branch ends in a break (open end, 1) or not (0); stored as the `openEnd` skeleton attribute. */
+    openEnd?: boolean;
   }): { branchId: number; start: number; end: number; length: number } {
     const n = opts.count;
     if (n < 2) {
@@ -223,6 +226,15 @@ export class StructureSkeletonBuilder {
       this.sidesArr.fill(opts.radialSides, start, start + n);
     }
 
+    if (opts.openEnd !== undefined) {
+      if (!this.openArr || this.openArr.length < this.cap) {
+        const grown = new Float32Array(this.cap);
+        if (this.openArr) grown.set(this.openArr);
+        this.openArr = grown;
+      }
+      this.openArr.fill(opts.openEnd ? 1 : 0, start, start + n);
+    }
+
     this.len += n;
     const branch: Branch = {
       id: branchId,
@@ -247,6 +259,7 @@ export class StructureSkeletonBuilder {
       attributes.set('twist', this.tws.slice(0, n));
       if (this.sideArr) attributes.set('side', fitLength(this.sideArr, n));
       if (this.sidesArr) attributes.set('radialSides', fitLength(this.sidesArr, n));
+      if (this.openArr) attributes.set('openEnd', fitLength(this.openArr, n));
     }
     return {
       count: n,

@@ -316,10 +316,11 @@ export function generateChildPlacements(
 }
 
 /**
- * Heuristic for Breaks only: a parent that ends in a break keeps a thick tip (a taper would close it), so its tip radius
- * stays above 30 % of its base radius.
+ * Whether the parent branch ends in a break (open end), as flagged by the Break parameters of its spine (`openEnd` attribute).
+ * Skeletons without that flag fall back to a heuristic: a thick tip (a taper would close it), i.e. a tip radius above 30 % of the base radius.
  */
 export function branchLooksBroken(prep: PreparedParentBranch): boolean {
+  if (prep.openEnd !== undefined) return prep.openEnd;
   const n = prep.radii.length;
   if (n < 2) return false;
   const base = prep.radii[0] as number;

@@ -14,6 +14,8 @@ const COUPLED_PARENT_SECTION: Record<string, string> = {
   Absolute: 'Generation',
   Density: 'Generation',
   Fallen: 'Season',
+  Early: 'Noise',
+  Late: 'Noise',
 };
 
 export interface InspectorParamEntry {

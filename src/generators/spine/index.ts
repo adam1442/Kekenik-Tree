@@ -4,3 +4,8 @@ export * from './orientationMath';
 export * from './shapeMath';
 export * from './pruneMath';
 export { migrateSpineParams } from './migrate';
+export * from './noiseMath';
+export * from './jinkMath';
+export * from './pathMath';
+export * from './breakMath';
+export * from './polyline';

@@ -404,3 +404,10 @@ mode placement -> boundaries / clip -> position / rotation / sink -> pruning -> 
 * Accuracy = exact number of points of the dense spine (Legacy style: scaled by the split position). The final length segment count is `Absolute + Relative x basis`; Legacy keeps `Relative x length`.
 * Radial segments: the spine writes the final count per branch into the `radialSides` skeleton attribute (read by `tubeOptionsFromParams` and by children for the `Parent's radial segments` basis). `TubeOptions.radialSegments(generation, maxRadius, branchIndex?)`.
 * Start angle keeps the `spread` id and its degree unit (0 = parent direction, 90 = perpendicular, 180 = opposite). Prune strengths are 0..1; `pruneGround` accepts old booleans.
+
+## Spine noise, Jink, Path and Break (R11) — `src/generators/spine/{noiseMath,jinkMath,pathMath,breakMath,polyline}.ts`
+
+* Order inside `growSpineIntoBuilder`: break / split decision (`breakSeed` has its own stream) -> Pass 1 integration with **Early noise** (`earlyNoiseGate`: Threshold + profile curves; own simplex field, so the Late Seed does not touch it) -> Pass 2 **Late noise** displacement (`smoothNoiseOffsets` low-pass, scaled by `1 - Smooth`) -> **Jink** (`applyJink`: points move towards the chord of their run; knots from `jinkKnots`, Uniformity 1 ignores the seed) -> **Path** (`applyPath`: perpendicular displacement `pathOffsetAt(arc length)` measured from the base value, so the start stays attached; period = `Length`, `Offset` is a fraction of a tile and may carry variance) -> ground prune -> resampling.
+* Break: a node breaks with `breaks(chance, draw)` and ends at `clampBreakSpot(spot) x length`; the branch is written with `openEnd: true`, stored as the `openEnd` skeleton attribute (0 / 1 per point, copied by `mergeSkeletons`). `PreparedParentBranch.openEnd` carries it to `branchLooksBroken` (Extend parent > Breaks only; Cap generators can use the same flag). Skeletons without the attribute fall back to the old thick-tip heuristic.
+* Inspector: subgroups `Early` and `Late` are coupled to the `Noise` section (`COUPLED_PARENT_SECTION`) and render as sub-heads.
+

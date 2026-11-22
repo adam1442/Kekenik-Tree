@@ -172,6 +172,7 @@ function mergeSkeletons(levels: readonly Skeleton[]): Skeleton {
     const tw = sk.attributes.get('twist');
     const sd = sk.attributes.get('side');
     const rs = sk.attributes.get('radialSides');
+    const oe = sk.attributes.get('openEnd');
     const curPointOffset = builder.pointCount;
     const curBranchOffset = builder.branchCount;
 
@@ -199,6 +200,7 @@ function mergeSkeletons(levels: readonly Skeleton[]): Skeleton {
         initialNormalHint: hint,
         ...(sd && (sd[b.start] as number) !== 0 ? { side: sd[b.start] as number } : {}),
         ...(rs && (rs[b.start] as number) > 0 ? { radialSides: rs[b.start] as number } : {}),
+        ...(oe ? { openEnd: (oe[b.start] as number) > 0 } : {}),
       });
     }
 

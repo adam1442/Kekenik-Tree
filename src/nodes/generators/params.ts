@@ -1,4 +1,4 @@
-import { flatCurve } from '@/contracts/curve';
+import { flatCurve, type Curve } from '@/contracts/curve';
 import type { Condition, ListParamDef, ParamDef } from '@/contracts/params';
 import { getCurvePreset } from '@/core/curve';
 import { section } from '../shared/builders';
@@ -342,6 +342,19 @@ export function generationParams(d: GenerationDefaults): ParamDef[] {
   return list;
 }
 
+/** Default Path tile: one smooth sine wave (offset from -1 to 1 over the tile). */
+export function pathProfileCurve(): Curve {
+  const t = { dx: 0.12, dy: 0 };
+  const pt = (x: number, y: number): Curve['points'][number] => ({ x, y, inTangent: { dx: -t.dx, dy: t.dy }, outTangent: { dx: t.dx, dy: t.dy }, mode: 'flat' });
+  const rising = (x: number, y: number): Curve['points'][number] => ({ x, y, inTangent: { dx: -0.12, dy: -0.9 }, outTangent: { dx: 0.12, dy: 0.9 }, mode: 'free' });
+  return {
+    points: [rising(0, 0), pt(0.25, 1), rising(0.5, 0), pt(0.75, -1), rising(1, 0)],
+    xRange: [0, 1],
+    yRange: [-1, 1],
+    wrap: 'clamp',
+  };
+}
+
 export interface SpineDefaults {
   kind: 'trunk' | 'branch' | 'root' | 'spine';
   length: number;
@@ -372,7 +385,11 @@ export function spineParams(
   const s = section('Spine', 'Segment length');
   const d = section('Spine', 'Orientation');
   const sh = section('Spine', 'Shape');
-  const n = section('Spine', 'Noise');
+  const ne = section('Spine', 'Early');
+  const nl = section('Spine', 'Late');
+  const jk = section('Spine', 'Jink');
+  const pa = section('Spine', 'Path');
+  const bk = section('Spine', 'Break');
   const tm = section('Spine', 'Splits & Termination');
   const pr = section('Spine', 'Prune');
   const rt = section('Spine', 'Root Growth');
@@ -471,14 +488,34 @@ export function spineParams(
     s.float('zigzagLengthAbsolute', 'Absolute', 0, { min: 0, max: 50, softMax: 2, unit: 'm', curve: true, tooltip: 'Fixed part of the distance between two zigzag corners. The curve scales the length along the branch.' }),
     s.float('zigzagLengthRelative', '+ Relative', 0.1, { min: 0, max: 1, tooltip: 'Adds this fraction of the branch length to the distance between two zigzag corners.' }),
 
-    // Noise / Gnarliness (Early + Late)
-    n.float('earlyNoiseAmount', 'Early amount', isTrunk ? 0.05 : isRoot ? 0.16 : 0.08, { min: 0, max: 2, softMax: 0.8, curve: true }),
-    n.float('earlyNoiseFrequency', 'Early turbulence', 1.2, { min: 0.05, max: 15, softMax: 5 }),
-    n.float('noiseAmount', 'Amount', opts.noiseAmount ?? (isTrunk ? 0.18 : isRoot ? 0.28 : 0.2), { min: 0, max: 5, softMax: 1.5, curve: true }),
-    n.float('noiseFrequency', 'Frequency', isRoot ? 1.6 : 1.1, { min: 0, max: 20, softMax: 6 }),
-    n.float('noiseTwist', 'Twist', isTrunk ? 0.1 : 0, { min: -2, max: 2, softMin: -1, softMax: 1 }),
-    n.float('noiseSmooth', 'Smooth', 0, { min: 0, max: 1 }),
-    n.seed('noiseSeed', 'Noise seed'),
+    // Noise: Early (while the spine is shaped) and Late (after it is shaped)
+    ne.float('earlyNoiseAmount', 'Amount', isTrunk ? 0.05 : isRoot ? 0.16 : 0.08, { min: 0, max: 2, softMax: 0.8, curve: true, tooltip: 'Strength of the noise that bends the spine while it grows (chaotic). The curve changes the strength along the spine.' }),
+    ne.float('earlyNoiseFrequency', 'Turbulence', 1.2, { min: 0.05, max: 15, softMax: 5, tooltip: 'How chaotic the early noise wave is: higher values change direction more often.' }),
+    ne.float('earlyNoiseThreshold', 'Threshold', 0, { min: 0, max: 1, curve: true, tooltip: 'Point along the spine that must be passed before the early noise starts. The curve changes where it starts and ends.' }),
+    nl.float('noiseAmount', 'Amount', opts.noiseAmount ?? (isTrunk ? 0.18 : isRoot ? 0.28 : 0.2), { min: 0, max: 5, softMax: 1.5, curve: true, tooltip: 'Strength of the noise applied after the spine is shaped: organic yet controlled. The curve changes the strength along the spine.' }),
+    nl.float('noiseFrequency', 'Turbulence', isRoot ? 1.6 : 1.1, { min: 0, max: 20, softMax: 6, tooltip: 'How chaotic the late noise wave is: higher values change direction more often.' }),
+    nl.float('noiseSmooth', 'Smooth', 0, { min: 0, max: 1, tooltip: 'Straightens the applied noise: 1 gives the spine as shaped, with no noise left.' }),
+    nl.seed('noiseSeed', 'Seed'),
+    nl.float('noiseTwist', 'Twist', isTrunk ? 0.1 : 0, { min: -2, max: 2, softMin: -1, softMax: 1, tooltip: 'Rotates the late noise as it travels along the spine.' }),
+
+    // Jink: straight runs
+    jk.float('jinkAmount', 'Amount', 0, { min: 0, max: 1, tooltip: 'Straightens the spine into linear segments: 0 leaves it unchanged, 1 makes it entirely long straight runs.' }),
+    jk.int('jinkAbsolute', 'Absolute', 3, { min: 1, max: 64, softMax: 16, tooltip: 'Minimum number of straight segments.' }),
+    jk.float('jinkRelative', '+ Relative', 0, { min: 0, max: 20, softMax: 4, tooltip: 'Adds this many straight segments per metre of branch length.' }),
+    jk.float('jinkUniformity', 'Uniformity', 0.5, { min: 0, max: 1, tooltip: 'How similar the segment lengths are. At 1 all segments are equally long and the seed has no effect.' }),
+    jk.seed('jinkSeed', 'Seed'),
+
+    // Path: a tile profile traced along the spine
+    pa.float('pathAmount', 'Amount', 0, { min: 0, max: 20, softMax: 1, unit: 'm', tooltip: 'Size of the path deformation in metres. The Profile curve is the shape of one tile.' }),
+    pa.curve('pathProfile', 'Profile', pathProfileCurve(), { tooltip: 'Shape of one tile: sideways offset (vertical) along the tile length (horizontal).' }),
+    pa.float('pathTwist', 'Twist', 0, { min: -720, max: 720, softMin: -180, softMax: 180, unit: '°/m', tooltip: 'Turns the direction of the deformation around the spine, in degrees per metre.' }),
+    pa.float('pathLength', 'Length', 1, { min: 0.01, max: 100, softMax: 10, unit: 'm', tooltip: 'Length of exactly one tile. When it is shorter than the branch the tile repeats.' }),
+    pa.float('pathOffset', 'Offset', 0, { min: 0, max: 1, variance: 1, tooltip: 'Shifts the tiles along the spine (fraction of one tile). Use the variance to avoid visible repetition between branches.' }),
+
+    // Break: the spine snaps and leaves an open end
+    bk.float('breakChance', 'Chance', 0, { min: 0, max: 1, tooltip: 'Probability that a node breaks and ends in an open end (a Cap can close it).' }),
+    bk.float('breakSpot', 'Spot', 0.68, { min: 0.02, max: 0.99, variance: 0.15, tooltip: 'Where along the spine the break happens (1 = at the tip).' }),
+    bk.seed('breakSeed', 'Seed'),
 
     // Splits & Termination / Break
     tm.enumOf('termination', 'Tip behavior', 'Taper', ['Taper', 'Blunt', 'Broken', 'Fork']),
@@ -487,8 +524,6 @@ export function spineParams(
     tm.float('splitBalance', 'Split balance', 0.5, { min: 0.15, max: 0.85 }),
     tm.float('splitStart', 'Split position', 0.58, { min: 0.15, max: 0.9 }),
     tm.int('splitMaxDepth', 'Max split depth', 1, { min: 1, max: 3 }),
-    tm.float('breakChance', 'Break chance', 0, { min: 0, max: 1 }),
-    tm.float('breakSpot', 'Break spot', 0.68, { min: 0.1, max: 0.98, variance: 0.15 }),
   ];
 
   if (isRoot) {
@@ -517,7 +552,7 @@ export function spineParams(
 }
 
 /** Section order of the Spine tab. */
-const SPINE_SECTION_ORDER = ['Length', 'Clamp', 'Orientation', 'Shape', 'Parent Curl', 'Zigzag', 'Segment length', 'Radius', 'Noise', 'Splits & Termination', 'Prune', 'Root Growth'];
+const SPINE_SECTION_ORDER = ['Length', 'Clamp', 'Orientation', 'Shape', 'Parent Curl', 'Zigzag', 'Segment length', 'Radius', 'Noise', 'Early', 'Late', 'Jink', 'Path', 'Break', 'Splits & Termination', 'Prune', 'Root Growth'];
 
 export function forcesParams(): ParamDef[] {
   const f = section('Forces', 'Forces');

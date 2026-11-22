@@ -266,6 +266,8 @@ export interface PreparedParentBranch {
   /** Local turning angle in radians per vertex (0 at endpoints), used by Bifurcation & Favor splits. */
   curvatures: Float32Array;
   arcLength: number;
+  /** The branch ends in a break (open end). Undefined when the upstream skeleton carries no `openEnd` attribute. */
+  openEnd?: boolean;
 }
 
 export interface ParentSample {
@@ -365,7 +367,9 @@ export function prepareParentBranch(skeleton: Skeleton, branch: Branch): Prepare
     curvatures[k] = Math.acos(clamp(v3Dot(s1, s2), -1, 1));
   }
 
-  return { branch, positions, radii, ages, t, tangents, normals, binormals, curvatures, arcLength };
+  const openAttr = skeleton.attributes.get('openEnd');
+  const openEnd = openAttr && openAttr.length === skeleton.count ? (openAttr[branch.start] as number) > 0 : undefined;
+  return { branch, positions, radii, ages, t, tangents, normals, binormals, curvatures, arcLength, ...(openEnd !== undefined ? { openEnd } : {}) };
 }
 
 /** Continuously interpolate position, RMF frame, radius, and nearest vertex index at `u` in [0, 1]. */

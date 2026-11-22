@@ -7,6 +7,15 @@ import type { Rng } from '@/core/rng';
 import { sampleVariance } from '@/graph/engine/seeds';
 import {
   LENGTH_BASIS,
+  applyJink,
+  applyPath,
+  breaks,
+  clampBreakSpot,
+  earlyNoiseGate,
+  jinkKnots,
+  jinkSegmentCount,
+  smoothNoiseOffsets,
+  type PathSettings,
   RADIAL_BASIS,
   accurateStepCount,
   clampLength,
@@ -62,7 +71,10 @@ function evalParentCurve(params: NodeParams, id: string, u: number, fallback = 1
 export interface CompiledSpineConfig {
   readonly params: NodeParams;
   readonly lod: number;
+  /** Late noise field (changes with the Late Seed). */
   readonly noise: SimplexNoise;
+  /** Early noise field (independent of the Late Seed). */
+  readonly earlyNoise: SimplexNoise;
   readonly flareNoiseGen: SimplexNoise;
   readonly forceHook: CompiledSpineForceHook;
 
@@ -130,6 +142,7 @@ export interface CompiledSpineConfig {
 
   readonly earlyNoiseAmount: number;
   readonly earlyNoiseFreq: number;
+  readonly earlyNoiseThreshold: number;
   readonly noiseAmountBase: number;
   readonly noiseFrequency: number;
   readonly noiseTwist: number;
@@ -147,6 +160,20 @@ export interface CompiledSpineConfig {
   readonly breakChance: number;
   readonly breakSpot: number;
   readonly breakSpotVar: number;
+  readonly breakSeed: number;
+
+  readonly jinkAmount: number;
+  readonly jinkAbsolute: number;
+  readonly jinkRelative: number;
+  readonly jinkUniformity: number;
+  readonly jinkSeed: number;
+
+  readonly pathAmount: number;
+  readonly pathLength: number;
+  readonly pathOffset: number;
+  readonly pathOffsetVar: number;
+  readonly pathTwistRad: number;
+  readonly pathLut: Float32Array | null;
 
   readonly splitChance: number;
   readonly splitSpreadDeg: number;
@@ -174,6 +201,7 @@ export interface CompiledSpineConfig {
   readonly curvatureLut: Float32Array | null;
   readonly noiseAmountLut: Float32Array | null;
   readonly earlyNoiseLut: Float32Array | null;
+  readonly earlyThresholdLut: Float32Array | null;
   readonly flareLut: Float32Array | null;
   readonly bulgeLut: Float32Array | null;
   readonly twistLut: Float32Array | null;
@@ -190,6 +218,7 @@ export function compileSpineConfig(
   const displaceSeedOffset = getNumber(params, 'displaceSeed', 0);
   const noise = createSimplex((seed ^ Math.imul(noiseSeedOffset + 1, 0x9e3779b1)) >>> 0);
   const flareNoiseGen = createSimplex((seed ^ Math.imul(displaceSeedOffset + 7, 0x85ebca6b)) >>> 0);
+  const earlyNoise = createSimplex((seed ^ Math.imul(1, 0x9e3779b1)) >>> 0);
   const forceHook = compileSpineForceHook(inputs, params);
 
   const lodSegReduction = clamp(getNumber(params, 'lodSegments', 0.5), 0, 1);
@@ -211,11 +240,13 @@ export function compileSpineConfig(
   const matchOneVTile = getBool(params, 'matchOneVTile', false);
 
   const radiusProfileCurve = getCurveValue(params, 'radiusProfile');
+  const pathProfileCurve = getCurveValue(params, 'pathProfile');
 
   return {
     params,
     lod,
     noise,
+    earlyNoise,
     flareNoiseGen,
     forceHook,
 
@@ -280,6 +311,7 @@ export function compileSpineConfig(
 
     earlyNoiseAmount: Math.max(0, getNumber(params, 'earlyNoiseAmount', 0.08)),
     earlyNoiseFreq: Math.max(0.05, getNumber(params, 'earlyNoiseFrequency', 1.2)),
+    earlyNoiseThreshold: clamp(getNumber(params, 'earlyNoiseThreshold', 0), 0, 1),
     noiseAmountBase: Math.max(0, getNumber(params, 'noiseAmount', 0.2)),
     noiseFrequency: Math.max(0, getNumber(params, 'noiseFrequency', 1)),
     noiseTwist: getNumber(params, 'noiseTwist', 0),
@@ -295,8 +327,22 @@ export function compileSpineConfig(
 
     termination: getString(params, 'termination', 'taper'),
     breakChance: clamp(getNumber(params, 'breakChance', 0), 0, 1),
-    breakSpot: clamp(getNumber(params, 'breakSpot', 0.65), 0.1, 0.98),
+    breakSpot: clampBreakSpot(getNumber(params, 'breakSpot', 0.65)),
     breakSpotVar: params.breakSpot?.variance ?? 0,
+    breakSeed: Math.round(getNumber(params, 'breakSeed', 0)),
+
+    jinkAmount: clamp(getNumber(params, 'jinkAmount', 0), 0, 1),
+    jinkAbsolute: Math.max(1, getNumber(params, 'jinkAbsolute', 3)),
+    jinkRelative: Math.max(0, getNumber(params, 'jinkRelative', 0)),
+    jinkUniformity: clamp(getNumber(params, 'jinkUniformity', 0.5), 0, 1),
+    jinkSeed: Math.round(getNumber(params, 'jinkSeed', 0)),
+
+    pathAmount: Math.max(0, getNumber(params, 'pathAmount', 0)),
+    pathLength: Math.max(0.01, getNumber(params, 'pathLength', 1)),
+    pathOffset: getNumber(params, 'pathOffset', 0),
+    pathOffsetVar: params.pathOffset?.variance ?? 0,
+    pathTwistRad: deg2rad(getNumber(params, 'pathTwist', 0)),
+    pathLut: pathProfileCurve ? curveToLUT(pathProfileCurve, 256) : null,
 
     splitChance: clamp(getNumber(params, 'splitChance', 0), 0, 1),
     splitSpreadDeg: clamp(getNumber(params, 'splitSpread', 26), 2, 85),
@@ -321,6 +367,7 @@ export function compileSpineConfig(
     curvatureLut: params.curvature?.curve ? curveToLUT(params.curvature.curve, 256) : null,
     noiseAmountLut: params.noiseAmount?.curve ? curveToLUT(params.noiseAmount.curve, 256) : null,
     earlyNoiseLut: params.earlyNoiseAmount?.curve ? curveToLUT(params.earlyNoiseAmount.curve, 256) : null,
+    earlyThresholdLut: params.earlyNoiseThreshold?.curve ? curveToLUT(params.earlyNoiseThreshold.curve, 256) : null,
     flareLut: params.flareRadius?.curve ? curveToLUT(params.flareRadius.curve, 256) : null,
     bulgeLut: params.bulgeAmount?.curve ? curveToLUT(params.bulgeAmount.curve, 256) : null,
     twistLut: params.twist?.curve ? curveToLUT(params.twist.curve, 256) : null,
@@ -523,11 +570,11 @@ export function growSpineIntoBuilder(
 
   // Determine break / termination behavior
   const isForkMode = cfg.termination === 'fork' && splitDepth === 0;
+  const breakRng = cfg.breakSeed === 0 ? rng : rng.fork(`brkSeed${cfg.breakSeed}`);
   const isBroken =
-    splitDepth === 0 &&
-    (cfg.termination === 'broken' || (cfg.breakChance > 0 && rng.fork('brk').chance(cfg.breakChance)));
+    splitDepth === 0 && (cfg.termination === 'broken' || breaks(cfg.breakChance, breakRng.fork('brk').next()));
   const fBreak = isBroken
-    ? clamp(sampleVariance(rng.fork('brkSpot'), cfg.breakSpot, cfg.breakSpotVar, 0.35), 0.15, 0.95)
+    ? clampBreakSpot(sampleVariance(breakRng.fork('brkSpot'), cfg.breakSpot, cfg.breakSpotVar, 0.35))
     : 1;
 
   // Determine split / bifurcation behavior
@@ -593,10 +640,13 @@ export function growSpineIntoBuilder(
     if (cfg.earlyNoiseAmount > 0) {
       const straightDamp = noiseKeep(f, cfg.straightness);
       const eCurve = cfg.earlyNoiseLut ? sampleCurveLUT(cfg.earlyNoiseLut, f) : 1;
-      const eAmp = cfg.earlyNoiseAmount * eCurve * straightDamp * (1 / Math.sqrt(steps)) * 1.4;
-      const nx = cfg.noise.noise3(f * cfg.earlyNoiseFreq * 2.3 + noisePhase, 1.7, splitDepth * 3.1);
-      const ny = cfg.noise.noise3(f * cfg.earlyNoiseFreq * 2.3 + noisePhase, 8.9, splitDepth * 3.1 + 4.2);
-      nextDir = v3Add(nextDir, v3Add(v3Scale(curN, nx * eAmp), v3Scale(curB, ny * eAmp)));
+      const gate = earlyNoiseGate(f, cfg.earlyNoiseThreshold, cfg.earlyThresholdLut ? sampleCurveLUT(cfg.earlyThresholdLut, f) : 1);
+      const eAmp = cfg.earlyNoiseAmount * eCurve * gate * straightDamp * (1 / Math.sqrt(steps)) * 1.4;
+      if (eAmp !== 0) {
+        const nx = cfg.earlyNoise.noise3(f * cfg.earlyNoiseFreq * 2.3 + noisePhase, 1.7, splitDepth * 3.1);
+        const ny = cfg.earlyNoise.noise3(f * cfg.earlyNoiseFreq * 2.3 + noisePhase, 8.9, splitDepth * 3.1 + 4.2);
+        nextDir = v3Add(nextDir, v3Add(v3Scale(curN, nx * eAmp), v3Scale(curB, ny * eAmp)));
+      }
     }
 
     // Curvature bends around local binormal
@@ -672,9 +722,11 @@ export function growSpineIntoBuilder(
     curN = nextN;
   }
 
-  // Pass 2: Late noise / gnarliness displacement in local RMF (N, B) plane, pinned at s = 0
+  // Pass 2: Late noise displacement in the local RMF (N, B) plane, pinned at s = 0. Smooth low-pass filters the offsets and fades them out (1 = straight)
   const lateAmpScale = cfg.noiseAmountBase * (1 - cfg.noiseSmooth);
   if (lateAmpScale > 1e-5 && cfg.noiseFrequency > 1e-5) {
+    const raw = new Float32Array(denseCount * 2);
+    const weight = new Float32Array(denseCount);
     for (let s = 1; s < denseCount; s++) {
       const localU = s / (denseCount - 1);
       const f = localU * fEnd;
@@ -682,8 +734,7 @@ export function growSpineIntoBuilder(
       const pinEnvelope = Math.min(1, f * 3.5) * noiseKeep(f, cfg.straightness);
       const lCurve = cfg.noiseAmountLut ? Math.max(0, sampleCurveLUT(cfg.noiseAmountLut, f)) : 1;
       // Scale proportional to branch length so gnarliness looks proportional across trunk & twigs
-      const amp = lateAmpScale * lCurve * pinEnvelope * Math.min(1.8, 0.12 + fullLength * 0.08);
-      if (amp <= 1e-6) continue;
+      weight[s] = lateAmpScale * lCurve * pinEnvelope * Math.min(1.8, 0.12 + fullLength * 0.08);
 
       const freqCoord = f * cfg.noiseFrequency * 1.85;
       const rawNx = cfg.noise.noise3(freqCoord, noisePhase + 3.1, 0.7);
@@ -691,9 +742,15 @@ export function growSpineIntoBuilder(
       const helixAng = cfg.noiseTwist * f * Math.PI * 4;
       const ch = Math.cos(helixAng);
       const sh = Math.sin(helixAng);
-      const dispN = rawNx * ch - rawNy * sh;
-      const dispB = rawNx * sh + rawNy * ch;
-
+      raw[s * 2] = rawNx * ch - rawNy * sh;
+      raw[s * 2 + 1] = rawNx * sh + rawNy * ch;
+    }
+    const offsets = smoothNoiseOffsets(raw, denseCount, cfg.noiseSmooth);
+    for (let s = 1; s < denseCount; s++) {
+      const amp = weight[s] as number;
+      if (amp <= 1e-6) continue;
+      const dispN = offsets[s * 2] as number;
+      const dispB = offsets[s * 2 + 1] as number;
       const tk: Vec3 = [denseTan[s * 3] as number, denseTan[s * 3 + 1] as number, denseTan[s * 3 + 2] as number];
       const nk: Vec3 = [denseNrm[s * 3] as number, denseNrm[s * 3 + 1] as number, denseNrm[s * 3 + 2] as number];
       const bk = v3Norm(v3Cross(tk, nk));
@@ -702,6 +759,24 @@ export function growSpineIntoBuilder(
       densePos[s * 3 + 1] = (densePos[s * 3 + 1] as number) + nk[1] * dispN * amp + bk[1] * dispB * amp;
       densePos[s * 3 + 2] = (densePos[s * 3 + 2] as number) + nk[2] * dispN * amp + bk[2] * dispB * amp;
     }
+  }
+
+  // Jink: straight runs between corners (after the noise, so it straightens the noisy spine)
+  if (cfg.jinkAmount > 0) {
+    const segments = jinkSegmentCount(cfg.jinkAbsolute, cfg.jinkRelative, activeLength);
+    applyJink(densePos, denseCount, cfg.jinkAmount, jinkKnots(segments, cfg.jinkUniformity, rng.fork(`jink${cfg.jinkSeed}`)));
+  }
+
+  // Path: the tile profile traced along the spine (perpendicular displacement; Offset variance desynchronises branches)
+  if (cfg.pathAmount > 0 && cfg.pathLut) {
+    const path: PathSettings = {
+      amount: cfg.pathAmount,
+      tileLength: cfg.pathLength,
+      offset: sampleVariance(rng.fork('pathOff'), cfg.pathOffset, cfg.pathOffsetVar, 1),
+      twistPerMetre: cfg.pathTwistRad,
+      lut: cfg.pathLut,
+    };
+    applyPath(densePos, denseNrm, denseCount, path);
   }
 
   // Ground prune: a branch that intersects the ground plane is removed with the Ground probability
@@ -770,6 +845,7 @@ export function growSpineIntoBuilder(
     twists: outTwists,
     initialNormalHint: spec.initialFrame.normal,
     ...(spec.side ? { side: spec.side } : {}),
+    openEnd: isBroken,
     radialSides: radialSegmentCount({
       absolute: cfg.radialAbsolute,
       relative: cfg.radialRelative,
