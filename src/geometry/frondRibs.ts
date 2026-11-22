@@ -17,6 +17,15 @@ import { signedAngleAround } from './leafPlacement';
  *               < 0 lifts it
  */
 
+/** Multipliers of one half of a frond for the deformations that can differ between left and right. */
+export interface SideScale {
+  fold: number;
+  curl: number;
+  gravity: number;
+}
+
+export const UNIT_SIDE_SCALE: Readonly<SideScale> = { fold: 1, curl: 1, gravity: 1 };
+
 export interface RibSettings {
   /** Half of the frond width (metres) at arc fraction t. */
   halfWidthAt: (t: number) => number;
@@ -35,6 +44,8 @@ export interface RibSettings {
   /** Align: blends the face of every station toward `-alignDir` (e.g. the sky for a gravity force). */
   alignAmount: number;
   alignDir: V3 | null;
+  /** Left-Right Variance: own Fold / Curl / Gravity multipliers per half (1 = unchanged). */
+  sides?: { left: Readonly<SideScale>; right: Readonly<SideScale> };
 }
 
 export interface Ribs {
@@ -132,13 +143,17 @@ export function buildRibs(path: readonly V3[], set: RibSettings): Ribs | null {
     tangent.set(Ti, i * 3);
     normal.set(Ni, i * 3);
     side.set(Bi, i * 3);
-    const fold = set.fold(ti);
-    const curl = set.curl(ti);
-    const grav = set.gravity(ti);
-    const cf = Math.cos(fold);
-    const sf = Math.sin(fold);
+    const foldBase = set.fold(ti);
+    const curlBase = set.curl(ti);
+    const gravBase = set.gravity(ti);
     for (let k = 0; k < 2; k++) {
       const sigma = k === 0 ? -1 : 1;
+      const sc = (k === 0 ? set.sides?.left : set.sides?.right) ?? UNIT_SIDE_SCALE;
+      const fold = foldBase * sc.fold;
+      const curl = curlBase * sc.curl;
+      const grav = gravBase * sc.gravity;
+      const cf = Math.cos(fold);
+      const sf = Math.sin(fold);
       for (let j = 0; j <= A; j++) {
         const x = j / A;
         const d = x * hw;

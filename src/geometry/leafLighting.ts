@@ -7,7 +7,7 @@ import { norm, rotate, type V3 } from './math3';
  * Normal-editing pass of the Leaf "Lighting" tab (reused by the Frond generator).
  *
  * Order (every step works on the vertex normals only, geometry never moves):
- *  Smooth -> Parent puffiness -> Unify -> Adjustments (Up / Right / Out) -> Puffiness -> World up.
+ *  Smooth -> Parent puffiness -> (Frond: Alignment, Spread) -> Unify -> Adjustments (Up / Right / Out) -> Puffiness -> World up.
  * World up comes last so it overrides puffiness and the adjustments. Tangents are re-orthogonalised to the result.
  */
 
@@ -25,6 +25,16 @@ export interface LightingGroup {
   frame: { x: V3; y: V3; z: V3 };
   /** Resolved Up / Right / Out rotation (radians, variance already applied) about frame X / Y / Z. */
   adjust: V3;
+  /** Frond only: per group vertex (3 floats each) the growth direction of the parent spine and the direction away from it. */
+  spine?: { along: Float32Array; away: Float32Array };
+}
+
+/** Frond-only normal edits (see the Frond Lighting tab). */
+export interface FrondLightingExtras {
+  /** 0..1 blend of the normals toward the growth direction of the parent spine. */
+  alignment: number;
+  /** 0..1 blend of the normals away from the parent spine. */
+  spread: number;
 }
 
 export interface LightingContext {
@@ -33,13 +43,15 @@ export interface LightingContext {
   allowUnify?: boolean;
   /** false = the World up option does not exist for this generator (Batched leaf). Default true. */
   allowWorldUp?: boolean;
+  /** Frond Alignment / Spread (needs `LightingGroup.spine`). */
+  frond?: FrondLightingExtras;
 }
 
 const WORLD_UP: V3 = [0, 0, 1];
 const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
 
 /** Does any option of `s` change normals? Cheap pre-check so untouched leaves skip the pass. */
-export function isLightingActive(s: LeafLightingSettings, ctx?: Pick<LightingContext, 'allowUnify' | 'allowWorldUp'>): boolean {
+export function isLightingActive(s: LeafLightingSettings, ctx?: Pick<LightingContext, 'allowUnify' | 'allowWorldUp' | 'frond'>): boolean {
   const unify = ctx?.allowUnify === false ? 0 : s.unify;
   const worldUp = ctx?.allowWorldUp === false ? 0 : s.worldUp;
   return (
@@ -53,7 +65,8 @@ export function isLightingActive(s: LeafLightingSettings, ctx?: Pick<LightingCon
     s.upVariance !== 0 ||
     s.rightVariance !== 0 ||
     s.outVariance !== 0 ||
-    worldUp > 0
+    worldUp > 0 ||
+    (ctx?.frond !== undefined && (ctx.frond.alignment > 0 || ctx.frond.spread > 0))
   );
 }
 
@@ -80,6 +93,9 @@ export function resolveLightAnchor(
     case 'intermediate':
     case 'local':
       base = chain(s.parentAnchor);
+      break;
+    case 'origin':
+      base = [0, 0, 0];
       break;
     case 'height': {
       const g = chain('global') ?? attach;
@@ -242,6 +258,15 @@ export function applyLeafLighting(mesh: MeshData, settings: LeafLightingSettings
       } else if (g.anchor) {
         blendRadial(mesh, g, n, g.anchor[0], g.anchor[1], g.anchor[2], parentAmount);
       }
+    }
+
+    // 2b. Frond: toward the growth direction of the parent spine (Alignment), away from it (Spread).
+    if (g.spine && ctx.frond) {
+      const al = clamp01(ctx.frond.alignment);
+      const sp = clamp01(ctx.frond.spread);
+      const { along, away } = g.spine;
+      if (al > 0) for (let i = 0; i < count; i++) blendInto(n, i * 3, along[i * 3] as number, along[i * 3 + 1] as number, along[i * 3 + 2] as number, al);
+      if (sp > 0) for (let i = 0; i < count; i++) blendInto(n, i * 3, away[i * 3] as number, away[i * 3 + 1] as number, away[i * 3 + 2] as number, sp);
     }
 
     // 3. Unify: every normal of the leaf moves towards their average.

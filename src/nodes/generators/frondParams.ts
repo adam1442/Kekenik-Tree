@@ -1,6 +1,7 @@
 import type { ParamDef } from '@/contracts/params';
 import { section } from '../shared/builders';
 import { defaultMeshLodCurve } from './leafDeformParams';
+import { frondLightingParams } from './frondLightingParams';
 import { displacementParams, leafMaterialParams, leafWindParams } from './params';
 
 /**
@@ -17,6 +18,12 @@ export function frondParams(): ParamDef[] {
   const bd = section('Shape', 'Boundary');
   const sc = section('Shape', 'Scale');
   const ol = section('Shape', 'Outline');
+  const lr = section('Shape', 'Left-Right Variance');
+  const sv = section('Shape', 'Section Variance');
+  const sg = section('Shape', 'Section Gravity');
+  const sf = section('Shape', 'Section Fold');
+  const scu = section('Shape', 'Section Curl');
+  const sr = section('Shape', 'Section Roll');
   const sa = section('Segments', 'Accuracy');
   const sw = section('Segments', 'Width');
   const fg = section('Forces', 'Gravity');
@@ -44,6 +51,17 @@ export function frondParams(): ParamDef[] {
     hg.float('frondFold', 'Fold', 0, { min: -90, max: 90, unit: '°', variance: 0, curve: true, tooltip: 'Folds each side toward the other along the length. Positive folds up, negative folds down.' }),
     hg.float('frondCurlAngle', 'Curl', 0, { min: -180, max: 180, unit: '°', variance: 0, curve: true, tooltip: 'Curls the outer edges toward the spine: the angle between the middle and the edge of every rib.' }),
     hg.float('frondRoll', 'Roll', 0, { min: -180, max: 180, unit: '°', variance: 0.1, tooltip: 'Rotates the frond around its parent spine.' }),
+    lr.float('frondLRAmount', 'Amount', 0, { min: 0, max: 1, step: 0.01, tooltip: 'Lets the left and right half react independently to Curl, Fold and Gravity: each side gets its own random multiplier (1 = anywhere from none to double).' }),
+    lr.seed('frondLRSeed', 'Seed'),
+    sv.bool('frondSecOutliers', 'Favor Outliers', false, { tooltip: 'Prefers extreme values over median ones when the sections are randomised. Sections are painted in the cutout editor (Section [2..8]); unpainted areas keep the whole-mesh values.' }),
+    sg.float('frondSecGravityAmount', 'Amount', 0, { min: 0, max: 2, step: 0.01, tooltip: 'Random Gravity added per painted section (same units as Gravity).' }),
+    sg.float('frondSecGravityOffset', 'Offset', 0, { min: -2, max: 2, step: 0.01, tooltip: 'Shifts the Gravity of every painted section.' }),
+    sf.float('frondSecFoldAmount', 'Amount', 0, { min: 0, max: 90, unit: '°', tooltip: 'Random Fold added per painted section.' }),
+    sf.float('frondSecFoldOffset', 'Offset', 0, { min: -90, max: 90, unit: '°', tooltip: 'Shifts the Fold of every painted section.' }),
+    scu.float('frondSecCurlAmount', 'Amount', 0, { min: 0, max: 180, unit: '°', tooltip: 'Random Curl added per painted section.' }),
+    scu.float('frondSecCurlOffset', 'Offset', 0, { min: -180, max: 180, unit: '°', tooltip: 'Shifts the Curl of every painted section.' }),
+    sr.float('frondSecRollAmount', 'Amount', 0, { min: 0, max: 180, unit: '°', tooltip: 'Random Roll (rotation about the spine) added per painted section.' }),
+    sr.float('frondSecRollOffset', 'Offset', 0, { min: -180, max: 180, unit: '°', tooltip: 'Shifts the Roll of every painted section.' }),
     bd.float('frondBoundaryStart', 'Start', 0, { min: 0, max: 1, step: 0.01, tooltip: 'Where along the parent spine the frond starts (0 = base).' }),
     bd.float('frondBoundaryEnd', 'End', 1, { min: 0, max: 1, step: 0.01, tooltip: 'Where along the parent spine the frond ends (1 = tip).' }),
     sc.float('frondWidth', 'Width', 0.25, { min: 0.001, max: 50, softMax: 2, unit: 'm', variance: 0.15, curve: true, tooltip: 'Scales the mesh across the spine (X): the full width in metres. The curve shapes it along the length. The length is never scaled.' }),
@@ -87,6 +105,15 @@ export function frondParams(): ParamDef[] {
     mm.curve('frondMeshLod', 'Resolution', defaultMeshLodCurve(), { tooltip: 'Which mesh LOD to use at each active resolution. X: LOD (0 = highest detail … 3 = lowest), Y: 0 = High, 1 = Medium, 2 = Low.' }),
   ];
   const animation = leafWindParams().map((d) => ({ ...d, group: 'Animation' }) as ParamDef);
-  const bend = section('Animation', 'Bend weight').float('frondBendPower', 'Bend power', 1.5, { min: 0.1, max: 6, tooltip: 'Wind bend weight along the length: t^power (base stiff, tip free).' });
-  return [...list, ...displacementParams(), ...material, ...materialExtras, ...animation, bend];
+  const bend = section('Animation', 'Bend weight').float('frondBendPower', 'Bend power', 1.5, { min: 0.1, max: 6, tooltip: 'Stiffness of the base: the wind weight is scaled by t^power along the length (0 at the base, free tip).' });
+  const ww = section('Animation', 'Wind');
+  const wr = section('Animation', 'Ribs');
+  const wind: ParamDef[] = [
+    ww.float('frondWindWeight', 'Weight', 1, { min: 0, max: 1, step: 0.01, curve: true, tooltip: 'Wind weight along the length (left = pivot at the base, right = tip). The base always stays attached: the weight is 0 there.' }),
+    ww.float('frondWindCross', 'Cross', 0, { min: 0, max: 1, step: 0.01, tooltip: 'Motion that grows from the spine (none) to the edges (full).' }),
+    ww.float('frondWindBoost', 'Boost', 0, { min: 0, max: 1, step: 0.01, curve: true, tooltip: 'Extra absolute wind weight (left = base, right = tip). The very base is kept still.' }),
+    wr.bool('frondRibsBranchWind', 'Apply branch wind', false, { tooltip: 'Adds the wind of one level above the parent branch to the ribs, so the blade edges follow the sway of the branch.' }),
+    wr.float('frondRibsWeight', 'Weight', 0.5, { min: 0, max: 1, step: 0.01, tooltip: 'How strongly the branch wind reaches the ribs (grows from the spine to the edges).' }),
+  ];
+  return [...list, ...displacementParams(), ...material, ...materialExtras, ...frondLightingParams(), ...animation, bend, ...wind];
 }

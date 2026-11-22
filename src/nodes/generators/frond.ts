@@ -5,10 +5,21 @@ import type { Lineage } from '@/contracts/ports';
 import { evaluateCurve, type Curve } from '@/contracts/curve';
 import { SkeletonBuilder, type Branch, type Skeleton } from '@/contracts/skeleton';
 import { deg2rad } from '@/core/math';
-import { bendPath, buildRibs, netForceDirection, ribbonColumns } from '@/geometry/frondRibs';
+import type { LeafLightingSettings } from '@/contracts/lighting';
+import { bendPath, buildRibs, netForceDirection, ribbonColumns, type RibSettings, type Ribs } from '@/geometry/frondRibs';
+import {
+  hasSectionVariance,
+  leftRightScales,
+  sectionDeltas,
+  type SectionDelta,
+  type SectionVarianceSettings,
+} from '@/geometry/frondVariance';
+import { ribsLevelOf, type FrondWind } from '@/geometry/frondWind';
+import { isLightingActive, resolveAdjust, resolveLightAnchor, surfaceDirection } from '@/geometry/leafLighting';
 import {
   buildFrondMesh,
   unitMeshFromGeometry,
+  type FrondLight,
   type FrondSpec,
   type FrondUv,
   type UnitMesh,
@@ -23,6 +34,7 @@ import { resolveUvAreaRect } from '@/materials/materialSource';
 import { displaceFromParams, resolveDisplacement } from './displacement';
 import { atlasRect, emptyFoliage, foliageOutput, isActive, parentOf, parentWind, pickLeafType, leafTint, varied } from './foliageCommon';
 import { materialHeightSampler } from './leafDeformParams';
+import { resolveFrondLighting, type FrondLightingResolved } from './frondLightingParams';
 
 /** Safety cap on fronds. */
 export const MAX_FRONDS = 60_000;
@@ -96,6 +108,22 @@ export function unificationHint(style: string, anchor: V3 | null, base: V3): V3 
   return len(d) < 1e-6 ? UP : norm(d);
 }
 
+/** Parameter value times its optional profile curve (the curve toggled off = flat). */
+const scaled = (p: NodeParams, id: string, fallback: number): ((t: number) => number) => {
+  const base = getNumber(p, id, fallback);
+  const shape = profile(p, id);
+  return (t) => base * shape(t);
+};
+
+/** Section Variance group (Favor Outliers + Amount / Offset of Gravity, Fold, Curl, Roll). */
+export function readSectionVariance(p: NodeParams): SectionVarianceSettings {
+  const axis = (name: string): { amount: number; offset: number } => ({
+    amount: Math.max(0, getNumber(p, `frondSec${name}Amount`, 0)),
+    offset: getNumber(p, `frondSec${name}Offset`, 0),
+  });
+  return { favorOutliers: getBool(p, 'frondSecOutliers', false), gravity: axis('Gravity'), fold: axis('Fold'), curl: axis('Curl'), roll: axis('Roll') };
+}
+
 /** Frond settings read once per evaluation. */
 export interface FrondConfig {
   planes: number;
@@ -118,6 +146,10 @@ export interface FrondConfig {
   meshLod: Curve | null;
   meshIndex: number;
   windPower: number;
+  /** Wind Weight / Cross / Boost / Ribs (the Ribs channel is set per parent branch). */
+  wind: Omit<FrondWind, 'ribsLevel'>;
+  leftRight: { amount: number; seed: number };
+  sections: SectionVarianceSettings;
   densify: { detail: number } | null;
 }
 
@@ -159,6 +191,16 @@ export function readFrondConfig(p: NodeParams, lod: number): FrondConfig {
     meshLod: curveParam(p, 'frondMeshLod'),
     meshIndex: Math.round(getNumber(p, 'frondMeshIndex', 0)),
     windPower: getNumber(p, 'frondBendPower', 1.5),
+    wind: {
+      power: getNumber(p, 'frondBendPower', 1.5),
+      weight: scaled(p, 'frondWindWeight', 1),
+      boost: scaled(p, 'frondWindBoost', 0),
+      cross: Math.min(1, Math.max(0, getNumber(p, 'frondWindCross', 0))),
+      ribsBranchWind: getBool(p, 'frondRibsBranchWind', false),
+      ribsWeight: Math.min(1, Math.max(0, getNumber(p, 'frondRibsWeight', 0.5))),
+    },
+    leftRight: { amount: Math.min(1, Math.max(0, getNumber(p, 'frondLRAmount', 0))), seed: Math.round(getNumber(p, 'frondLRSeed', 0)) },
+    sections: readSectionVariance(p),
     densify: displaced ? { detail: Math.max(0.002, getNumber(p, 'displaceDetail', 0.03)) } : null,
   };
 }
@@ -195,6 +237,8 @@ function unitMeshOf(cache: Map<string, UnitMesh | null>, asset: CutoutMesh, leve
 }
 
 export interface FrondBuild {
+  /** Resolved lighting (Style Global / Local) the mesh is lit with. */
+  lighting: FrondLightingResolved;
   specs: FrondSpec[];
   /** Spine of every frond (first plane of each spine), after Start / End and Forces. */
   paths: V3[][];
@@ -204,13 +248,15 @@ export interface FrondBuild {
  * Ribs of every parent spine (one rib pair per length segment of the spine, planes per spine included) with the mesh of the
  * chosen material mapped on them: its cutout mesh, or the plain ribbon when the row has none. Exported for tests.
  */
-export function buildFrondSpecs(ctx: NodeContext, parent: Skeleton, p: NodeParams, lineage?: Lineage): FrondBuild {
+export function buildFrondSpecs(ctx: NodeContext, parent: Skeleton, p: NodeParams, lineage?: Lineage, globalLighting?: LeafLightingSettings): FrondBuild {
   const cfg = readFrondConfig(p, ctx.lod);
   const boost = 1 + (cfg.cull > 0 ? (1 / Math.max(0.2, 1 - cfg.cull) - 1) * cfg.widthBoost : 0);
   const widthCurve = profile(p, 'frondWidth');
   const foldCurve = profile(p, 'frondFold');
   const curlCurve = profile(p, 'frondCurlAngle');
   const gravityCurve = profile(p, 'frondGravity');
+  const lighting = resolveFrondLighting(p, globalLighting);
+  const lit = isLightingActive(lighting.settings, { frond: lighting.extras });
   const specs: FrondSpec[] = [];
   const paths: V3[][] = [];
   const unitCache = new Map<string, UnitMesh | null>();
@@ -253,20 +299,45 @@ export function buildFrondSpecs(ctx: NodeContext, parent: Skeleton, p: NodeParam
     const heightMap = heightOffset !== 0 ? cachedHeight(heightCache, type.materialId) : null;
     const columns = ribbonColumns(cfg.columns.absolute, cfg.columns.relative, polyLength(pts));
     const flip = cfg.flip && flipDraw < 0.5;
+    const sides = cfg.leftRight.amount > 0 ? leftRightScales(cfg.leftRight, rngLeftRight(ctx, b.id, cfg.leftRight.seed)) : undefined;
+    const deltas = mesh && mesh.sections.length > 0 && hasSectionVariance(cfg.sections) ? sectionDeltas(cfg.sections, rngNext(rng.fork('sec'))) : null;
+    const lightRng = lit ? rng.fork('light') : null;
+    const adjust = lightRng ? resolveAdjust(lighting.settings, () => lightRng.next()) : null;
+    const windSet: FrondWind = { ...cfg.wind, ribsLevel: ribsLevelOf(b.generation) };
     for (let k = 0; k < cfg.planes; k++) {
       const angle = cfg.startAngle + (k * Math.PI) / cfg.planes;
-      const ribs = buildRibs(pts, {
-        halfWidthAt: (t) => 0.5 * width * boost * (mesh ? Math.max(0, widthCurve(t)) : ribbonWidthFactor({ baseWidth: cfg.shape.baseWidth, tipShape: cfg.shape.tip, tipTaper: cfg.shape.taper, widthAt: widthCurve }, t)),
-        fold: (t) => deg2rad(fold) * foldCurve(t),
-        curl: (t) => deg2rad(curl) * curlCurve(t),
-        gravity: (t) => gravity * gravityCurve(t),
-        roll: deg2rad(roll),
-        accuracy: cfg.accuracy,
-        hint: rotate(base, t0, angle),
-        alignAmount: cfg.align,
-        alignDir: cfg.align > 0 ? (cfg.forceNet ?? [0, 0, -1]) : null,
-      });
+      const make = (d: SectionDelta | null): Ribs | null => {
+        const set: RibSettings = {
+          halfWidthAt: (t) => 0.5 * width * boost * (mesh ? Math.max(0, widthCurve(t)) : ribbonWidthFactor({ baseWidth: cfg.shape.baseWidth, tipShape: cfg.shape.tip, tipTaper: cfg.shape.taper, widthAt: widthCurve }, t)),
+          fold: (t) => deg2rad(fold + (d?.fold ?? 0)) * foldCurve(t),
+          curl: (t) => deg2rad(curl + (d?.curl ?? 0)) * curlCurve(t),
+          gravity: (t) => (gravity + (d?.gravity ?? 0)) * gravityCurve(t),
+          roll: deg2rad(roll + (d?.roll ?? 0)),
+          accuracy: cfg.accuracy,
+          hint: rotate(base, t0, angle),
+          alignAmount: cfg.align,
+          alignDir: cfg.align > 0 ? (cfg.forceNet ?? [0, 0, -1]) : null,
+          ...(sides ? { sides } : {}),
+        };
+        return buildRibs(pts, set);
+      };
+      const ribs = make(null);
       if (!ribs) continue;
+      let sectionRibs: (Ribs | null)[] | undefined;
+      if (deltas && mesh) {
+        sectionRibs = [];
+        for (const id of mesh.sections) sectionRibs[id] = make(deltas[id] ?? null);
+      }
+      let light: FrondLight | null = null;
+      if (lit && adjust) {
+        const anchorPoint = resolveLightAnchor(lighting.settings, (style) => anchorFromChain(chainOf(lineage, parent, bi), style), pts[0] as V3);
+        const surface = surfaceDirection(lighting.settings.parentAnchor, {
+          normal: [ribs.normal[0] as number, ribs.normal[1] as number, ribs.normal[2] as number],
+          binormal: [ribs.side[0] as number, ribs.side[1] as number, ribs.side[2] as number],
+          tangent: [ribs.tangent[0] as number, ribs.tangent[1] as number, ribs.tangent[2] as number],
+        });
+        light = { anchor: anchorPoint, surface, adjust };
+      }
       specs.push({
         ribs,
         materialId: type.materialId,
@@ -280,6 +351,9 @@ export function buildFrondSpecs(ctx: NodeContext, parent: Skeleton, p: NodeParam
         ao: getNumber(p, 'aoStrength', 0.5),
         wind,
         windPower: cfg.windPower,
+        windSet,
+        ...(sectionRibs ? { sectionRibs } : {}),
+        light,
         heightScale: getNumber(p, 'frondScaleHeight', 1),
         heightAmount: amount,
         heightOffset,
@@ -289,8 +363,11 @@ export function buildFrondSpecs(ctx: NodeContext, parent: Skeleton, p: NodeParam
     }
     index++;
   }
-  return { specs, paths };
+  return { lighting, specs, paths };
 }
+
+const rngLeftRight = (ctx: NodeContext, branchId: number, seed: number): (() => number) => rngNext(ctx.rng.fork(`frlr:${seed}:${branchId}`));
+const rngNext = (r: { next: () => number }): (() => number) => () => r.next();
 
 function resolveMesh(cache: Map<string, UnitMesh | null>, asset: CutoutMesh | null, materialId: string, lod: number, cfg: FrondConfig): UnitMesh | null {
   if (!asset) return null;
@@ -308,9 +385,14 @@ export function evaluateFrond(ctx: NodeContext, inputs: NodeInputs, p: NodeParam
   if (!isActive(p) || parent.count === 0) return emptyFoliage(parent, ctx.seed);
   const pv = inputs.parent?.[0];
   const lineage = pv && pv.kind === 'Structure' ? pv.value.lineage : undefined;
-  const { specs, paths } = buildFrondSpecs(ctx, parent, p, lineage);
+  const globalLighting = pv && pv.kind === 'Structure' ? pv.value.lighting : undefined;
+  const { specs, paths, lighting } = buildFrondSpecs(ctx, parent, p, lineage, globalLighting);
   if (specs.length === 0) return emptyFoliage(parent, ctx.seed);
-  const mesh = displaceFromParams(buildFrondMesh(specs, { uv: frondUvFromParams(p), defaultMaterial: 'leaf' }), p, ctx.lod);
+  const mesh = displaceFromParams(
+    buildFrondMesh(specs, { uv: frondUvFromParams(p), defaultMaterial: 'leaf', lighting: lighting.settings, lightingExtras: lighting.extras }),
+    p,
+    ctx.lod,
+  );
   // One centre-line branch per frond (first plane of every spine) for overlays and child inheritance.
   const sb = new SkeletonBuilder();
   const gen = (parent.branches[0]?.generation ?? -1) + 1;

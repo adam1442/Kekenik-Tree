@@ -95,6 +95,16 @@ const LIGHTING_NOTES = [
   '',
 ].join('\n');
 
+const FROND_VARIANCE_NOTES = [
+  '### Frond (`generator.frond`) - variance, lighting and wind',
+  '',
+  '* **Left-Right Variance** (Shape). *Amount* (0..1): the left and right half of every frond get their own random multiplier (`1 - amount .. 1 + amount`) for Curl, Fold and Gravity, so the halves react independently. *Seed* picks the pattern. Amount 0 keeps both halves identical.',
+  '* **Section Variance** (Shape). Sections are painted in the cutout editor with the *Section [n]* paint tool (ids 1..8, 1 = default / unpainted) and read per vertex of the mapped mesh. Sections 2..8 get their own shift for Gravity, Fold, Curl and Roll: `Offset + Amount × random(-1..1)`, drawn once per frond and section. *Favor Outliers* maps the random value to its square root (sign kept), so extreme values are more likely than the median. Section 1 / unpainted vertices and plain ribbons keep the whole-mesh values. Each painted section is its own rib set, so section borders can show a step.',
+  '* **Lighting.** Style Global reads the Tree lighting (Alignment / Spread are not part of it); Local uses the frond group: Smooth, Alignment (normals toward the growth direction of the parent spine), Spread (normals away from the spine), Parent puffiness (Anchor = the Leaf list plus *Origin*, Amount) and Adjustments (Up / Right / Out about the frond axes: X across, Y along, Z face; ± variance per frond). It reuses `applyLeafLighting`; order: Smooth → Parent puffiness → Alignment → Spread → Adjustments. Geometry never moves.',
+  '* **Wind.** The per-vertex weights keep the existing layout `(level 0, level 1, level 2, phase)`; the frond starts from the parent weights at its base and adds its own bend on level 2. *Weight* = value × profile × `t^Bend power` (the profile\'s left end is the pivot and the weight is exactly 0 at the base, so the frond stays attached). *Cross* scales the motion from none at the spine to full at the edges. *Boost* adds an absolute weight (profile: left = base, right = tip), faded in over the first 10 % of the length. *Ribs › Apply branch wind* raises the level above the parent branch (generation − 1, at least the trunk level) for the vertices off the spine by *Ribs › Weight* × distance from the spine, also faded in over the first 10 %. Defaults reproduce the previous wind.',
+  '',
+].join('\n');
+
 const BATCHED_NOTES = [
   '### Batched Leaf (`generator.batchedLeaf`)',
   '',
@@ -117,7 +127,7 @@ function leafTab(): string {
     if (group === 'Leaves') lines.push(LEAF_NOTES);
     if (group === 'Lighting') lines.push(LIGHTING_NOTES);
   }
-  return lines.join('\n') + '\n' + DEFORM_NOTES + '\n' + BATCHED_NOTES;
+  return lines.join('\n') + '\n' + DEFORM_NOTES + '\n' + BATCHED_NOTES + '\n' + FROND_VARIANCE_NOTES;
 }
 
 describe('PARAMETERS.md', () => {
@@ -136,6 +146,7 @@ describe('PARAMETERS.md', () => {
     const doc = [header, ...['output.tree', 'generator.trunk', 'generator.branch', 'generator.spine'].map(table), leafTab()].join('\n');
     expect(doc).toContain('Tree placement');
     expect(doc).toContain('Sensitivity → Parent');
+    expect(doc).toContain('Left-Right Variance');
     if (process.env.WRITE_PARAM_DOCS) writeFileSync('docs/PARAMETERS.md', doc);
   });
 });

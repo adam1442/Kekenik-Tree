@@ -1,9 +1,9 @@
 /** Shape of the normal-editing settings shared by the Leaf "Lighting" tab and the Tree-level global lighting group. */
 
 /** Anchor the "Parent puffiness" normals radiate from (or the parent axis they align with for the Surface choices). */
-export type LightAnchor = 'global' | 'deep' | 'intermediate' | 'local' | 'none' | 'height' | 'surface-x' | 'surface-y' | 'surface-z';
+export type LightAnchor = 'global' | 'deep' | 'intermediate' | 'local' | 'none' | 'height' | 'surface-x' | 'surface-y' | 'surface-z' | 'origin';
 
-export const LIGHT_ANCHORS: readonly LightAnchor[] = ['global', 'deep', 'intermediate', 'local', 'none', 'height', 'surface-x', 'surface-y', 'surface-z'];
+export const LIGHT_ANCHORS: readonly LightAnchor[] = ['global', 'deep', 'intermediate', 'local', 'none', 'height', 'surface-x', 'surface-y', 'surface-z', 'origin'];
 
 export interface LeafLightingSettings {
   /** 0..1 blend between the original and the face-averaged normals. */

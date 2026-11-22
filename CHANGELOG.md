@@ -9,6 +9,11 @@ All notable changes to this project are documented here. The format is based on
 ### Fixed
 - Edit Mesh dialog, shared dialog buttons/footers (info, prompt, choice, Export, LOD editor) and a few inspector widgets were missing their stylesheet rules in the published build; the rules now live in `ui/theme/editmesh.css` and `panels.css`.
 
+### Added
+- Frond *Left-Right Variance* (Amount, Seed: each half reacts independently to Curl, Fold and Gravity) and *Section Variance* (Favor Outliers; Amount / Offset for Gravity, Fold, Curl and Roll per mesh section painted in the cutout editor).
+- Frond *Lighting* tab: Style Global / Local, Smooth, Alignment, Spread, Parent puffiness (Anchor incl. the new *Origin*, Amount) and Up / Right / Out adjustments, built on `applyLeafLighting`.
+- Frond wind: Weight (curve), Cross, Boost (curve) and Ribs (Apply branch wind, Weight), written into the existing per-vertex wind weights; the base stays static.
+
 ### Changed
 - Frond generator rebuilt on ribs: a left and a right rib runs across the parent spine at every length segment, and the cutout mesh of the assigned material (or a plain ribbon) is mapped onto them. The length always comes from the parent spine. New Shape tab (Unification, Height: Amount / Offset / Gravity / Fold / Curl / Roll, Boundary: Start / End, Scale: Width / Height), Segments tab (Accuracy, Width: Absolute / + Relative), Forces tab (Gravity, Up / Down, Ancestor with strength curves, Align) and Material: Flip, Two sided, Mesh Index / Resolution. Older Frond graphs and the built-in presets are migrated automatically (the old Droop becomes the Gravity force; Arch, Twist, Crease, Sink and length scaling were dropped).
 

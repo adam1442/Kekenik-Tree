@@ -1,6 +1,10 @@
 import type { MeshData } from '@/contracts/mesh';
+import type { LeafLightingSettings } from '@/contracts/lighting';
 import { locateStation, mapToRibs, sampleRib, type Ribs } from './frondRibs';
+import { DEFAULT_FROND_WIND, frondWindAt, type FrondWind } from './frondWind';
+import { applyLeafLighting, isLightingActive, type FrondLightingExtras, type LightingGroup } from './leafLighting';
 import { MeshAccumulator, newVertex, type VertexAttrs } from './meshAccumulator';
+import type { V3 } from './math3';
 
 /**
  * Meshes of the Frond generator: a cutout mesh or the plain ribbon grid mapped onto the ribs of `frondRibs.ts`.
@@ -16,10 +20,14 @@ export interface UnitMesh {
   /** Texture coordinates (atlas applied by the cutout builder). */
   uv: Float32Array;
   indices: Uint32Array;
+  /** Section id (1..8) per vertex painted in the cutout editor; null when the mesh carries none. */
+  section: Uint8Array | null;
+  /** Distinct section ids above 1 that occur in `section` (ascending). Section 1 = unpainted. */
+  sections: number[];
 }
 
 /** Normalises the geometry of a cutout built at unit width / length (x across from the pivot, y along). */
-export function unitMeshFromGeometry(m: Pick<MeshData, 'positions' | 'uv0' | 'indices'>): UnitMesh | null {
+export function unitMeshFromGeometry(m: Pick<MeshData, 'positions' | 'uv0' | 'indices'> & { cutoutSection?: Uint8Array }): UnitMesh | null {
   const n = Math.floor(m.positions.length / 3);
   if (n < 3 || m.indices.length < 3) return null;
   let halfX = 1e-6;
@@ -40,7 +48,22 @@ export function unitMeshFromGeometry(m: Pick<MeshData, 'positions' | 'uv0' | 'in
     v[i] = ((m.positions[i * 3 + 1] as number) - yMin) / span;
     z[i] = (m.positions[i * 3 + 2] as number) / (2 * halfX);
   }
-  return { u, v, z, uv: m.uv0.slice(0, n * 2), indices: m.indices };
+  let section: Uint8Array | null = null;
+  const sections: number[] = [];
+  if (m.cutoutSection && m.cutoutSection.length >= n) {
+    section = m.cutoutSection.slice(0, n);
+    const seen = new Set<number>();
+    for (let i = 0; i < n; i++) {
+      const id = section[i] as number;
+      if (id > 1 && !seen.has(id)) {
+        seen.add(id);
+        sections.push(id);
+      }
+    }
+    sections.sort((a, b) => a - b);
+    if (sections.length === 0) section = null;
+  }
+  return { u, v, z, uv: m.uv0.slice(0, n * 2), indices: m.indices, section, sections };
 }
 
 export interface FrondUv {
@@ -72,6 +95,12 @@ export interface FrondSpec {
   ao: number;
   wind: [number, number, number, number];
   windPower: number;
+  /** Wind Weight / Cross / Boost / Ribs; absent = the plain `t^windPower` bend. */
+  windSet?: FrondWind;
+  /** Section Variance: ribs of every painted section id (index = id); a missing entry uses `ribs`. */
+  sectionRibs?: readonly (Ribs | null | undefined)[];
+  /** Lighting inputs of this frond (null = none). */
+  light?: FrondLight | null;
   /** Scale of the mesh z (Scale > Height). */
   heightScale: number;
   /** Strength of the relief (Height > Amount). */
@@ -82,9 +111,23 @@ export interface FrondSpec {
   heightMap: ((u: number, v: number) => number) | null;
 }
 
+/** Per-frond inputs of the Lighting pass. */
+export interface FrondLight {
+  /** Parent puffiness anchor point (null = none). */
+  anchor: V3 | null;
+  /** Fixed direction of the Surface X / Y / Z anchors (null = none). */
+  surface: V3 | null;
+  /** Resolved Up / Right / Out rotation in radians. */
+  adjust: V3;
+}
+
 export interface FrondMeshOptions {
   uv: FrondUv;
   defaultMaterial: string;
+  /** Lighting settings (applied when they change any normal). */
+  lighting: LeafLightingSettings;
+  /** Frond Alignment / Spread. */
+  lightingExtras: FrondLightingExtras;
 }
 
 interface Local {
@@ -95,7 +138,11 @@ interface Local {
   across: Float32Array;
   station: Int32Array;
   indices: Uint32Array;
+  /** Section id per vertex (mapped meshes with Section Variance only). */
+  section: Uint8Array | null;
 }
+
+const ribsOf = (s: FrondSpec, section: number): Ribs => (section > 1 ? s.sectionRibs?.[section] : undefined) ?? s.ribs;
 
 const clamp01 = (x: number): number => Math.min(1, Math.max(0, x));
 
@@ -112,6 +159,7 @@ function ribbonLocal(s: FrondSpec, uv: FrondUv): Local {
     across: new Float32Array(n),
     station: new Int32Array(n),
     indices: new Uint32Array((R - 1) * W * 6),
+    section: null,
   };
   const [u0, v0, u1, v1] = s.atlas;
   const full = u0 === 0 && v0 === 0 && u1 === 1 && v1 === 1;
@@ -159,6 +207,7 @@ function mappedLocal(s: FrondSpec, m: UnitMesh): Local {
     across: new Float32Array(n),
     station: new Int32Array(n),
     indices: m.indices.slice(),
+    section: s.sectionRibs && m.section ? m.section : null,
   };
   let maxHalf = 0;
   for (let i = 0; i < s.ribs.count; i++) maxHalf = Math.max(maxHalf, s.ribs.halfWidth[i] as number);
@@ -166,7 +215,8 @@ function mappedLocal(s: FrondSpec, m: UnitMesh): Local {
   for (let i = 0; i < n; i++) {
     const u = (s.flip ? -1 : 1) * (m.u[i] as number);
     const v = clamp01(m.v[i] as number);
-    mapToRibs(s.ribs, u, v, L.pos, i * 3, L.ref, i * 3);
+    const rb = L.section ? ribsOf(s, L.section[i] as number) : s.ribs;
+    mapToRibs(rb, u, v, L.pos, i * 3, L.ref, i * 3);
     const z = (m.z[i] as number) * zScale;
     if (z !== 0) {
       L.pos[i * 3] = (L.pos[i * 3] as number) + (L.ref[i * 3] as number) * z;
@@ -175,7 +225,7 @@ function mappedLocal(s: FrondSpec, m: UnitMesh): Local {
     }
     L.along[i] = v;
     L.across[i] = u;
-    L.station[i] = locateStation(s.ribs, v).i;
+    L.station[i] = locateStation(rb, v).i;
   }
   return L;
 }
@@ -249,7 +299,61 @@ function shade(L: Local): Float32Array {
   return normals;
 }
 
-function emit(acc: MeshAccumulator, s: FrondSpec, uvOpt: FrondUv, vx: VertexAttrs, index: number, cells: number): void {
+/** Everything the Lighting pass needs to know about one emitted copy of a frond. */
+function lightGroup(s: FrondSpec, L: Local, light: FrondLight, vertexStart: number, indexStart: number, indexCount: number): LightingGroup {
+  const n = L.along.length;
+  const along = new Float32Array(n * 3);
+  const away = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const rb = L.section ? ribsOf(s, L.section[i] as number) : s.ribs;
+    const st = (L.station[i] as number) * 3;
+    const tx = rb.tangent[st] as number;
+    const ty = rb.tangent[st + 1] as number;
+    const tz = rb.tangent[st + 2] as number;
+    along[i * 3] = tx;
+    along[i * 3 + 1] = ty;
+    along[i * 3 + 2] = tz;
+    // Away from the spine: the offset of the vertex from its station point without the part along the spine.
+    let dx = (L.pos[i * 3] as number) - (rb.point[st] as number);
+    let dy = (L.pos[i * 3 + 1] as number) - (rb.point[st + 1] as number);
+    let dz = (L.pos[i * 3 + 2] as number) - (rb.point[st + 2] as number);
+    const k = dx * tx + dy * ty + dz * tz;
+    dx -= tx * k;
+    dy -= ty * k;
+    dz -= tz * k;
+    let l = Math.hypot(dx, dy, dz);
+    if (l < 1e-7) {
+      // On the spine: use the side direction of the nearest half instead.
+      const sg = (L.across[i] as number) < 0 ? -1 : 1;
+      dx = sg * (rb.side[st] as number);
+      dy = sg * (rb.side[st + 1] as number);
+      dz = sg * (rb.side[st + 2] as number);
+      l = Math.hypot(dx, dy, dz) || 1;
+    }
+    away[i * 3] = dx / l;
+    away[i * 3 + 1] = dy / l;
+    away[i * 3 + 2] = dz / l;
+  }
+  const mid = (s.ribs.count >> 1) * 3;
+  const r = s.ribs;
+  return {
+    vertexStart,
+    vertexCount: n,
+    indexStart,
+    indexCount,
+    anchor: light.anchor,
+    surface: light.surface,
+    frame: {
+      x: [r.side[mid] as number, r.side[mid + 1] as number, r.side[mid + 2] as number],
+      y: [r.tangent[mid] as number, r.tangent[mid + 1] as number, r.tangent[mid + 2] as number],
+      z: [r.normal[mid] as number, r.normal[mid + 1] as number, r.normal[mid + 2] as number],
+    },
+    adjust: light.adjust,
+    spine: { along, away },
+  };
+}
+
+function emit(acc: MeshAccumulator, s: FrondSpec, uvOpt: FrondUv, vx: VertexAttrs, index: number, cells: number, groups: LightingGroup[] | null): void {
   const L = s.mesh ? mappedLocal(s, s.mesh) : ribbonLocal(s, uvOpt);
   applyHeightMap(s, L);
   const normals = shade(L);
@@ -258,9 +362,12 @@ function emit(acc: MeshAccumulator, s: FrondSpec, uvOpt: FrondUv, vx: VertexAttr
   const cy = Math.floor(index / cells);
   const pivot = s.ribs.point;
   const copies = s.twoSided ? 2 : 1;
+  const wind = s.windSet ?? { ...DEFAULT_FROND_WIND, power: s.windPower };
+  const w = [0, 0, 0, 0];
   for (let side = 0; side < copies; side++) {
     const back = side === 1;
     const base = acc.vertexCount;
+    const firstIndex = acc.indexCount;
     for (let i = 0; i < n; i++) {
       const t = L.along[i] as number;
       const grad = 1 + s.colorGradient * t;
@@ -274,9 +381,10 @@ function emit(acc: MeshAccumulator, s: FrondSpec, uvOpt: FrondUv, vx: VertexAttr
       vx.nz = sign * (normals[i * 3 + 2] as number);
       // Tangent: the across direction of the station, made perpendicular to the normal.
       const st = (L.station[i] as number) * 3;
-      let tx = s.ribs.side[st] as number;
-      let ty = s.ribs.side[st + 1] as number;
-      let tz = s.ribs.side[st + 2] as number;
+      const sideRibs = L.section ? ribsOf(s, L.section[i] as number) : s.ribs;
+      let tx = sideRibs.side[st] as number;
+      let ty = sideRibs.side[st + 1] as number;
+      let tz = sideRibs.side[st + 2] as number;
       const d = tx * vx.nx + ty * vx.ny + tz * vx.nz;
       tx -= vx.nx * d;
       ty -= vx.ny * d;
@@ -297,10 +405,11 @@ function emit(acc: MeshAccumulator, s: FrondSpec, uvOpt: FrondUv, vx: VertexAttr
       vx.pvx = pivot[0] as number;
       vx.pvy = pivot[1] as number;
       vx.pvz = pivot[2] as number;
-      vx.w0 = s.wind[0];
-      vx.w1 = s.wind[1];
-      vx.w2 = Math.min(1, s.wind[2] + (1 - s.wind[2]) * Math.pow(t, Math.max(0.1, s.windPower)));
-      vx.w3 = s.wind[3];
+      frondWindAt(s.wind, t, L.across[i] as number, wind, w);
+      vx.w0 = w[0] as number;
+      vx.w1 = w[1] as number;
+      vx.w2 = w[2] as number;
+      vx.w3 = w[3] as number;
       acc.addVertex(vx);
     }
     const idx = L.indices;
@@ -311,6 +420,7 @@ function emit(acc: MeshAccumulator, s: FrondSpec, uvOpt: FrondUv, vx: VertexAttr
       if (back) acc.addTriangle(a, c, b);
       else acc.addTriangle(a, b, c);
     }
+    if (groups && s.light) groups.push(lightGroup(s, L, s.light, base, firstIndex, acc.indexCount - firstIndex));
   }
 }
 
@@ -328,9 +438,13 @@ export function buildFrondMesh(specs: readonly FrondSpec[], options: Partial<Fro
   });
   const cells = Math.max(1, Math.ceil(Math.sqrt(specs.length)));
   const vx = newVertex();
+  const lit = options.lighting !== undefined && isLightingActive(options.lighting, { frond: options.lightingExtras });
+  const lightGroups: LightingGroup[] | null = lit ? [] : null;
   for (const [material, list] of groups) {
     acc.beginSlot(material);
-    for (const i of list) emit(acc, specs[i] as FrondSpec, uv, vx, i, cells);
+    for (const i of list) emit(acc, specs[i] as FrondSpec, uv, vx, i, cells, lightGroups);
   }
-  return acc.build(fallback, true);
+  const mesh = acc.build(fallback, true);
+  if (lightGroups && options.lighting && lightGroups.length > 0) applyLeafLighting(mesh, options.lighting, { groups: lightGroups, frond: options.lightingExtras });
+  return mesh;
 }
