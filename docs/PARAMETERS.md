@@ -23,7 +23,7 @@ Root of the plant. Its Shape defines the ground disc in which first-generation n
 
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
-| Shape | Type | `shapeType` | Circle | circle |  |  | Placement area. Only the circle exists for now. |
+| Shape | Type | `shapeType` | Circle | circle |  |  | Placement area. Only the circle shape is available. |
 | Shape | Radius | `radius` | 0..10000 (slider 0..50) m | 10 |  |  | Radius of the placement disc (drag the white handle in the viewport). |
 | Shape | Center X | `centerX` | -10000..10000 (slider -50..50) m | 0 |  |  | X position of the placement area centre. |
 | Shape | Center Y | `centerY` | -10000..10000 (slider -50..50) m | 0 |  |  | Y position of the placement area centre. |

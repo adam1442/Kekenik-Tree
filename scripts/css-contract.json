@@ -552,6 +552,13 @@
       "primary",
       "warn",
       "mixed"
+    ],
+    "materialMeshes": [
+      "kt-cutout-badge",
+      "kt-cutout-name-row",
+      "kt-cutout-preview",
+      "kt-cutout-preview-row",
+      "kt-slot-prob"
     ]
   },
   "hooks": [

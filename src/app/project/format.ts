@@ -1,4 +1,5 @@
 import { ATTACH_VERSION, ensureCutoutAttachmentData } from '@/materials/cutouts/frame';
+import { reconcileMaterialMeshes } from '@/materials/meshSelection';
 import type {
   CutoutMesh,
   DisplacementDef,
@@ -101,18 +102,22 @@ export function parseProject(raw: unknown): ProjectFile {
     lodCount: typeof s.lodCount === 'number' && s.lodCount >= 1 ? Math.min(8, Math.trunc(s.lodCount)) : 4,
     wind: isRecord(s.wind) ? { ...defaultWindSettings(), ...(s.wind as object) } : defaultWindSettings(),
   };
+  const cutoutMeshes = Array.isArray(p.cutoutMeshes) ? p.cutoutMeshes.map(migrateCutout) : [];
+  // Materials own an ordered mesh list (index 0 = Primary); older files get it from the cutouts' `materialId`.
+  const materials = Array.isArray(p.materials) ? p.materials.map((m) => ({ ...m })) : [];
+  reconcileMaterialMeshes(materials, cutoutMeshes);
   return {
     ...p,
     name: typeof p.name === 'string' && p.name ? p.name : 'Untitled',
     graph: migrateGraphNodes(graph as GraphJSON, p.nodeVersions),
     settings,
-    materials: Array.isArray(p.materials) ? p.materials : [],
+    materials,
     forces: Array.isArray(p.forces) ? p.forces : [],
     assets: Array.isArray(p.assets) ? p.assets : [],
     materialSets: Array.isArray(p.materialSets) ? p.materialSets : [],
     masks: Array.isArray(p.masks) ? p.masks : [],
     displacements: Array.isArray(p.displacements) ? p.displacements : [],
-    cutoutMeshes: Array.isArray(p.cutoutMeshes) ? p.cutoutMeshes.map(migrateCutout) : [],
+    cutoutMeshes,
     uvAreas: Array.isArray(p.uvAreas) ? p.uvAreas : [],
     nodeVersions: collectNodeVersions(graph as GraphJSON),
   };

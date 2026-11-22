@@ -13,7 +13,7 @@ import { anchorWind, orientAtAnchor, planAnchorSlots, type AnchorSlot } from './
 import { cross, dot, len, norm, rotate, type V3 } from '@/geometry/math3';
 import { MeshAccumulator, newVertex, type VertexAttrs } from '@/geometry/meshAccumulator';
 import { evaluateMask } from '@/materials/masks';
-import { getMaterialSource, resolveCutoutForLeaf, resolveUvAreaRect } from '@/materials/materialSource';
+import { getMaterialSource, resolveUvAreaRect } from '@/materials/materialSource';
 import { prepareParentBranch, sampleParentBranch } from './frames';
 import { atlasRect, emptyFoliage, foliageOutput, isActive, leafAo, leafTint, parentOf, parentWind, pickLeafType, varied } from './foliageCommon';
 
@@ -272,10 +272,10 @@ function buildCards(ctx: NodeContext, parent: Skeleton, items: readonly DecoItem
   const info: { material: string; atlas: [number, number, number, number]; color: V3 }[] = [];
   items.forEach((it, i) => {
     const type = pickLeafType(it.rng, p, 'leaf');
-    info.push({ material: type.material, atlas: resolveUvAreaRect(type.material, 'leaf', it.rng) ?? atlasRect(p, it.rng, i), color: leafTint(it.rng, p) });
-    const list = slots.get(type.material);
+    info.push({ material: type.materialId, atlas: resolveUvAreaRect(type.materialId, 'leaf', it.rng) ?? atlasRect(p, it.rng, i), color: leafTint(it.rng, p) });
+    const list = slots.get(type.materialId);
     if (list) list.push(i);
-    else slots.set(type.material, [i]);
+    else slots.set(type.materialId, [i]);
   });
   const cells = Math.max(1, Math.ceil(Math.sqrt(items.length)));
   for (const [material, list] of slots) {
@@ -365,11 +365,11 @@ function buildCutoutCards(ctx: NodeContext, parent: Skeleton, items: readonly De
       outline: 'rect',
       color: leafTint(it.rng, p),
       ao: leafAo(p, 0.4, it.rng),
-      atlas: resolveUvAreaRect(type.material, 'leaf', it.rng) ?? atlasRect(p, it.rng, i),
-      materialId: type.material,
+      atlas: resolveUvAreaRect(type.materialId, 'leaf', it.rng) ?? atlasRect(p, it.rng, i),
+      materialId: type.materialId,
       pivot: it.axisPoint,
       wind: it.anchor ? anchorWind(wind, it.anchor.slot.frame.axisT) : wind,
-      cutout: resolveCutoutForLeaf(type.material, type.mesh, it.rng),
+      cutout: type.meshAsset,
       lod: ctx.lod,
     };
   });

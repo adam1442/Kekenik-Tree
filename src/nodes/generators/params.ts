@@ -585,23 +585,32 @@ export function orientationParams(): ParamDef[] {
   ];
 }
 
-/** Reference: Material tab "Leaves > Type" list (Material / Mesh / Weight) + "Season" (+ "Fallen"), "Vertex Color", "Lightmap". */
-export function leafMaterialParams(): ParamDef[] {
-  const type: ListParamDef = {
+/**
+ * Repeatable Material / Mesh / Weight rows (rendered by the `MaterialSlotList` widget). Generators read it through
+ * `readMaterialSlots` + `pickMaterialMesh` (materials/meshSelection.ts).
+ */
+export function materialSlotList(id: string, label: string, group: string, subgroup: string, defaultMaterial: string): ListParamDef {
+  return {
     kind: 'list',
-    id: 'leafTypes',
-    label: 'Type',
-    group: 'Material',
-    subgroup: 'Leaves',
+    widget: 'materialSlots',
+    id,
+    label,
+    group,
+    subgroup,
     minItems: 1,
     maxItems: 32,
-    default: [{ material: '', mesh: 'any', weight: 1 }],
+    default: [{ material: defaultMaterial, mesh: 'any', weight: 1 }],
     fields: [
-      { kind: 'enum', id: 'material', label: 'Material', group: 'Material', default: '', options: [{ value: '', label: 'None' }] },
+      { kind: 'enum', id: 'material', label: 'Material', group: 'Material', default: defaultMaterial, options: [{ value: '', label: 'None' }] },
       { kind: 'enum', id: 'mesh', label: 'Mesh', group: 'Material', default: 'any', options: [{ value: 'any', label: 'Any' }] },
-      { kind: 'float', id: 'weight', label: 'Weight', group: 'Material', default: 1, min: 0, max: 10, softMax: 1, curveAllowed: true },
+      { kind: 'float', id: 'weight', label: 'Weight', group: 'Material', default: 1, min: 0, max: 100, softMax: 10 },
     ],
   };
+}
+
+/** Reference: Material tab "Leaves > Type" list (Material / Mesh / Weight) + "Season" (+ "Fallen"), "Vertex Color", "Lightmap". */
+export function leafMaterialParams(): ParamDef[] {
+  const type = materialSlotList('leafTypes', 'Type', 'Material', 'Leaves', '');
   const s = section('Material', 'Season');
   const f = section('Material', 'Fallen');
   const v = section('Material', 'Vertex Color');
@@ -709,7 +718,7 @@ export function meshGeneratorParams(): ParamDef[] {
       default: null,
       visibleIf: { param: 'primitive', value: 'asset' },
     },
-    s.string('meshMaterial', 'Material', 'leaf', { tooltip: 'Material slot id (placeholder until the material library assigns it).' }),
+    materialSlotList('meshTypes', 'Material', 'Skin', 'Source', 'leaf'),
     t.float('meshScale', 'Scale', 0.2, { min: 0.001, max: 50, softMax: 2, unit: 'm', variance: 0.2, curve: true }),
     t.enumOf('meshDirection', 'Direction', 'Outward', ['Outward', 'Parent', 'Up', 'Down']),
     t.float('meshAngle', 'Angle to parent', 50, { min: 0, max: 180, unit: '°', variance: 0.1, curve: true }),

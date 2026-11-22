@@ -41,6 +41,7 @@ export const nodeDefs: NodeDef[] = [
       const mat: MaterialDef = {
         id: ctx.nodeId,
         name: ctx.name,
+        meshes: [],
         twoSided: getBool(p, 'twoSided'),
         season: null,
         variations: [colorOf(p.variation1?.value, [1, 1, 1, 1]), colorOf(p.variation2?.value, [1, 1, 1, 1]), colorOf(p.variation3?.value, [1, 1, 1, 1])],

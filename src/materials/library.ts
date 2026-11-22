@@ -13,6 +13,7 @@ import { createDefaultCutoutMesh, createDefaultUVArea, createReferenceClusterCut
 import { createDisplacementDef } from './displacement';
 import { createMaskDef } from './masks';
 import type { MaterialSource } from './materialSource';
+import { ownedMeshes, ownedMeshRefs, reconcileMaterialMeshes } from './meshSelection';
 import { createMaterialDef } from './shadingMath';
 
 /** Project data the library edits (a subset of `ProjectMeta`; arrays are replaced, never mutated across snapshots). */
@@ -98,7 +99,7 @@ export class MaterialLibrary implements MaterialSource {
   private meta(): LibraryMeta {
     const m = this.getMeta();
     if (!m) {
-      return {
+      const fallback: LibraryMeta = {
         materials: defaultMaterials(),
         materialSets: [],
         masks: [],
@@ -107,6 +108,8 @@ export class MaterialLibrary implements MaterialSource {
         uvAreas: [],
         assets: [],
       };
+      reconcileMaterialMeshes(fallback.materials, fallback.cutoutMeshes as CutoutMesh[]);
+      return fallback;
     }
     if (m.materials.length === 0) m.materials = defaultMaterials();
     m.materialSets ??= [];
@@ -118,6 +121,8 @@ export class MaterialLibrary implements MaterialSource {
     m.uvAreas ??= [];
     // Projects authored before attachment frames get the fallback axis / ordered anchors silently.
     for (const c of m.cutoutMeshes) if (c.attachVersion !== ATTACH_VERSION) ensureCutoutAttachmentData(c);
+    // Materials own an ordered mesh list (index 0 = Primary); projects saved before that get it derived here.
+    reconcileMaterialMeshes(m.materials, m.cutoutMeshes);
     return m;
   }
 
@@ -158,8 +163,10 @@ export class MaterialLibrary implements MaterialSource {
     return id ? this.cutoutMeshes().find((c) => c.id === id || c.name === id) : undefined;
   }
 
+  /** Meshes owned by a material in Primary-first order. */
   cutoutsForMaterial(materialId: string): CutoutMesh[] {
-    return this.cutoutMeshes().filter((c) => c.materialId === materialId);
+    const mat = this.material(materialId);
+    return mat ? ownedMeshes(mat, this.cutoutMeshes()) : this.cutoutMeshes().filter((c) => c.materialId === materialId);
   }
 
   uvAreasForMaterial(materialId: string): UVAreaDef[] {
@@ -306,15 +313,33 @@ export class MaterialLibrary implements MaterialSource {
     const copy = structuredClone(src);
     copy.id = uid('dup');
     copy.name = this.uniqueName(kind, `${src.name} copy`);
+    // A duplicated material gets its own copies of the source's meshes (same order).
+    const meshCopies: CutoutMesh[] =
+      kind === 'materials'
+        ? ownedMeshes(src as MaterialDef, this.cutoutMeshes()).map((c) => ({ ...structuredClone(c), id: uid('dup'), materialId: copy.id }))
+        : [];
+    if (kind === 'materials') (copy as MaterialDef).meshes = meshCopies.map((c) => ({ id: c.id }));
     this.edit('Duplicate', kind, () => {
       const m = this.meta();
       const arr = [...this.list(kind), copy];
-      if (kind === 'materials') m.materials = arr as MaterialDef[];
+      if (kind === 'materials') {
+        m.materials = arr as MaterialDef[];
+        if (meshCopies.length > 0) m.cutoutMeshes = [...this.cutoutMeshes(), ...meshCopies];
+      }
       else if (kind === 'materialSets') m.materialSets = arr as MaterialSetDef[];
       else if (kind === 'masks') m.masks = arr as MaskDef[];
       else if (kind === 'displacements') m.displacements = arr as DisplacementDef[];
-      else if (kind === 'meshes') m.cutoutMeshes = arr as CutoutMesh[];
-      else m.uvAreas = arr as UVAreaDef[];
+      else if (kind === 'meshes') {
+        m.cutoutMeshes = arr as CutoutMesh[];
+        // The duplicate sits right after its source in the owner's order.
+        const owner = m.materials.find((x) => x.id === (copy as CutoutMesh).materialId);
+        if (owner) {
+          const refs = ownedMeshRefs(owner, m.cutoutMeshes);
+          const at = refs.findIndex((r) => r.id === id);
+          const without = refs.filter((r) => r.id !== copy.id);
+          owner.meshes = [...without.slice(0, at + 1), { id: copy.id }, ...without.slice(at + 1)];
+        }
+      } else m.uvAreas = arr as UVAreaDef[];
     });
     return copy.id;
   }
@@ -324,6 +349,7 @@ export class MaterialLibrary implements MaterialSource {
     const copy = structuredClone(entry);
     copy.id = uid('paste');
     copy.name = this.uniqueName(kind, copy.name);
+    if (kind === 'materials') (copy as unknown as MaterialDef).meshes = [];
     this.edit('Paste', kind, () => {
       const m = this.meta();
       const arr = [...this.list(kind), copy];
@@ -365,6 +391,10 @@ export class MaterialLibrary implements MaterialSource {
   }
 
   move(kind: LibraryKind, id: string, delta: number): void {
+    if (kind === 'meshes') {
+      this.moveMesh(id, delta);
+      return;
+    }
     const arr = this.list(kind);
     const i = arr.findIndex((e) => e.id === id);
     const j = i + delta;
@@ -373,6 +403,23 @@ export class MaterialLibrary implements MaterialSource {
       const a = this.list(kind);
       const [item] = a.splice(i, 1);
       a.splice(j, 0, item as Entry);
+    });
+  }
+
+  /** Reorders a mesh inside its material's list (first = Primary). One undo step. */
+  moveMesh(meshId: string, delta: number): void {
+    const cut = this.cutoutMeshes().find((c) => c.id === meshId);
+    const mat = cut ? this.material(cut.materialId) : undefined;
+    if (!cut || !mat) return;
+    const refs = ownedMeshRefs(mat, this.cutoutMeshes());
+    const i = refs.findIndex((r) => r.id === meshId);
+    const j = i + delta;
+    if (i < 0 || j < 0 || j >= refs.length) return;
+    this.edit('Reorder meshes', 'meshes', () => {
+      const next = refs.slice();
+      const [item] = next.splice(i, 1);
+      next.splice(j, 0, item as (typeof refs)[number]);
+      mat.meshes = next;
     });
   }
 

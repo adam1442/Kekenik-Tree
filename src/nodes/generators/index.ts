@@ -5,6 +5,7 @@ import type { PortDef } from '@/contracts/ports';
 import { attachIns, childrenOut, parentIn } from '../shared/ports';
 import { evaluateBranch } from './branch';
 import { evaluateLeaf } from './foliage';
+import { migrateLegacyMaterialParam } from '@/materials/meshSelection';
 import { evaluateFrond, migrateFrondParams } from './frond';
 import { frondParams } from './frondParams';
 import { decorationParams } from './decorationParams';
@@ -273,6 +274,8 @@ export const nodeDefs: NodeDef[] = [
       ...postParams(),
     ],
     evaluate: evaluateMeshInstances,
+    version: 2,
+    migrate: (params, fromVersion) => (fromVersion >= 2 ? params : migrateLegacyMaterialParam(params, 'meshTypes', 'meshMaterial')),
   },
   {
     type: 'generator.cap',

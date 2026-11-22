@@ -1,12 +1,13 @@
 import { getBool, getNumber, getString, type NodeParams, type ParamState } from '@/contracts/params';
 import type { NodeContext, NodeInputs, NodeOutputs } from '@/contracts/nodes';
-import type { MeshData } from '@/contracts/mesh';
+import { mergeMeshData, type MeshData } from '@/contracts/mesh';
 import { evaluateCurve, type Curve } from '@/contracts/curve';
 import { SkeletonBuilder, type Branch, type Skeleton } from '@/contracts/skeleton';
 import { deg2rad } from '@/core/math';
 import type { Rng } from '@/core/rng';
 import { composeMatrix } from '@/geometry/instancing';
-import { cross, norm, rotate, type V3 } from '@/geometry/math3';
+import { bladeBasis, buildLeafMesh, type LeafCard } from '@/geometry/leafMesher';
+import { cross, dot, norm, rotate, type V3 } from '@/geometry/math3';
 import {
   buildRibbonFrames,
   buildRibbonFromFrames,
@@ -138,8 +139,12 @@ export function ribbonOptionsFromParams(p: NodeParams, lod: number, meanLength: 
 const SHAPES: Record<string, RibbonShape> = { flat: 'flat', 'v-fold': 'vfold', 'u-curve': 'ucurve' };
 const TIPS: Record<string, TipShape> = { pointed: 'pointed', rounded: 'rounded', blunt: 'blunt' };
 
-/** Ribbon specs of every parent spine (planes per spine included). Exported for tests. */
-export function buildFrondSpecs(ctx: NodeContext, parent: Skeleton, p: NodeParams): { specs: RibbonSpec[]; spineOf: number[] } {
+/**
+ * Ribbon specs of every parent spine (planes per spine included). Blades whose chosen material has a cutout mesh are
+ * returned as leaf `cards` (the mesh is stretched over the blade's length / width) instead of ribbon specs.
+ * Exported for tests.
+ */
+export function buildFrondSpecs(ctx: NodeContext, parent: Skeleton, p: NodeParams): { specs: RibbonSpec[]; spineOf: number[]; cards: LeafCard[]; cardPaths: V3[][] } {
   const post = postTransform(p);
   const planes = Math.max(1, Math.min(8, Math.round(getNumber(p, 'frondPlanes', 1))));
   const f0 = getNumber(p, 'first', 0);
@@ -156,10 +161,12 @@ export function buildFrondSpecs(ctx: NodeContext, parent: Skeleton, p: NodeParam
   const windPower = getNumber(p, 'frondBendPower', 1.5);
   const specs: RibbonSpec[] = [];
   const spineOf: number[] = [];
+  const cards: LeafCard[] = [];
+  const cardPaths: V3[][] = [];
   let index = 0;
   for (const b of parent.branches) {
     if (b.count < 2) continue;
-    if (specs.length >= MAX_RIBBONS) break;
+    if (specs.length + cards.length >= MAX_RIBBONS) break;
     ctx.cancel.throwIfCancelled();
     const rng = ctx.rng.fork(`fr:${b.id}`);
     // Draws are always consumed in the same order, so LOD changes never reshuffle the other blades.
@@ -180,11 +187,48 @@ export function buildFrondSpecs(ctx: NodeContext, parent: Skeleton, p: NodeParam
     const roll = deg2rad(varied(rng, p, 'frondRoll', 0));
     const hint = facingHint(facing, parent, b, pts, rng);
     const type = pickLeafType(rng, p, 'leaf');
-    const atlas = resolveUvAreaRect(type.material, 'frond', rng) ?? atlasRect(p, rng, index);
+    const atlas = resolveUvAreaRect(type.materialId, 'frond', rng) ?? atlasRect(p, rng, index);
     const color = leafTint(rng, p);
     const wind = parentWind(parent, b.start, index * 31 + 7);
     const off = post.offset;
     const moved = off[0] !== 0 || off[1] !== 0 || off[2] !== 0 ? pts.map((q): V3 => [q[0] + off[0], q[1] + off[1], q[2] + off[2]]) : pts;
+    if (type.meshAsset) {
+      // A cutout mesh is chosen: it replaces the ribbon (laid along the blade's chord, bent by the droop).
+      const first = moved[0] as V3;
+      const last = moved[moved.length - 1] as V3;
+      const chord = norm([last[0] - first[0], last[1] - first[1], last[2] - first[2]]);
+      const t0c = norm([moved[1]![0] - first[0], moved[1]![1] - first[1], moved[1]![2] - first[2]]);
+      for (let k = 0; k < planes; k++) {
+        const planeAngle = deg2rad(getNumber(p, 'frondStartAngle', 0)) + (k * Math.PI) / planes + post.roll;
+        const { axis: ax, side } = bladeBasis(chord, rotate(hint, t0c, planeAngle), roll + twist);
+        const bendSign = dot(cross(side, ax), [0, 0, -1]) >= 0 ? 1 : -1;
+        cards.push({
+          origin: first,
+          axis: ax,
+          side,
+          length: polyLength(moved),
+          width,
+          bend: bendSign * droop * Math.PI * 0.45 + arch,
+          fold: 0,
+          curl: getNumber(p, 'frondCurl', 0),
+          twist: 0,
+          segLength: 3,
+          segWidth: 1,
+          outline: 'rect',
+          color,
+          ao: getNumber(p, 'aoStrength', 0.5),
+          atlas,
+          materialId: type.materialId,
+          pivot: first,
+          wind,
+          cutout: type.meshAsset,
+          lod: ctx.lod,
+        });
+        cardPaths.push(moved);
+      }
+      index++;
+      continue;
+    }
     for (let k = 0; k < planes; k++) {
       const planeAngle = deg2rad(getNumber(p, 'frondStartAngle', 0)) + (k * Math.PI) / planes + post.roll;
       const t0 = norm([moved[1]![0] - moved[0]![0], moved[1]![1] - moved[0]![1], moved[1]![2] - moved[0]![2]]);
@@ -210,7 +254,7 @@ export function buildFrondSpecs(ctx: NodeContext, parent: Skeleton, p: NodeParam
         colorGradient: getNumber(p, 'vertexColorGradient', 0),
         ao: getNumber(p, 'aoStrength', 0.5),
         atlas,
-        materialId: type.material,
+        materialId: type.materialId,
         wind,
         windPower,
       });
@@ -218,7 +262,7 @@ export function buildFrondSpecs(ctx: NodeContext, parent: Skeleton, p: NodeParam
     }
     index++;
   }
-  return { specs, spineOf };
+  return { specs, spineOf, cards, cardPaths };
 }
 
 const SCALAR_KEYS = ['width', 'baseWidth', 'tipTaper', 'foldAngle', 'curl', 'crease', 'roll', 'twist', 'droop', 'arch', 'offset'] as const;
@@ -251,24 +295,26 @@ export function tryInstance(specs: readonly RibbonSpec[], opts: RibbonOptions): 
 export function evaluateFrond(ctx: NodeContext, inputs: NodeInputs, p: NodeParams): NodeOutputs {
   const parent = parentOf(inputs);
   if (!isActive(p) || parent.count === 0) return emptyFoliage(parent, ctx.seed);
-  const { specs } = buildFrondSpecs(ctx, parent, p);
-  if (specs.length === 0) return emptyFoliage(parent, ctx.seed);
+  const { specs, cards, cardPaths } = buildFrondSpecs(ctx, parent, p);
+  if (specs.length === 0 && cards.length === 0) return emptyFoliage(parent, ctx.seed);
   let meanLength = 0;
   for (const s of specs) meanLength += polyLength(s.path);
-  meanLength /= specs.length;
+  meanLength /= Math.max(1, specs.length);
   const opts = ribbonOptionsFromParams(p, ctx.lod, meanLength);
   const displaced = resolveDisplacement(p).state === 'ready' && getNumber(p, 'displaceAmount', 0) !== 0;
-  const instanced = !displaced && getBool(p, 'frondInstancing', true) ? tryInstance(specs, opts) : null;
+  const instanced = !displaced && cards.length === 0 && getBool(p, 'frondInstancing', true) ? tryInstance(specs, opts) : null;
   let mesh: MeshData;
-  let frames;
+  let frames: ReturnType<typeof buildRibbonFrames>[] = [];
   if (instanced) {
     mesh = instanced;
     frames = specs.map((s) => buildRibbonFrames(s, opts));
-  } else {
+  } else if (specs.length > 0) {
     const built = buildRibbonMesh(specs, opts);
     mesh = displaceFromParams(built.mesh, p, ctx.lod);
     frames = built.frames;
-  }
+  } else mesh = buildLeafMesh([], { defaultMaterial: 'leaf' });
+  // Blades that use a cutout mesh are merged next to the ribbons.
+  if (cards.length > 0) mesh = specs.length > 0 ? mergeMeshData([mesh, buildLeafMesh(cards, { defaultMaterial: 'leaf' })]) : buildLeafMesh(cards, { defaultMaterial: 'leaf' });
   // One centre-line branch per ribbon (first plane of every spine) for overlays and child inheritance.
   const planes = Math.max(1, Math.min(8, Math.round(getNumber(p, 'frondPlanes', 1))));
   const sb = new SkeletonBuilder();
@@ -279,6 +325,13 @@ export function evaluateFrond(ctx: NodeContext, inputs: NodeInputs, p: NodeParam
     if (!fr) continue;
     sb.beginBranch(-1, -1, gen);
     fr.points.forEach((pt) => sb.addPoint(pt[0], pt[1], pt[2], 0.001));
+    sb.endBranch();
+    count++;
+  }
+  for (let i = 0; i < cardPaths.length; i += planes) {
+    const path = cardPaths[i] as V3[];
+    sb.beginBranch(-1, -1, gen);
+    path.forEach((pt) => sb.addPoint(pt[0], pt[1], pt[2], 0.001));
     sb.endBranch();
     count++;
   }

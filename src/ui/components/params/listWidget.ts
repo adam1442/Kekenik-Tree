@@ -48,9 +48,20 @@ function readListItems(val: unknown, def: ListParamDef): ListItem[] {
   return structuredClone(def.default);
 }
 
+/** Optional behaviour a specialised list (e.g. the Material slot list) plugs into the generic list widget. */
+export interface ListWidgetHooks {
+  /** Row-aware options of an enum field; undefined falls back to `resolveDynamicOptions`. */
+  fieldOptions?(fieldId: string, item: ListItem): { value: string; label: string }[] | undefined;
+  /** Fix up a row after `fieldId` changed; return true to re-render the cards (e.g. dependent option lists). */
+  rowChanged?(item: ListItem, fieldId: string): boolean;
+  /** Small caption shown in the row's corner (e.g. pick probability). */
+  rowHint?(item: ListItem, items: readonly ListItem[]): string;
+}
+
 export function createListWidget(
   host: HTMLElement,
   opts: ParamWidgetMountOptions<ListParamDef>,
+  hooks: ListWidgetHooks = {},
 ): ParamWidgetInstance {
   const { def } = opts;
   const minItems = def.minItems ?? 0;
@@ -59,6 +70,15 @@ export function createListWidget(
   let curState: ParamState = structuredClone(opts.state);
   let items: ListItem[] = readListItems(curState.value, def);
   let childDisposables: (() => void)[] = [];
+
+  let hintEls: HTMLElement[] = [];
+  const refreshHints = (): void => {
+    if (!hooks.rowHint) return;
+    hintEls.forEach((el, i) => {
+      const it = items[i];
+      el.textContent = it ? hooks.rowHint?.(it, items) ?? '' : '';
+    });
+  };
 
   const clearChildren = (): void => {
     for (const d of childDisposables) d();
@@ -114,6 +134,7 @@ export function createListWidget(
 
   const renderCards = (): void => {
     clearChildren();
+    hintEls = [];
     cardsContainer.replaceChildren();
     minusBtn.disabled = Boolean(opts.disabled) || items.length <= minItems;
     plusBtn.disabled = Boolean(opts.disabled) || items.length >= maxItems;
@@ -135,6 +156,11 @@ export function createListWidget(
       });
 
       const card = h('div', 'kt-type-card', removeBtn);
+      if (hooks.rowHint) {
+        const hint = h('span', 'kt-slot-prob', hooks.rowHint(item, items));
+        hintEls.push(hint);
+        card.append(hint);
+      }
       card.addEventListener('dragover', (e) => {
         if (e.dataTransfer?.types.includes('application/x-kekenik-cutout')) {
           e.preventDefault();
@@ -170,7 +196,10 @@ export function createListWidget(
           if (target && (typeof nextFieldState.value === 'number' || typeof nextFieldState.value === 'boolean' || typeof nextFieldState.value === 'string')) {
             target[field.id] = nextFieldState.value;
           }
+          const rerender = target && hooks.rowChanged ? hooks.rowChanged(target, field.id) : false;
           emitItemsChange(nextItems, merge);
+          if (rerender) renderCards();
+          else refreshHints();
         };
 
         const onFieldCommit = (): void => {
@@ -184,7 +213,9 @@ export function createListWidget(
             def: field as EnumParamDef,
             state: fieldState,
             disabled: opts.disabled,
-            resolveDynamicOptions: opts.resolveDynamicOptions,
+            resolveDynamicOptions: hooks.fieldOptions
+              ? (id: string) => hooks.fieldOptions?.(id, item) ?? opts.resolveDynamicOptions?.(id) ?? []
+              : opts.resolveDynamicOptions,
             onChange: onFieldChange,
             onCommit: onFieldCommit,
           });

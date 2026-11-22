@@ -10,6 +10,8 @@ All notable changes to this project are documented here. The format is based on
 - Edit Mesh dialog, shared dialog buttons/footers (info, prompt, choice, Export, LOD editor) and a few inspector widgets were missing their stylesheet rules in the published build; the rules now live in `ui/theme/editmesh.css` and `panels.css`.
 
 ### Added
+- A material can own several cutout meshes (`MaterialDef.meshes`, first = Primary). The Materials panel *Cutouts/Meshes* tab lists them with thumbnails, a Primary badge, move up/down, duplicate, delete, per-mesh Edit mesh… and a preview of the selected mesh. Older projects migrate automatically.
+- `MaterialSlotList` widget (Material / Mesh / Weight rows with pick probabilities, Material Sets, Any / Primary / Not primary) for Leaf, Frond, Decoration, Cluster and Mesh Instance; Frond uses the chosen cutout mesh instead of the ribbon, Mesh Instance mixes meshes per instance.
 - `npm run build:check` / `scripts/check-built-css.mjs`: post-build guard that verifies the built CSS against `scripts/css-contract.json`; runs in the CI, deploy and release workflows.
 
 ## [1.0.0] - 2026-11-13

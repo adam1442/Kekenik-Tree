@@ -13,6 +13,7 @@ import { openColorPickerPopup, rgbaToCss } from './colorPicker';
 import { mountMiniCurve } from './curve';
 import { h } from './dom';
 import { createListWidget } from './params/listWidget';
+import { createMaterialSlotList } from './params/materialSlotList';
 import { createNumericWidget } from './params/numericWidgets';
 import { createRangeWidget } from './params/rangeWidget';
 import {
@@ -259,7 +260,7 @@ export function registerBuiltinParamWidgets(): void {
   registerParamWidget('string', (host, opts) => createStringWidget(host, opts));
   registerParamWidget('seed', (host, opts) => createSeedWidget(host, opts));
   registerParamWidget('asset', (host, opts) => createAssetWidget(host, opts));
-  registerParamWidget('list', (host, opts) => createListWidget(host, opts));
+  registerParamWidget('list', (host, opts) => (opts.def.widget === 'materialSlots' ? createMaterialSlotList(host, opts) : createListWidget(host, opts)));
 }
 
 // Auto-register all built-in widgets on module import

@@ -13,6 +13,8 @@ import { loadMeshAsset } from '@/geometry/meshAssets';
 import { buildPrimitive, type PrimitiveKind } from '@/geometry/primitives';
 import { buildCutoutGeometry } from '@/materials/cutouts/buildCutoutGeometry';
 import { getMaterialSource } from '@/materials/materialSource';
+import { pickMaterialMesh, readMaterialSlots, type PickedMaterialMesh } from '@/materials/meshSelection';
+import { mergeMeshData } from '@/contracts/mesh';
 import { emitStructureOutput, extractParentSkeleton, isGeneratorActive } from './common';
 import { anchorWind, orientAtAnchor, placementsFromSlots, planAnchorSlots, rigidInstanceAttachment } from './cutoutPlacement';
 import {
@@ -93,7 +95,7 @@ export function evaluateCluster(ctx: NodeContext, inputs: NodeInputs, p: NodePar
   if (!isActive(p) || parent.count === 0) return emptyFoliage(parent, ctx.seed);
   const placements = collectPlacements(ctx, parent, p, 6000);
   const detail = LOD_FOLIAGE_DETAIL(ctx.lod);
-  const material = pickLeafType(ctx.rng.fork('mat'), p, 'cluster').material;
+  const material = pickLeafType(ctx.rng.fork('mat'), p, 'cluster').materialId;
   const kind = getString(p, 'clusterShape', 'sphere');
   const assetId = (p.clusterAsset?.value as string | null | undefined) ?? null;
   const base = resolveBase(kind, assetId, material, Math.max(0.5, detail), ctx.lod, inputs).mesh;
@@ -142,10 +144,26 @@ export function evaluateMeshInstances(ctx: NodeContext, inputs: NodeInputs, p: N
   const slots = planAnchorSlots(ctx, inputs, parent, p, getNumber(p, 'number', 6));
   const placements = slots ? placementsFromSlots(slots, 20000) : collectPlacements(ctx, parent, p, 20000);
   const detail = LOD_FOLIAGE_DETAIL(ctx.lod);
-  const material = getString(p, 'meshMaterial', 'leaf') || 'leaf';
-  const resolved = resolveBase(getString(p, 'primitive', 'cone'), (p.meshAsset?.value as string | null | undefined) ?? null, material, Math.max(0.5, detail), ctx.lod, inputs);
-  const base = resolved.mesh;
-  const cutout = resolved.cutout;
+  const materialRows = readMaterialSlots(p, 'meshTypes', 'meshMaterial');
+  const kind = getString(p, 'primitive', 'cone');
+  const assetId = (p.meshAsset?.value as string | null | undefined) ?? null;
+  // An attached Mesh input or an explicit asset wins; otherwise the cutout chosen per instance from the Material list
+  // is used, falling back to the primitive.
+  const explicitBase = Boolean(inputs.meshes?.[0]) || kind === 'asset' || Boolean(assetId);
+  const bases = new Map<string, ResolvedBase>();
+  const baseFor = (pick: PickedMaterialMesh): { key: string; base: ResolvedBase } => {
+    const key = explicitBase ? `x:${pick.materialId}` : pick.meshAsset ? `c:${pick.meshAsset.id}:${pick.materialId}` : `p:${pick.materialId}`;
+    let base = bases.get(key);
+    if (!base) {
+      base =
+        !explicitBase && pick.meshAsset
+          ? { mesh: buildCutoutGeometry(pick.meshAsset, ctx.lod, { materialId: pick.materialId }), cutout: pick.meshAsset }
+          : resolveBase(kind, assetId, pick.materialId, Math.max(0.5, detail), ctx.lod, inputs);
+      bases.set(key, base);
+    }
+    return { key, base };
+  };
+  const instanceBase: string[] = [];
   const post = postTransform(p);
   const dirMode = getString(p, 'meshDirection', 'outward');
   const tint = tintOf(p, 'meshTint');
@@ -159,6 +177,9 @@ export function evaluateMeshInstances(ctx: NodeContext, inputs: NodeInputs, p: N
   placements.forEach((pl, i) => {
     const s = pl.sample;
     const rng = pl.rng;
+    const picked = baseFor(pickMaterialMesh(materialRows, { rng: rng.fork('mat'), fallbackMaterial: 'leaf' }));
+    instanceBase.push(picked.key);
+    const cutout = picked.base.cutout;
     const az = pl.placement.azimuthRad + (getNumber(p, 'meshYaw', 0) > 0 ? rng.range(-1, 1) * Math.PI * getNumber(p, 'meshYaw', 0) : 0);
     const out = outwardAt(s, az);
     const ang = deg2rad(varied(rng, p, 'meshAngle', 50) * curveFactor(p, 'meshAngle', s.u));
@@ -218,16 +239,39 @@ export function evaluateMeshInstances(ctx: NodeContext, inputs: NodeInputs, p: N
   const sk = sb.build();
   if (n === 0) return emptyFoliage(parent, ctx.seed);
   let geometry: MeshData;
-  if (getBool(p, 'gpuInstancing', false)) {
-    const avg: V3 = [tint[0], tint[1], tint[2]];
-    const colors = base.colors ? Float32Array.from(base.colors) : undefined;
-    if (colors) for (let i = 0; i < colors.length; i += 4) {
-      colors[i] = (colors[i] as number) * avg[0];
-      colors[i + 1] = (colors[i + 1] as number) * avg[1];
-      colors[i + 2] = (colors[i + 2] as number) * avg[2];
+  if (bases.size === 1) {
+    const base = (bases.values().next().value as ResolvedBase).mesh;
+    if (getBool(p, 'gpuInstancing', false)) {
+      const avg: V3 = [tint[0], tint[1], tint[2]];
+      const colors = base.colors ? Float32Array.from(base.colors) : undefined;
+      if (colors) for (let i = 0; i < colors.length; i += 4) {
+        colors[i] = (colors[i] as number) * avg[0];
+        colors[i + 1] = (colors[i + 1] as number) * avg[1];
+        colors[i + 2] = (colors[i + 2] as number) * avg[2];
+      }
+      geometry = { ...base, ...(colors ? { colors } : {}), instanced: { count: n, matrices } };
+    } else geometry = placeMeshes(base, matrices, n, { tints, wind: winds });
+  } else {
+    // Several different meshes (Material list): one baked group per mesh, merged.
+    const parts: MeshData[] = [];
+    for (const [key, entry] of bases) {
+      const idx: number[] = [];
+      instanceBase.forEach((k, i) => {
+        if (k === key) idx.push(i);
+      });
+      if (idx.length === 0) continue;
+      const m = new Float32Array(idx.length * 16);
+      const t = new Float32Array(idx.length * 3);
+      const w = new Float32Array(idx.length * 4);
+      idx.forEach((src, j) => {
+        m.set(matrices.subarray(src * 16, src * 16 + 16), j * 16);
+        t.set(tints.subarray(src * 3, src * 3 + 3), j * 3);
+        w.set(winds.subarray(src * 4, src * 4 + 4), j * 4);
+      });
+      parts.push(placeMeshes(entry.mesh, m, idx.length, { tints: t, wind: w }));
     }
-    geometry = { ...base, ...(colors ? { colors } : {}), instanced: { count: n, matrices } };
-  } else geometry = placeMeshes(base, matrices, n, { tints, wind: winds });
+    geometry = mergeMeshData(parts);
+  }
   return foliageOutput(sk, parent, geometry, n, ctx.seed, att.build());
 }
 

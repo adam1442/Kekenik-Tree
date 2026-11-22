@@ -2,13 +2,13 @@ import { evaluateCurve } from '@/contracts/curve';
 import { OUTPUT_KEY } from '@/contracts/engine';
 import { emptyMeshData, type MeshData } from '@/contracts/mesh';
 import type { NodeContext, NodeInputs, NodeOutputs } from '@/contracts/nodes';
-import { getBool, getNumber, type ListItem, type NodeParams } from '@/contracts/params';
+import { getBool, getNumber, type NodeParams } from '@/contracts/params';
 import type { PortValue } from '@/contracts/ports';
 import { emptySkeleton, type Branch, type Skeleton } from '@/contracts/skeleton';
 import { deg2rad } from '@/core/math';
 import type { Rng } from '@/core/rng';
 import { sampleVariance } from '@/graph/engine/seeds';
-import { resolveMaterialRef } from '@/materials/materialSource';
+import { pickMaterialMesh, readMaterialSlots, type PickedMaterialMesh } from '@/materials/meshSelection';
 import { WIND_ATTRIBUTES } from '@/geometry/windAttributes';
 import { hash01, norm, type V3 } from '@/geometry/math3';
 import type { AttachmentSet } from '@/contracts/attachment';
@@ -87,27 +87,12 @@ export function parentWind(parent: Skeleton, point: number, salt: number): [numb
   return [g('wind0'), g('wind1'), g('wind2'), ph - Math.floor(ph)];
 }
 
-/** Weighted pick from the Material tab's "Leaves > Type" list. */
-export function pickLeafType(rng: Rng, p: NodeParams, fallbackMaterial: string): { material: string; mesh: string } {
-  const t = pickLeafTypeRaw(rng, p, fallbackMaterial);
-  // Material Sets are resolved per instance with the same seeded RNG (plain materials consume no draw).
-  return { material: resolveMaterialRef(t.material, rng), mesh: t.mesh };
-}
-
-function pickLeafTypeRaw(rng: Rng, p: NodeParams, fallbackMaterial: string): { material: string; mesh: string } {
-  const items = p.leafTypes?.value as ListItem[] | undefined;
-  const list = Array.isArray(items) ? items : [];
-  let total = 0;
-  for (const it of list) total += Math.max(0, Number(it.weight ?? 1));
-  const r = rng.next();
-  if (total <= 0) return { material: fallbackMaterial, mesh: 'any' };
-  let acc = 0;
-  for (const it of list) {
-    acc += Math.max(0, Number(it.weight ?? 1)) / total;
-    if (r <= acc) return { material: String(it.material || fallbackMaterial), mesh: String(it.mesh ?? 'any') };
-  }
-  const last = list[list.length - 1];
-  return { material: String(last?.material || fallbackMaterial), mesh: String(last?.mesh ?? 'any') };
+/**
+ * Weighted pick from the Material tab's "Type" list (Material / Mesh / Weight rows): material (Material Sets resolved
+ * by weight and season), then one of that material's cutout meshes. A None / mesh-less row yields the unit square.
+ */
+export function pickLeafType(rng: Rng, p: NodeParams, fallbackMaterial: string): PickedMaterialMesh {
+  return pickMaterialMesh(readMaterialSlots(p), { rng, fallbackMaterial });
 }
 
 export const LOD_FOLIAGE_DETAIL = (lod: number): number => Math.pow(0.7, Math.min(Math.max(lod, 0), 3));

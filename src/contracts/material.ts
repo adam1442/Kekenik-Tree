@@ -29,9 +29,17 @@ export interface MaterialSlotValue {
   texture?: TextureRef | null;
 }
 
+/** Ordered reference from a material to one of the project's cutout meshes (`ProjectFile.cutoutMeshes`). */
+export interface CutoutMeshRef {
+  /** `CutoutMesh.id` of an owned mesh (its `materialId` equals the owning material). */
+  id: string;
+}
+
 export interface MaterialDef {
   id: string;
   name: string;
+  /** Cutout meshes owned by this material, in order: index 0 is the \"Primary\" mesh. Empty = unit-square placeholder. */
+  meshes: CutoutMeshRef[];
   twoSided: boolean;
   /** Season response curve. */
   season?: Curve | null;

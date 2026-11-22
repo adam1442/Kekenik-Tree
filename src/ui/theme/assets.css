@@ -444,6 +444,36 @@ button.kt-slot-color {
 .kt-cutout-name {
   width: 100%;
 }
+.kt-cutout-card.active {
+  border-color: var(--kt-accent);
+}
+.kt-cutout-name-row {
+  display: flex;
+  align-items: center;
+  gap: var(--kt-space-2);
+}
+.kt-cutout-badge {
+  flex: none;
+  padding: 0 var(--kt-space-3);
+  border-radius: var(--kt-radius-sm);
+  background: var(--kt-accent);
+  color: var(--kt-text);
+  font-size: var(--kt-fs-xs);
+  line-height: 16px;
+}
+.kt-cutout-preview-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--kt-space-3);
+}
+.kt-cutout-preview {
+  flex: none;
+  width: 140px;
+  height: 140px;
+  border-radius: var(--kt-radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--kt-border-strong);
+}
 .kt-cutout-meta {
   font-size: var(--kt-fs-xs);
   color: var(--kt-text-dim);

@@ -37,6 +37,7 @@ const BUILTIN: Record<string, string> = {
   maximize: '<rect x="6" y="6" width="12" height="12" rx="1.500"/>',
   close: '<path d="M6.500 6.500l11 11M17.500 6.500l-11 11"/>',
   menu: '<path d="M5 7h14M5 12h14M5 17h14"/>',
+  chevronUp: '<path d="M6.500 14.500l5.500-5.500 5.500 5.500"/>',
   chevronDown: '<path d="M6.500 9.500l5.500 5.500 5.500-5.500"/>',
   chevronRight: '<path d="M9.500 6.500l5.500 5.500-5.500 5.500"/>',
   pencil: '<path d="M4 20l1-4L16 5l3 3L8 19z"/><path d="M14 7l3 3"/>',

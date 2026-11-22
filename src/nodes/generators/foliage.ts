@@ -7,7 +7,7 @@ import { bladeBasis, buildLeafMesh, cardAttachments, type LeafCard, type LeafOut
 import { instanceKey } from '@/instances/keys';
 import { anchorWind, orientAtAnchor, placementsFromSlots, planAnchorSlots } from './cutoutPlacement';
 import { cross, dot, norm, rotate, type V3 } from '@/geometry/math3';
-import { resolveCutoutForLeaf, resolveUvAreaRect } from '@/materials/materialSource';
+import { resolveUvAreaRect } from '@/materials/materialSource';
 import {
   atlasRect,
   collectPlacements,
@@ -100,8 +100,8 @@ function leafCards(ctx: NodeContext, parent: Skeleton, pl: Placement, k: number,
   const twist = varied(rng, p, 'leafTwist', 0) * (Math.PI / 2);
   const origin: V3 = [s.position[0] + post.offset[0], s.position[1] + post.offset[1], s.position[2] + post.offset[2]];
   const type = pickLeafType(rng, p, 'leaf');
-  const cutout = resolveCutoutForLeaf(type.material, type.mesh, rng);
-  const uvArea = resolveUvAreaRect(type.material, 'leaf', rng);
+  const cutout = type.meshAsset;
+  const uvArea = resolveUvAreaRect(type.materialId, 'leaf', rng);
   const color = leafTint(rng, p);
   const ao = leafAo(p, u, rng);
   const atlas = uvArea ?? atlasRect(p, rng, pl.index * 7 + k);
@@ -128,7 +128,7 @@ function leafCards(ctx: NodeContext, parent: Skeleton, pl: Placement, k: number,
       color,
       ao,
       atlas,
-      materialId: type.material,
+      materialId: type.materialId,
       pivot: origin,
       wind,
       cutout,

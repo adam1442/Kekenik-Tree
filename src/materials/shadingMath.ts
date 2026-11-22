@@ -85,6 +85,7 @@ export function createMaterialDef(id: string, name: string): MaterialDef {
   return {
     id,
     name,
+    meshes: [],
     twoSided: false,
     season: null,
     variations: DEFAULT_VARIATIONS.map((c) => [...c] as RGBA) as [RGBA, RGBA, RGBA],

@@ -283,24 +283,36 @@ function settingsTab(ctx: AssetPanelContext<MaterialDef>, mat: MaterialDef, rebu
   return h('div', 'kt-mat-settings', h('div', 'kt-mat-cols', left, right), slots, memory);
 }
 
+/** Selected mesh per material in the Cutouts/Meshes tab (UI state only). */
+const selectedMeshByMaterial = new Map<string, string>();
+
 function cutoutsTab(ctx: AssetPanelContext<MaterialDef>, mat: MaterialDef, rebuild: () => void): HTMLElement {
   const lib = ctx.lib;
   const cutouts = lib.cutoutsForMaterial(mat.id);
+  const selected = cutouts.find((c) => c.id === selectedMeshByMaterial.get(mat.id)) ?? cutouts[0];
 
-  const addBtn = h('button', 'kt-btn', icon('plus', 14), h('span', '', 'Add Cutout'));
+  const addBtn = h('button', 'kt-btn', icon('plus', 14), h('span', '', 'Add new cutout'));
   addBtn.type = 'button';
   addBtn.addEventListener('click', () => {
-    lib.add('meshes', mat.id);
+    selectedMeshByMaterial.set(mat.id, lib.add('meshes', mat.id));
     rebuild();
   });
 
-  const editBtn = h('button', 'kt-btn', 'Edit Mesh…');
+  const editBtn = h('button', 'kt-btn', 'Edit mesh…');
   editBtn.type = 'button';
+  editBtn.title = 'Open the Edit Mesh dialog for the selected mesh';
   editBtn.addEventListener('click', () => {
-    openEditMeshDialog({ materialId: mat.id, materialName: mat.name });
+    openEditMeshDialog({ ...(selected ? { cutoutId: selected.id } : {}), materialId: mat.id, materialName: mat.name });
   });
 
   const toolbar = h('div', 'kt-cutouts-toolbar', addBtn, editBtn);
+
+  // Large preview of the selected mesh (over the checkerboard); follows the selection.
+  const previewCanvas = h('canvas', 'kt-cutout-thumb-canvas');
+  const previewBox = h('div', 'kt-cutout-preview checker', previewCanvas);
+  const previewTitle = h('div', 'kt-cutout-meta', selected ? `${selected.name}${cutouts[0]?.id === selected.id ? ' (Primary)' : ''}` : 'No mesh selected');
+  if (selected) queueMicrotask(() => renderCutout2DThumbnail(previewCanvas, selected, 140, 140));
+  const previewRow = h('div', 'kt-cutout-preview-row', previewBox, previewTitle);
 
   const listEl = h('div', 'kt-cutouts-grid');
   if (cutouts.length === 0) {
@@ -308,11 +320,11 @@ function cutoutsTab(ctx: AssetPanelContext<MaterialDef>, mat: MaterialDef, rebui
       h(
         'div',
         'kt-prop-empty',
-        'No cutouts assigned to this material yet. Click "Add Cutout" or "Edit Mesh…" to author one.',
+        'No cutouts assigned to this material yet: generators use a unit square. Click "Add new cutout" to author one.',
       ),
     );
   } else {
-    for (const c of cutouts) {
+    cutouts.forEach((c, index) => {
       const thumbCanvas = h('canvas', 'kt-cutout-thumb-canvas');
       const thumbWrap = h('div', 'kt-cutout-thumb checker', thumbCanvas);
       queueMicrotask(() => renderCutout2DThumbnail(thumbCanvas, c, 72, 72));
@@ -330,40 +342,58 @@ function cutoutsTab(ctx: AssetPanelContext<MaterialDef>, mat: MaterialDef, rebui
       openBtn.type = 'button';
       openBtn.addEventListener('click', () => openEditMeshDialog({ cutoutId: c.id, materialId: mat.id, materialName: mat.name }));
 
-      const dupBtn = h('button', 'kt-btn kt-btn-icon', icon('copy', 13));
-      dupBtn.type = 'button';
-      dupBtn.title = 'Duplicate cutout';
-      dupBtn.addEventListener('click', () => {
-        lib.duplicate('meshes', c.id);
+      const iconBtn = (name: 'copy' | 'close' | 'chevronUp' | 'chevronDown', title: string, run: () => void, disabled = false): HTMLButtonElement => {
+        const b = h('button', 'kt-btn kt-btn-icon', icon(name, 13));
+        b.type = 'button';
+        b.title = title;
+        b.disabled = disabled;
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          run();
+        });
+        return b;
+      };
+      const upBtn = iconBtn('chevronUp', 'Move up (the first mesh is Primary)', () => {
+        lib.moveMesh(c.id, -1);
+        rebuild();
+      }, index === 0);
+      const downBtn = iconBtn('chevronDown', 'Move down', () => {
+        lib.moveMesh(c.id, 1);
+        rebuild();
+      }, index === cutouts.length - 1);
+      const dupBtn = iconBtn('copy', 'Duplicate cutout', () => {
+        const id = lib.duplicate('meshes', c.id);
+        if (id) selectedMeshByMaterial.set(mat.id, id);
         rebuild();
       });
-
-      const delBtn = h('button', 'kt-btn kt-btn-icon', icon('close', 13));
-      delBtn.type = 'button';
-      delBtn.title = 'Delete cutout';
-      delBtn.disabled = lib.cutoutMeshes().length <= 1;
-      delBtn.addEventListener('click', () => {
+      const delBtn = iconBtn('close', 'Delete cutout', () => {
         lib.remove('meshes', c.id);
         rebuild();
-      });
+      }, lib.cutoutMeshes().length <= 1);
 
+      const nameRow = h('div', 'kt-cutout-name-row', nameInp);
+      if (index === 0) nameRow.append(h('span', 'kt-cutout-badge', 'Primary'));
       const itemCard = h(
         'div',
-        'kt-cutout-card',
+        `kt-cutout-card${selected?.id === c.id ? ' active' : ''}`,
         thumbWrap,
-        h('div', 'kt-cutout-info', nameInp, metaLabel, h('div', 'kt-cutout-actions', openBtn, dupBtn, delBtn)),
+        h('div', 'kt-cutout-info', nameRow, metaLabel, h('div', 'kt-cutout-actions', openBtn, upBtn, downBtn, dupBtn, delBtn)),
       );
       itemCard.draggable = true;
-      itemCard.title = 'Drag onto a Leaf node or Type > Mesh field to assign';
+      itemCard.title = 'Drag onto a Material list row (Mesh field) to assign';
+      itemCard.addEventListener('click', () => {
+        selectedMeshByMaterial.set(mat.id, c.id);
+        rebuild();
+      });
       itemCard.addEventListener('dragstart', (e) => {
         e.dataTransfer?.setData('application/x-kekenik-cutout', c.id);
         e.dataTransfer?.setData('text/plain', c.name);
       });
       listEl.append(itemCard);
-    }
+    });
   }
 
-  return h('div', 'kt-mat-cutouts-tab', toolbar, listEl);
+  return h('div', 'kt-mat-cutouts-tab', toolbar, previewRow, listEl);
 }
 
 let selectedUvAreaId: string | null = null;
