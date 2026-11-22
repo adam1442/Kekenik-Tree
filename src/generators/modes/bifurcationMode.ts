@@ -1,4 +1,4 @@
-import { paritySide, record, scaledCount, span } from './shared';
+import { inBounds, paritySide, record, scaledCount, span } from './shared';
 import type { BifurcationRequest, ModeFrame, PlacementRecord } from './types';
 
 /** Largest lengthwise shift of a node at Spread = 1, as a fraction of the parent length. */
@@ -23,7 +23,7 @@ export function bifurcation(frame: ModeFrame, req: BifurcationRequest): Placemen
       const pk = chosen[k]!;
       const rng = frame.rng.fork(k);
       const t = pk.t + (rng.next() * 2 - 1) * req.spread * SPREAD_REACH + frame.positionOffset;
-      out.push(record(Math.min(frame.last, Math.max(frame.first, t)), frame.rollBase + pk.roll, k, paritySide(0, k)));
+      out.push(record(inBounds(frame, t), frame.rollBase + pk.roll, k, paritySide(0, k)));
     }
     return out;
   }
@@ -35,7 +35,7 @@ export function bifurcation(frame: ModeFrame, req: BifurcationRequest): Placemen
     const s = (k + 0.5) / n;
     const t = frame.first + frame.warp(s) * sp + (rng.next() * 2 - 1) * req.spread * SPREAD_REACH + frame.positionOffset;
     const roll = frame.rollBase + frame.branchPhase + k * Math.PI + 0.4;
-    out.push(record(Math.min(frame.last, Math.max(frame.first, t)), roll, k, paritySide(0, k)));
+    out.push(record(inBounds(frame, t), roll, k, paritySide(0, k)));
   }
   return out;
 }

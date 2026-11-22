@@ -41,6 +41,17 @@ export class CancellationSource {
   }
 }
 
+/** A named region of a Force node (Force containers: Include / Exclude). Positions are world space, metres. */
+export interface ForceVolume {
+  name: string;
+  shape: 'sphere' | 'box';
+  center: readonly [number, number, number];
+  /** Sphere radius (m). */
+  radius: number;
+  /** Box edge lengths along X / Y / Z (m). */
+  size: readonly [number, number, number];
+}
+
 export interface NodeContext {
   /** Graph node id / display name of the node being evaluated. */
   nodeId: string;
@@ -57,6 +68,10 @@ export interface NodeContext {
    * Provided by the engine; generators fall back to the parent input directly when it is absent.
    */
   getParentAttachments?(instanceKey: number): AttachmentFrame[];
+  /** Volumes of the Force nodes in the graph (Force containers: Include / Exclude). Absent = none. */
+  forceVolumes?: readonly ForceVolume[];
+  /** Node type of the hierarchy parent (e.g. `generator.branch`); absent when the node has no parent. */
+  parentType?: string;
 }
 
 /** Inputs grouped by port id; ports with `multiple` receive several values. */

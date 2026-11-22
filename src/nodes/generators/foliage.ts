@@ -26,6 +26,7 @@ import {
   weldToSkin,
   type AnchorStyle,
 } from '@/geometry/leafPlacement';
+import { asMeshAlignment, MESH_PARENT_TYPES, meshAlignmentAxis } from '@/generators/common/meshAlignment';
 import { readLeafPlacement, type LeafPlacementConfig } from './leafPlacementParams';
 import { resolveLeafLighting } from './leafLightingParams';
 import { leafDeformFor, materialHasHeight, materialHeightSampler, readLeafDeform, readLeafResolution, type LeafDeformConfig, type LeafResolution } from './leafDeformParams';
@@ -132,6 +133,9 @@ function leafCards(ctx: NodeContext, parent: Skeleton, pl: Placement, k: number,
   const droop = getNumber(p, 'droopAmount', 0.2) * curveFactor(p, 'droopAmount', u);
   const stiff = getNumber(p, 'droopStiffness', 0.5);
   axis = norm([axis[0], axis[1], axis[2] - droop * (1 - stiff) * 0.9]);
+  // Mesh alignment: a leaf whose parent is a mesh grows along the chosen parent / world axis.
+  const alignedAxis = pl.anchor || !MESH_PARENT_TYPES.has(ctx.parentType ?? '') ? null : meshAlignmentAxis(asMeshAlignment(getString(p, 'meshAlignment', 'none')), { tangent: T, normal: s.normal, binormal: s.binormal });
+  if (alignedAxis) axis = alignedAxis;
   const ownFacing = (a: V3): V3 => faceDirection(getString(p, 'facing', 'parent'), a, T, out, getNumber(p, 'facingBlend', 0.5) * curveFactor(p, 'facingBlend', u));
   let facing: V3;
   let anchorScale = 1;
@@ -283,7 +287,7 @@ export function evaluateBatchedLeaf(ctx: NodeContext, inputs: NodeInputs, p: Nod
 
 function evaluateLeafNode(ctx: NodeContext, inputs: NodeInputs, p: NodeParams, batched: boolean): NodeOutputs {
   const parent = parentOf(inputs);
-  if (!isActive(p) || parent.count === 0) return emptyFoliage(parent, ctx.seed);
+  if (!isActive(p, ctx.lod) || parent.count === 0) return emptyFoliage(parent, ctx.seed);
   const placements = leafPlacements(ctx, inputs, parent, p);
   const cfg = readLeafPlacement(p);
   const pv = inputs.parent?.[0];

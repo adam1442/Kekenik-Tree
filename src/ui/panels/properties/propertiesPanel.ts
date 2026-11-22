@@ -26,6 +26,7 @@ import type { PanelInstance } from '../../docking/panelRegistry';
 import { icon } from '../../icons/icons';
 import { OverrideEditor } from '@/instances/editor';
 import { reanchorOverrides, resolveOverrides, OVERRIDES_PARAM_ID, overridesParamState } from '@/instances/overrides';
+import { readForceVolume } from '@/generators/common/volumes';
 import { getNodeModeView, type NodeModeView } from './nodeModeInspector';
 import { mountProjectSettingsContent, mountViewportSettingsContent } from './globalPanels';
 import {
@@ -252,6 +253,17 @@ export function createPropertiesPanel(host: HTMLElement): PanelInstance {
         ...lib.materials().map((m) => ({ value: m.id, label: m.name })),
         ...lib.sets().map((s) => ({ value: s.id, label: `Set: ${s.name}` })),
       ];
+    }
+    if (fieldId === 'forceName') {
+      // Force containers: Force nodes that define a volume (Shape = Sphere / Box).
+      const volumes = model
+        .nodes()
+        .filter((n) => n.type.startsWith('force.') && readForceVolume(n.name, n.params) !== null)
+        .map((n) => ({ value: n.name, label: n.name }));
+      return [{ value: '', label: 'None' }, ...volumes];
+    }
+    if (fieldId === 'genMaskId') {
+      return [{ value: '', label: 'None' }, ...getMaterialLibrary().masks().map((mk) => ({ value: mk.id, label: mk.name }))];
     }
     if (fieldId === 'decoMask') {
       return [{ value: '', label: 'None' }, ...getMaterialLibrary().masks().map((mk) => ({ value: mk.id, label: mk.name }))];

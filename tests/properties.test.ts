@@ -633,6 +633,29 @@ describe('Properties Inspector & Global Settings panels (DOM integration)', () =
     }
   });
 
+  it('shows the shared Generation sections (Force containers, Masks, More, Common) of a Branch', () => {
+    const { app, dispose } = createTestApp();
+    const host = document.createElement('div');
+    document.body.append(host);
+    const panel = createPropertiesPanel(host);
+    try {
+      app.graph.setSelection(['big']);
+      for (const id of ['pass', 'pruningCurve', 'knockout', 'knockoutResolution', 'sizeScalar', 'clickPlace', 'extendParent']) {
+        expect(host.querySelector(`[data-param-id="${id}"]`), id).not.toBeNull();
+      }
+      expect(host.querySelectorAll('.kt-param-list-block').length).toBeGreaterThanOrEqual(3);
+      expect(host.querySelector('[data-param-id="meshAlignment"]')).toBeNull();
+      app.graph.setSelection(['leaf']);
+      expect(host.querySelector('[data-param-id="meshAlignment"]')).not.toBeNull();
+      app.graph.setSelection(['tree']);
+      expect(host.querySelector('[data-param-id="scale"]')).not.toBeNull();
+      expect(host.querySelector('[data-param-id="pass"]')).toBeNull();
+    } finally {
+      panel.dispose?.();
+      dispose();
+    }
+  });
+
   it('mounts standalone Project Settings and Viewport Settings panels and updates store/project', () => {
     const { app, dispose } = createTestApp();
     const projHost = document.createElement('div');

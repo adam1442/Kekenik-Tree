@@ -92,7 +92,7 @@ const tintOf = (p: NodeParams, key: string): V3 => {
 /** Cluster: small bodies (berries, cones, flowers) around each placement, hanging down. */
 export function evaluateCluster(ctx: NodeContext, inputs: NodeInputs, p: NodeParams): NodeOutputs {
   const parent = parentOf(inputs);
-  if (!isActive(p) || parent.count === 0) return emptyFoliage(parent, ctx.seed);
+  if (!isActive(p, ctx.lod) || parent.count === 0) return emptyFoliage(parent, ctx.seed);
   const placements = collectPlacements(ctx, parent, p, 6000);
   const detail = LOD_FOLIAGE_DETAIL(ctx.lod);
   const material = pickLeafType(ctx.rng.fork('mat'), p, 'cluster').materialId;
@@ -140,7 +140,7 @@ export function evaluateCluster(ctx: NodeContext, inputs: NodeInputs, p: NodePar
 /** Mesh generator: primitive-library or imported meshes placed along parents (baked or GPU-instanced). */
 export function evaluateMeshInstances(ctx: NodeContext, inputs: NodeInputs, p: NodeParams): NodeOutputs {
   const parent = parentOf(inputs);
-  if (!isActive(p) || parent.count === 0) return emptyFoliage(parent, ctx.seed);
+  if (!isActive(p, ctx.lod) || parent.count === 0) return emptyFoliage(parent, ctx.seed);
   const slots = planAnchorSlots(ctx, inputs, parent, p, getNumber(p, 'number', 6));
   const placements = slots ? placementsFromSlots(slots, 20000) : collectPlacements(ctx, parent, p, 20000);
   const detail = LOD_FOLIAGE_DETAIL(ctx.lod);

@@ -1,3 +1,4 @@
+import { readPass } from '@/generators/common/pass';
 import type { GraphSnapshot } from './snapshot';
 
 export interface TopoResult {
@@ -9,7 +10,7 @@ export interface TopoResult {
 
 /**
  * Kahn's algorithm over ALL edges (hierarchy parent -> child and attachment -> generator alike). Ties are broken by
- * snapshot order, so the result is stable for a given snapshot.
+ * the Pass of the node (lower first) and then by snapshot order, so the result is stable for a given snapshot.
  */
 export function topologicalOrder(snap: GraphSnapshot): TopoResult {
   const indeg = new Map<string, number>();
@@ -22,7 +23,7 @@ export function topologicalOrder(snap: GraphSnapshot): TopoResult {
     indeg.set(e.toNode, (indeg.get(e.toNode) ?? 0) + 1);
     out.get(e.fromNode)?.push(e.toNode);
   }
-  const rank = new Map(snap.nodes.map((n, i) => [n.id, i]));
+  const rank = new Map(snap.nodes.map((n, i) => [n.id, readPass(n.params) * 1_000_000 + i]));
   const ready = snap.nodes.filter((n) => indeg.get(n.id) === 0).map((n) => n.id);
   const order: string[] = [];
   while (ready.length > 0) {

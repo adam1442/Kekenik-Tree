@@ -372,3 +372,27 @@ SceneModel (engine, any LOD) -> lod/lodScene.applyLodToScene -> geometry.buildGe
 * **Frond variance / lighting / wind (R07).** `geometry/frondVariance.ts` (pure): `leftRightScales` (own Fold / Curl / Gravity multipliers per half, passed to `buildRibs` as `RibSettings.sides`), `sectionDeltas` + `spreadDraw` (Section Variance, Favor Outliers). `UnitMesh.section` / `.sections` carry the per-vertex section id of the cutout (`cutoutSection`); `buildFrondSpecs` builds one extra `Ribs` per painted section (ids 2..8, `FrondSpec.sectionRibs`) and `mappedLocal` maps every vertex through the ribs of its section. Lighting: `FrondSpec.light` + `FrondMeshOptions.lighting / lightingExtras`; `buildFrondMesh` collects one `LightingGroup` per emitted copy (with per-vertex `spine.along / away`) and calls `applyLeafLighting(..., { frond })` after `acc.build` (settings from `resolveFrondLighting`, Style Global = Tree lighting). Wind: `geometry/frondWind.ts#frondWindAt` writes the existing `w0..w3` per vertex (Weight x t^power, Cross, Boost, Ribs), so the attribute layout is unchanged.
 * **Mesh Instance.** The base mesh is chosen per instance; an attached Mesh input / explicit asset still wins. Different bases are baked as one group each and merged (GPU instancing only applies when one base is used).
 * **Generation modes (R08).** `src/generators/modes/` is the pure placement layer: `generatePlacements(frame, request)` returns `PlacementRecord { t, roll, side, groupIndex }[]` for ONE parent (`count` modes: `countModes.ts`, `stepsMode.ts`, `groupModes.ts` = Phyllotaxy + Interval, `bifurcationMode.ts`; dispatch + `normalizeMode` in `index.ts`). It only sees a `ModeFrame` (seeded stream, First / Last, parent length in metres, LOD keep, warp / attract / bend-finder callbacks), so it is testable without a skeleton. `nodes/generators/distribution.ts#generateChildPlacements` is the single adapter used by Trunk / Branch / Root / Spine / Leaf / Cluster / Mesh Instance: params -> `ModeRequest` (`readModeRequest`), then the shared Clip / Pruning / Knockout / Extend-parent steps. `ChildPlacement` gained `groupIndex`; `side` is now written by every mode. Params live in `generationParams` (params.ts); `EnumParamDef.options[].disabled` marks legacy entries (Classic). `generationMigration.ts` (`migrateGenerationParams`, chained with `withGenerationMigration`) upgrades older files. Frond and Decoration keep their own Generation tab (rib / surface placement) and do not use the modes.
+
+## Shared Generation properties (R09) — `src/generators/common/`, `nodes/generators/generationEnv.ts`
+
+Pure, seeded building blocks (`filters.ts` Clip / Pruning / Knockout, `volumes.ts` Force containers, `maskGate.ts`, `pass.ts`, `sizeScalar.ts`, `extend.ts`, `meshAlignment.ts`, `migrate.ts`) used by the generators through `generateChildPlacements(prep, params, rng, lod, max, env)` and `withGenerationCommon(def)`.
+
+**Order of operations** for the nodes of one parent branch (`distribution.ts`):
+
+```
+mode placement -> boundaries / clip -> position / rotation / sink -> pruning -> knockout
+  -> force containers -> masks -> extension logic -> compute
+```
+
+* Mode placement + boundaries: `generators/modes`. With Clip on, `ModeFrame.clip` stops the modes from clamping to First..Last, and the adapter removes nodes outside the (inset) range.
+* Position and Rotation are applied inside the mode frame (`positionOffset`, `rollBase`, variance per parent); Sink is applied when the child grows (`sampledSink`, variance per node).
+* Pruning: curve `pruningCurve` over First..Last, node removed where < 0.5. Knockout: `knockoutChance(amount x curve, resolution x lod)`, one `modeRng.fork('ko:<slot>')` draw per node (stable ids).
+* Force containers and Masks are tested at the surface point where the node leaves the parent (`GenerationEnv`, built once per node by `createGenerationEnv(ctx, params, parentSkeleton)`). Volumes come from `NodeContext.forceVolumes` (all enabled Force nodes with a *Volume* section, filled by the evaluator and part of the cache key of nodes that use containers); masks come from the project Masks library (`generationDependencyKey` makes mask edits invalidate only the generators that use them).
+* Extension nodes (`isExtension`, `u` 0 or 1) are added last and are not filtered. Extend parent is valid only under a Branch parent (`NodeContext.parentType`, set by the evaluator) and only Branch / Cap / Leaf / Batched leaf expose it.
+* Root-level nodes (children of the Tree disc) get Knockout, Force containers and Masks via `keepsRootLevelNode`.
+
+**Pass.** `topologicalOrder` breaks ties by Pass, then snapshot order. `validatePasses` (evaluator) appends an error message (error badge, not a failed state) to every node whose Pass is lower than an ancestor's.
+
+**Size scalar.** `withGenerationCommon` multiplies the node's own `sizeScalar` into `StructureData.sizeScalar` of its parent (the Tree node starts it from its `scale`), scales the size parameters listed in `SIZE_PARAMS` for that node type and publishes the result (plus `StructureData.kind`, the node type) on its `children` output.
+
+**Migration.** `withGenerationCommon` bumps every generator's node version and chains `migrateCommonGeneration` (old scalar `pruning` is folded into `knockout`).

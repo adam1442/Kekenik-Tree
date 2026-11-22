@@ -12,6 +12,8 @@ export const forceOutput = (forceType: string) => (ctx: NodeContext, _inputs: un
 const common = (): ParamDef[] => {
   const c = section('Force', 'Common');
   const i = section('Force', 'Influence');
+  const v = section('Force', 'Volume');
+  const hasVolume = { param: 'volumeShape', op: 'ne', value: 'none' } as const;
   return [
     c.bool('active', 'Active', true),
     c.float('strength', 'Strength', 1, { min: -100, max: 100, softMin: -5, softMax: 5, variance: 0, curve: true, tooltip: 'The curve drives the strength along the branch length (0 = base, 1 = tip).' }),
@@ -19,6 +21,12 @@ const common = (): ParamDef[] => {
     i.float('generationFalloff', 'Generation falloff', 0, { min: 0, max: 1, tooltip: 'Each generation below the attached generator receives (1 - falloff) times less force.' }),
     i.float('stiffness', 'Stiffness', 0.5, { min: 0, max: 1, tooltip: 'Resistance to bending. Thick branches are always stiffer than thin ones.' }),
     i.float('refRadius', 'Stiff radius', 0.05, { min: 0.005, max: 1, softMax: 0.3, unit: 'm', tooltip: 'Branch radius with nominal stiffness. Thinner branches bend more, thicker ones less.' }),
+    v.enumOf('volumeShape', 'Shape', 'None', ['None', 'Sphere', 'Box'], {
+      tooltip: 'Optional region of space named after this force. Generators can keep (Include) or remove (Exclude) nodes inside it from their Force containers.',
+    }),
+    v.vec3('volumeCenter', 'Center', [0, 0, 0], { step: 0.1, visibleIf: hasVolume, tooltip: 'World position of the volume centre.' }),
+    v.float('volumeRadius', 'Radius', 1, { min: 0, max: 1000, softMax: 20, unit: 'm', visibleIf: { param: 'volumeShape', value: 'sphere' }, tooltip: 'Radius of the spherical volume.' }),
+    v.vec3('volumeSize', 'Size', [2, 2, 2], { step: 0.1, visibleIf: { param: 'volumeShape', value: 'box' }, tooltip: 'Edge lengths of the box volume along X, Y and Z.' }),
   ];
 };
 

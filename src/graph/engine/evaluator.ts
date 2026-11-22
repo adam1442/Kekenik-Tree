@@ -2,6 +2,8 @@ import { OUTPUT_KEY, type EvaluationSummary, type NodeDiagnostic, type NodeMessa
 import { meshTriangleCount } from '@/contracts/mesh';
 import { CancelledError, type CancellationToken, type NodeDef, type NodeInputs, type NodeOutputs } from '@/contracts/nodes';
 import { getNumber } from '@/contracts/params';
+import { readPass, validatePasses } from '@/generators/common/pass';
+import { listNames, readForceVolume, type ForceVolume } from '@/generators/common/volumes';
 import type { PortValue } from '@/contracts/ports';
 import { createLogger, type Logger } from '@/core/logger';
 import { Rng } from '@/core/rng';
@@ -104,6 +106,20 @@ export class GraphEvaluator {
       else incoming.set(e.toNode, [e]);
     }
     const { order, cyclic } = topologicalOrder(snap);
+    const hierarchyParent = new Map<string, string>();
+    for (const e of snap.edges) if (e.kind === 'hierarchy') hierarchyParent.set(e.toNode, e.fromNode);
+    // Force containers: the volumes of all enabled Force nodes, looked up by name.
+    const forceVolumes: ForceVolume[] = [];
+    for (const n of snap.nodes) {
+      if (!n.enabled || lookup(n.type)?.category !== 'force') continue;
+      const vol = readForceVolume(n.name, n.params);
+      if (vol) forceVolumes.push(vol);
+    }
+    const volumesKey = hashString(JSON.stringify(forceVolumes));
+    const usesContainers = (params: SnapshotNode['params']): boolean => listNames(params, 'forceInclude', 'forceName').length + listNames(params, 'forceExclude', 'forceName').length > 0;
+    const passErrors = validatePasses(
+      snap.nodes.filter((n) => n.hierarchy).map((n) => ({ id: n.id, pass: readPass(n.params), parentId: hierarchyParent.get(n.id) ?? null })),
+    );
     const diagnostics = new Map<string, NodeDiagnostic>();
     const results = new Map<string, NodeResult>();
     const diag = (nodeId: string, state: NodeState, extra: Partial<NodeDiagnostic> = {}): NodeDiagnostic => {
@@ -203,7 +219,7 @@ export class GraphEvaluator {
       const perNodeSeed = getNumber(node.params, 'seed', 0);
       const nodeSeed = deriveNodeSeed(opts.seed, id, perNodeSeed);
       const named = NAMED_CATEGORIES.has(def.category) ? `|${node.name}` : '';
-      const key = `${id}:${hashString([KEY_VERSION, def.type, def.version ?? 1, node.paramsHash, nodeSeed, opts.lod, inputTokens.join(','), named, def.dependencyKey?.(node.params) ?? ''].join('|'))}`;
+      const key = `${id}:${hashString([KEY_VERSION, def.type, def.version ?? 1, node.paramsHash, nodeSeed, opts.lod, inputTokens.join(','), named, def.dependencyKey?.(node.params) ?? '', usesContainers(node.params) ? volumesKey : ''].join('|'))}`;
       const hit = this.cache.get(key);
       if (hit) {
         cached += 1;
@@ -224,7 +240,7 @@ export class GraphEvaluator {
       try {
         const parentIn = inputs[PORT.parent]?.[0];
         const parentAttach = parentIn && parentIn.kind === 'Structure' ? parentIn.value.attachments : undefined;
-        const raw = await def.evaluate({ nodeId: id, name: node.name, rng: new Rng(nodeSeed), seed: nodeSeed, cancel: opts.token, lod: opts.lod, logger, getParentAttachments: (key) => getParentAttachments(parentAttach, key) }, inputs, node.params);
+        const raw = await def.evaluate({ nodeId: id, name: node.name, rng: new Rng(nodeSeed), seed: nodeSeed, cancel: opts.token, lod: opts.lod, logger, getParentAttachments: (key) => getParentAttachments(parentAttach, key), forceVolumes, ...(hierarchyParent.has(id) ? { parentType: byId.get(hierarchyParent.get(id) as string)?.type } : {}) }, inputs, node.params);
         opts.token.throwIfCancelled();
         const outputs = validateOutputs(inheritLighting(raw, parentIn));
         const ms = now() - started;
@@ -248,6 +264,10 @@ export class GraphEvaluator {
       sliceStart = Math.min(sliceStart, now());
     }
 
+    for (const [id, text] of passErrors) {
+      const d = diagnostics.get(id);
+      if (d && d.state !== 'skipped') d.messages = [...d.messages, { level: 'error', text }];
+    }
     this.cache.retainNodes(new Set(snap.nodes.map((n) => n.id)));
     const scene = assembleScene(snap, order, results, lookup);
     const edgeLabels = new Map<string, string>();

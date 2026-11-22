@@ -69,6 +69,23 @@ const MODE_NOTES = [
   '',
 ].join('\n');
 
+const COMMON_NOTES = [
+  '## Shared Generation properties (Generation tab of every generator)',
+  '',
+  'Sections **Boundaries / Common / Extend parent / Knockout / Force containers / More / Masks**. Order of operations for the nodes of one parent: mode placement -> boundaries / Clip -> Position / Rotation / Sink -> Pruning -> Knockout -> Force containers -> Masks -> Extend parent -> compute (grow the node).',
+  '',
+  '* **Boundaries.** *First* / *Last* = lowest / highest point on the parent where nodes occur. *Clip* (checkbox; the value insets the range as a fraction of First..Last): nodes that Spread or Position push outside First..Last are removed instead of being held on the boundary.',
+  '* **Common.** *Active* (curve over the level of detail, left = highest detail: active where the curve is above 0.5). *Pass* (integer >= 1): generators compute in pass order; a node whose pass is lower than an ancestor\'s gets an error badge. *Rotation* turns all nodes of a parent around it as a group (variance jumbles it per parent). *Position* shifts all nodes along the parent (variance per parent). *Sink* moves the start of the nodes into (+) or out of (-) the parent (variance per node). *Pruning* curve runs from First (left) to Last (right); nodes are removed where it is below 0.5.',
+  '* **Extend parent** (Branch, Cap, Leaf, Batched leaf; valid under a Branch parent). *Type*: None, Any (tip), Bottom (base), Breaks only (tip of parents that end in a break; detected from the thick tip of the parent), Split 1 / Split 2 / Skinny / Fat (kept as entries, behave like Any until the split data exists). *Count* = extensions per parent.',
+  '* **Knockout.** *Amount* = share of nodes removed at random after the mode ran (curve along the parent). *+ Resolution* is added to the amount for every level of detail below the highest (negative = fewer removed).',
+  '* **Force containers.** *Include* / *Exclude* list Force nodes by name. Give a Force node a volume in its *Volume* section (Shape None / Sphere / Box + Center, Radius or Size). Include keeps only nodes inside at least one named volume, Exclude removes nodes inside any. Unknown names are ignored. The volume works whether or not the force is Active. Nodes are tested where they leave the parent surface.',
+  '* **More.** *Click place* (Ready / None / Any / Number) is stored and takes effect with Freehand mode. *Mesh alignment* (Leaf, Batched leaf): when the parent is a Mesh Instance, the leaf grows along the parent Tangent / Binormal, a parent axis (X = normal, Y = tangent, Z = their cross product) or a world axis. *Size scalar* scales the node (length, radius, leaf / mesh scale ...) and is multiplied into the scalar handed to every node below it; the Tree node\'s *Size scalar* is the start value.',
+  '* **Masks.** Assign any number of masks from the Masks panel; a node is kept only where every mask evaluates to 0.5 or more (Inclusive / Exclusive from the mask). The elevation range of *relative* masks is the Z range of the parent structure.',
+  '* **Tree node.** Only *Size scalar* applies.',
+  '* **Back-compat.** The old scalar *Pruning* (random removal) is folded into Knockout on load; the new Pruning is the curve `pruningCurve`. `Clip` default is now 0 (no inset). Node versions were bumped.',
+  '',
+].join('\n');
+
 const LEAF_NOTES = [
   '### Leaves tab - how the pieces fit together',
   '',
@@ -162,9 +179,10 @@ describe('PARAMETERS.md', () => {
       '* Curves on a parameter are evaluated along the *parent* (0 = base, 1 = tip) for placement params, and along the *spine* for shape params.',
       '',
     ].join('\n');
-    const doc = [header, MODE_NOTES, ...['output.tree', 'generator.trunk', 'generator.branch', 'generator.spine'].map(table), leafTab()].join('\n');
+    const doc = [header, MODE_NOTES, COMMON_NOTES, ...['output.tree', 'generator.trunk', 'generator.branch', 'generator.spine'].map(table), leafTab()].join('\n');
     expect(doc).toContain('Tree placement');
     expect(doc).toContain('Internode length');
+    expect(doc).toContain('Force containers');
     expect(doc).toContain('Sensitivity → Parent');
     expect(doc).toContain('Left-Right Variance');
     if (process.env.WRITE_PARAM_DOCS) writeFileSync('docs/PARAMETERS.md', doc);

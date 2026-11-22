@@ -382,7 +382,7 @@ function cachedHeight(cache: Map<string, ((u: number, v: number) => number) | nu
 
 export function evaluateFrond(ctx: NodeContext, inputs: NodeInputs, p: NodeParams): NodeOutputs {
   const parent = parentOf(inputs);
-  if (!isActive(p) || parent.count === 0) return emptyFoliage(parent, ctx.seed);
+  if (!isActive(p, ctx.lod) || parent.count === 0) return emptyFoliage(parent, ctx.seed);
   const pv = inputs.parent?.[0];
   const lineage = pv && pv.kind === 'Structure' ? pv.value.lineage : undefined;
   const globalLighting = pv && pv.kind === 'Structure' ? pv.value.lighting : undefined;

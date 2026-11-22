@@ -8,6 +8,7 @@ import { InstanceScope, type InstanceHandle } from '@/instances/scope';
 import { emitStructureOutput, extractParentSkeleton, extractParentTable, isGeneratorActive, MAX_BRANCHES_PER_NODE } from './common';
 import { createInstanceConfigResolver } from './instanceSupport';
 import { generateChildPlacements } from './distribution';
+import { createGenerationEnv, sampledSink } from './generationEnv';
 import {
   buildChildInitialFrame,
   prepareParentBranch,
@@ -41,13 +42,13 @@ function growOneLevel(
     return emptySkeleton();
   }
 
-  const sink = getNumber(params, 'sink', 0);
   const alignBool = getBool(params, 'align', false);
   const effectiveAlignment = alignBool ? Math.max(0.75, cfg.alignment) : cfg.alignment;
   // Sub-levels inside a single Branch node scale down length & count organically
   const subScale = levelIndex === 0 ? 1 : Math.pow(0.62, levelIndex);
 
   const builder = new StructureSkeletonBuilder(Math.min(65536, Math.max(512, parentSk.branches.length * 32)));
+  const env = createGenerationEnv(ctx, params, parentSk);
   let written = 0;
 
   for (let bi = 0; bi < parentSk.branches.length && written < maxTotalRemaining; bi++) {
@@ -60,7 +61,7 @@ function growOneLevel(
 
     const prep = prepareParentBranch(parentSk, pb);
     const branchRng = ctx.rng.fork(`lvl:${levelIndex}:pb:${pb.id}`);
-    const placements = generateChildPlacements(prep, params, branchRng, ctx.lod, maxTotalRemaining - written);
+    const placements = generateChildPlacements(prep, params, branchRng, ctx.lod, maxTotalRemaining - written, env);
 
     for (let pi = 0; pi < placements.length && written < maxTotalRemaining; pi++) {
       if ((pi & 127) === 0) ctx.cancel.throwIfCancelled();
@@ -105,6 +106,7 @@ function growOneLevel(
         ]);
         origin = v3Add(origin, v3Scale(radial, sample.radius * 0.85));
       }
+      const sink = sampledSink(params, childRng);
       if (Math.abs(sink) > 1e-5) {
         origin = v3Add(origin, v3Scale(frame.tangent, -sink));
       }

@@ -71,6 +71,10 @@ export interface StructureData {
   attachments?: AttachmentSet;
   /** Tree-level (global) leaf lighting; handed down the hierarchy by the generators. */
   lighting?: LeafLightingSettings;
+  /** Cumulative Size scalar of this node and its ancestors (children multiply their own value into it). Absent = 1. */
+  sizeScalar?: number;
+  /** Node type of the generator that produced this structure (e.g. `generator.meshes`). */
+  kind?: string;
 }
 
 /** Tagged payload travelling along edges during evaluation. */

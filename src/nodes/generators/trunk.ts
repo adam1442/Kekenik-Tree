@@ -7,10 +7,13 @@ import { sampleVariance } from '@/graph/engine/seeds';
 import { emitStructureOutput, extractParentSkeleton, extractParentTable, isGeneratorActive, MAX_BRANCHES_PER_NODE } from './common';
 import { createInstanceConfigResolver } from './instanceSupport';
 import { generateChildPlacements } from './distribution';
+import { createGenerationEnv, sampledSink } from './generationEnv';
 import {
   buildChildInitialFrame,
   prepareParentBranch,
   sampleParentBranch,
+  v3Add,
+  v3Scale,
 } from './frames';
 import { evaluateRootLevel } from './rootLevel';
 import { StructureSkeletonBuilder } from './skeletonBuild';
@@ -35,6 +38,7 @@ export function evaluateTrunk(ctx: NodeContext, inputs: NodeInputs, params: Node
     const nextGen = (parent.branches[0]?.generation ?? 0) + 1;
     let total = 0;
     const scope = new InstanceScope(ctx.nodeId, params, extractParentTable(inputs));
+    const env = createGenerationEnv(ctx, params, parent);
     const cfgFor = createInstanceConfigResolver(cfg, (p) => compileSpineConfig(p, inputs, ctx.lod, ctx.seed, false));
 
     for (let bi = 0; bi < parent.branches.length && total < MAX_BRANCHES_PER_NODE; bi++) {
@@ -42,7 +46,7 @@ export function evaluateTrunk(ctx: NodeContext, inputs: NodeInputs, params: Node
       const pb = parent.branches[bi]!;
       const prep = prepareParentBranch(parent, pb);
       const branchRng = ctx.rng.fork(`tpb:${pb.id}`);
-      const placements = generateChildPlacements(prep, params, branchRng, ctx.lod, MAX_BRANCHES_PER_NODE - total);
+      const placements = generateChildPlacements(prep, params, branchRng, ctx.lod, MAX_BRANCHES_PER_NODE - total, env);
 
       for (const pl of placements) {
         const childRng = branchRng.fork(`tc:${pl.slotIndex}`);
@@ -65,13 +69,14 @@ export function evaluateTrunk(ctx: NodeContext, inputs: NodeInputs, params: Node
             alignment: icfg.alignment,
           },
         );
+        const trunkSink = sampledSink(params, childRng);
         total += growSpineIntoBuilder(
           icfg,
           {
             parentBranch: pb.id,
             parentPoint: sample.parentPoint,
             generation: nextGen,
-            origin: sample.position,
+            origin: trunkSink === 0 ? sample.position : v3Add(sample.position, v3Scale(frame.tangent, -trunkSink)),
             initialFrame: frame,
             parentTangent: sample.tangent,
             parentU: u,

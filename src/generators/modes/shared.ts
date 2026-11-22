@@ -20,9 +20,12 @@ export function scaledCount(frame: ModeFrame, base: number): number {
   return Math.min(frame.maxCount, Math.max(0, c));
 }
 
-/** Keeps `t` inside the shared First / Last boundaries. */
+/**
+ * Keeps `t` inside the shared First / Last boundaries. With `frame.clip` the node is only kept on the parent (0..1), so the
+ * caller can see that Spread / Position pushed it outside First..Last and remove it.
+ */
 export function inBounds(frame: ModeFrame, t: number): number {
-  return clamp(t, frame.first, frame.last);
+  return frame.clip ? clamp(t, 0, 1) : clamp(t, frame.first, frame.last);
 }
 
 export function span(frame: ModeFrame): number {

@@ -1,4 +1,4 @@
-import { paritySide, record, scaledCount, span, TAU } from './shared';
+import { inBounds, paritySide, record, scaledCount, span, TAU } from './shared';
 import type { ModeFrame, PlacementRecord, StepsRequest } from './types';
 
 /**
@@ -25,7 +25,7 @@ export function steps(frame: ModeFrame, req: StepsRequest): PlacementRecord[] {
       const even = m / perStep;
       const frac = even + (1 - balance) * (rng.next() - even);
       const t = centre + (rng.next() - 0.5) * req.spread * sp + frame.positionOffset;
-      out.push(record(Math.min(frame.last, Math.max(frame.first, t)), base + frac * TAU, i, paritySide(i, m)));
+      out.push(record(inBounds(frame, t), base + frac * TAU, i, paritySide(i, m)));
     }
   }
   return out;

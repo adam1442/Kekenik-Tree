@@ -155,7 +155,7 @@ describe('Frond node', () => {
 
   it('migrates old pinnae-style graphs to ribbon params', () => {
     const def = getNodeDef('generator.frond')!;
-    expect(def.version).toBe(3);
+    expect(def.version).toBe(4);
     const old = { frondPinnaLength: { value: 0.3 }, frondDroop: { value: 0.4 }, frondCurl: { value: 0.5 }, first: { value: 0.2 }, number: { value: 4 }, frondFins: { value: 10 } };
     const m = migrateFrondParams(old, 1);
     expect(m.frondWidth?.value).toBeCloseTo(0.42);

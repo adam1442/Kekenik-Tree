@@ -20,6 +20,7 @@ import {
   displacementParams,
   forcesParams,
   generationParams,
+  passAndSizeParams,
   handDrawnParams,
   knotHelperParams,
   leafMaterialParams,
@@ -45,6 +46,7 @@ import { leafDeformParams, leafDependencyKey, materialHeightKey } from './leafDe
 import { leafLightingParams } from './leafLightingParams';
 import { migrateLeafParams } from './foliage';
 import { withGenerationMigration } from './generationMigration';
+import { withGenerationCommon } from './generationEnv';
 import { withLineage } from './lineageHook';
 import { evaluateRoot } from './root';
 import { evaluateTrunk } from './trunk';
@@ -131,7 +133,7 @@ const leafTabs = (gen: GenerationDefaults, extra: ParamDef[] = [], batched = fal
   return batched ? defs.filter((d) => !BATCHED_EXCLUDED.has(d.id)) : defs;
 };
 
-export const nodeDefs: NodeDef[] = [
+const baseNodeDefs: NodeDef[] = [
   {
     type: 'generator.trunk',
     category: 'generator',
@@ -165,7 +167,7 @@ export const nodeDefs: NodeDef[] = [
     version: 2,
     migrate: withGenerationMigration(),
     params: structureParams(
-      { number: 12, first: 0.2, last: 0.95, jumble: 0.2, includeBranchExtended: true, placement: true },
+      { number: 12, first: 0.2, last: 0.95, jumble: 0.2, includeBranchExtended: true, placement: true, extend: true },
       { kind: 'branch', length: 3.2, radius: 0.06, taper: 0.88, segments: 10, spread: 48, gravity: 0.16, upDown: 0.06, noiseAmount: 0.2 },
       8,
     ),
@@ -250,7 +252,7 @@ export const nodeDefs: NodeDef[] = [
     ports: withChildren,
     version: 3,
     migrate: withGenerationMigration(migrateLeafParams),
-    params: leafTabs({ number: 6, first: 0.1, last: 1 }),
+    params: leafTabs({ number: 6, first: 0.1, last: 1, extend: true, meshAlignment: true }),
     evaluate: withLineage(evaluateLeaf),
     dependencyKey: leafDependencyKey,
   },
@@ -265,7 +267,7 @@ export const nodeDefs: NodeDef[] = [
     ports: withChildren,
     version: 2,
     migrate: withGenerationMigration(),
-    params: leafTabs({ number: 6, first: 0.1, last: 1 }, [], true),
+    params: leafTabs({ number: 6, first: 0.1, last: 1, extend: true, meshAlignment: true }, [], true),
     evaluate: withLineage(evaluateBatchedLeaf),
     dependencyKey: leafDependencyKey,
   },
@@ -280,7 +282,7 @@ export const nodeDefs: NodeDef[] = [
     version: 3,
     migrate: migrateFrondParams,
     ports: leafOnly,
-    params: frondParams(),
+    params: [...frondParams(), ...passAndSizeParams()],
     evaluate: withDisplacementWarning(evaluateFrond),
     dependencyKey: (params: NodeParams): string => `${displacementDeps(params)}#${getNumber(params, 'frondHeightOffset', 0) === 0 ? '' : materialHeightKey()}`,
   },
@@ -293,7 +295,7 @@ export const nodeDefs: NodeDef[] = [
     description: 'Cards or cutout meshes on the surface of a trunk, branch or spine: moss, mushrooms, lichen, ivy, peeling bark.',
     statsGroup: 'decorations',
     ports: withChildren,
-    params: [...decorationParams(), ...anchorPlacementParams()],
+    params: [...decorationParams(), ...anchorPlacementParams(), ...passAndSizeParams()],
     evaluate: evaluateDecoration,
     dependencyKey: decorationDependencyKey,
   },
@@ -331,7 +333,7 @@ export const nodeDefs: NodeDef[] = [
     ports: leafOnly,
     version: 2,
     migrate: withGenerationMigration(),
-    params: [...generationParams({ number: 1, first: 1, last: 1 }), ...capParams(), ...skinParams(8), ...uvParams(), ...displacementParams(), ...materialTabParams()],
+    params: [...generationParams({ number: 1, first: 1, last: 1, extend: true }), ...capParams(), ...skinParams(8), ...uvParams(), ...displacementParams(), ...materialTabParams()],
     evaluate: withDisplacementWarning(evaluateCap),
     dependencyKey: displacementDeps,
   },
@@ -350,3 +352,6 @@ export const nodeDefs: NodeDef[] = [
     evaluate: evaluateCluster,
   },
 ];
+
+/** Every generator gets the common migration, the Mask cache key and the Size scalar (own value x parent's, handed down). */
+export const nodeDefs: NodeDef[] = baseNodeDefs.map((d) => (d.category === 'generator' ? withGenerationCommon(d) : d));

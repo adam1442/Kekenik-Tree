@@ -52,6 +52,8 @@ export interface ModeFrame {
   rollBase: number;
   /** Per-parent phase that decorrelates siblings. */
   branchPhase: number;
+  /** Clip: nodes pushed outside First..Last are not pulled back onto the boundary (the caller removes them). */
+  clip?: boolean;
   /** Position offset added to every `t` before the boundaries are enforced. */
   positionOffset: number;
   /** Remaps a normalised spacing coordinate (0..1 across First..Last), e.g. the distribution curve. */

@@ -1,4 +1,4 @@
-import { MAX_GROUPS, paritySide, record, TAU } from './shared';
+import { inBounds, MAX_GROUPS, paritySide, record, TAU } from './shared';
 import type { IntervalRequest, ModeFrame, PhyllotaxyRequest, PhyllotaxyStyle, PlacementRecord } from './types';
 
 /** Number of groups used by Phyllotaxy when Internode length is 0 and Limit is unlimited. */
@@ -80,7 +80,7 @@ export function phyllotaxy(frame: ModeFrame, req: PhyllotaxyRequest): PlacementR
       let roll = rollG + (m * TAU) / per;
       if (req.alignStyle === 'individual') roll += (rng.next() * 2 - 1) * (Math.PI / per);
       const t = grp.t + (rng.next() * 2 - 1) * req.spread * grp.gap + frame.positionOffset;
-      out.push(record(Math.min(frame.last, Math.max(frame.first, t)), roll, g, paritySide(g, m)));
+      out.push(record(inBounds(frame, t), roll, g, paritySide(g, m)));
     }
   }
   return out;
@@ -113,7 +113,7 @@ export function interval(frame: ModeFrame, req: IntervalRequest): PlacementRecor
       let roll = rollG + (m * TAU) / per;
       if (req.alignStyle === 'individual') roll += (rng.next() * 2 - 1) * (Math.PI / per);
       const tn = t + (rng.next() * 2 - 1) * req.spread * gap + frame.positionOffset;
-      out.push(record(Math.min(frame.last, Math.max(frame.first, tn)), roll, g, paritySide(g, m)));
+      out.push(record(inBounds(frame, tn), roll, g, paritySide(g, m)));
     }
     t -= gap;
     if (t < frame.first - 1e-9) break;

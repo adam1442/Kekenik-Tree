@@ -377,7 +377,7 @@ function buildCutoutCards(ctx: NodeContext, parent: Skeleton, items: readonly De
 
 export function evaluateDecoration(ctx: NodeContext, inputs: NodeInputs, p: NodeParams): NodeOutputs {
   const parent = parentOf(inputs);
-  if (!isActive(p) || parent.count === 0) return emptyFoliage(parent, ctx.seed);
+  if (!isActive(p, ctx.lod) || parent.count === 0) return emptyFoliage(parent, ctx.seed);
   const items = planDecorations(ctx, parent, p, inputs);
   if (items.length === 0) return emptyFoliage(parent, ctx.seed);
   const cutout = getString(p, 'decoShape', 'card') === 'cutout-mesh';

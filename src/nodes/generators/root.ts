@@ -7,6 +7,7 @@ import { clamp, deg2rad } from '@/core/math';
 import { sampleVariance } from '@/graph/engine/seeds';
 import { emitStructureOutput as emitStructure, extractParentSkeleton, isGeneratorActive, MAX_BRANCHES_PER_NODE } from './common';
 import { generateChildPlacements, GOLDEN_ANGLE_RAD } from './distribution';
+import { createGenerationEnv } from './generationEnv';
 import {
   buildChildInitialFrame,
   orthonormalNormal,
@@ -113,6 +114,7 @@ export function evaluateRoot(ctx: NodeContext, inputs: NodeInputs, params: NodeP
   // Case 2: Parented to Trunk or upstream Root skeleton -> grow roots along [first..last] downward & outward
   const builder = new StructureSkeletonBuilder(Math.min(32768, Math.max(256, parent.branches.length * 24)));
   let written = 0;
+  const env = createGenerationEnv(ctx, params, parent);
 
   for (let bi = 0; bi < parent.branches.length && written < MAX_BRANCHES_PER_NODE; bi++) {
     if ((bi & 31) === 0) ctx.cancel.throwIfCancelled();
@@ -124,7 +126,7 @@ export function evaluateRoot(ctx: NodeContext, inputs: NodeInputs, params: NodeP
 
     const prep = prepareParentBranch(parent, pb);
     const branchRng = ctx.rng.fork(`rpb:${pb.id}`);
-    const placements = generateChildPlacements(prep, params, branchRng, ctx.lod, MAX_BRANCHES_PER_NODE - written);
+    const placements = generateChildPlacements(prep, params, branchRng, ctx.lod, MAX_BRANCHES_PER_NODE - written, env);
 
     const parentIsAerialStem = (prep.tangents[2] as number) >= 0;
 

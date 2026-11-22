@@ -25,6 +25,11 @@ export function placementFromTreeParams(params: NodeParams): TreePlacement {
   };
 }
 
+const readTreeScale = (params: NodeParams): number => {
+  const v = getNumber(params, 'scale', 1);
+  return Number.isFinite(v) && v > 0 ? v : 1;
+};
+
 export const nodeDefs: NodeDef[] = [
   {
     type: 'output.tree',
@@ -35,7 +40,7 @@ export const nodeDefs: NodeDef[] = [
     description: 'Root of the plant. Its Shape defines the ground disc in which first-generation nodes are placed.',
     ports: [childrenOut, windIn],
     params: [
-      gen.float('scale', 'Size scalar', 1, { min: 0.01, max: 100, softMax: 5 }),
+      gen.float('scale', 'Size scalar', 1, { min: 0.01, max: 100, softMax: 5, tooltip: 'Scales every node of the plant (each generator multiplies its own Size scalar into this value).' }),
       gen.float('groundOffset', 'Ground offset', 0, { min: -10, max: 10, unit: 'm' }),
       season.float('season', 'Season', 0, { min: 0, max: 1 }),
       shape.enumOf('shapeType', 'Type', 'Circle', ['Circle'], { tooltip: 'Placement area. Only the circle shape is available.' }),
@@ -49,7 +54,7 @@ export const nodeDefs: NodeDef[] = [
     ],
     /** The root hands an empty structure plus the placement disc to its children; they decide where to start. */
     evaluate: (_ctx, _inputs, params) => {
-      return { [PORT.children]: { kind: 'Structure', value: { skeleton: emptySkeleton(), placement: placementFromTreeParams(params), lighting: readLeafLighting(params, GLOBAL_PREFIX) } } };
+      return { [PORT.children]: { kind: 'Structure', value: { skeleton: emptySkeleton(), placement: placementFromTreeParams(params), lighting: readLeafLighting(params, GLOBAL_PREFIX), kind: 'output.tree', ...(Math.abs(readTreeScale(params) - 1) > 1e-9 ? { sizeScalar: readTreeScale(params) } : {}) } } };
     },
   },
 ];

@@ -1,3 +1,4 @@
+import { createGenerationEnv, keepsRootLevelNode } from './generationEnv';
 import type { NodeContext, NodeInputs, NodeOutputs } from '@/contracts/nodes';
 import { getNumber, getString, type NodeParams } from '@/contracts/params';
 import type { TreePlacement } from '@/contracts/ports';
@@ -88,10 +89,12 @@ export function evaluateRootLevel(
   const scope = new InstanceScope(ctx.nodeId, params, null);
   const cfgFor = createInstanceConfigResolver(cfg, (p) => compileSpineConfig(p, inputs, ctx.lod, ctx.seed, false));
   const worldUp: Vec3 = [0, 0, 1];
+  const env = createGenerationEnv(ctx, params);
 
   for (let k = 0; k < set.count; k++) {
     if ((k & 63) === 0) ctx.cancel.throwIfCancelled();
     const stemRng = ctx.rng.fork(`stem:${k}`);
+    if (!keepsRootLevelNode(env, params, ctx.lod, stemRng, [set.position[k * 3] as number, set.position[k * 3 + 1] as number, set.position[k * 3 + 2] as number])) continue;
     const inst = scope.spawn({ parentBranch: -1, index: k }, builder);
     if (inst.pruned) continue;
     const icfg = cfgFor(inst);

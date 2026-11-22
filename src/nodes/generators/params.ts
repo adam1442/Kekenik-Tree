@@ -18,6 +18,10 @@ export interface GenerationDefaults {
   includeBranchExtended?: boolean;
   /** First-generation capable: adds the `Tree placement` section (distribution inside the Tree disc). */
   placement?: boolean;
+  /** Adds the `Extend parent` section (Branch, Cap, Leaf, Batched leaf: valid under a Branch parent). */
+  extend?: boolean;
+  /** Adds `Mesh alignment` to the `More` section (Leaf, Batched leaf: used when the parent is a mesh). */
+  meshAlignment?: boolean;
 }
 
 /** Mode ids that use the shared Absolute-style layout controls. */
@@ -35,6 +39,32 @@ const PHYLLOTAXY_STYLE_OPTIONS: { value: string; label: string }[] = [
   { value: 'whorled', label: 'Whorled' },
 ];
 
+/** List of picked names (Force containers, Masks): one enum row per name; the options are filled by the inspector. */
+function namedList(id: string, label: string, subgroup: string, field: string, fieldLabel: string, tooltip: string): ParamDef {
+  return {
+    kind: 'list',
+    id,
+    label,
+    group: 'Generation',
+    subgroup,
+    tooltip,
+    default: [],
+    minItems: 0,
+    maxItems: 8,
+    fields: [{ kind: 'enum', id: field, label: fieldLabel, group: 'Generation', subgroup, default: '', options: [{ value: '', label: 'None' }] }],
+  };
+}
+
+/** Pass and Size scalar only, for generators with their own Generation tab (Frond, Decoration). */
+export function passAndSizeParams(): ParamDef[] {
+  const c = section('Generation', 'Common');
+  const mo = section('Generation', 'More');
+  return [
+    c.int('pass', 'Pass', 1, { min: 1, max: 99, tooltip: 'Generators compute in pass order. A node cannot have a lower pass than any of its ancestors.' }),
+    mo.float('sizeScalar', 'Size scalar', 1, { min: 0.01, max: 100, softMax: 5, tooltip: 'Scales this node and every node below it.' }),
+  ];
+}
+
 /** "Generation" tab - shared by every generator. `Mode` selects one of the placement algorithms of `generators/modes`. */
 export function generationParams(d: GenerationDefaults): ParamDef[] {
   const g = section('Generation', 'Generation');
@@ -48,7 +78,9 @@ export function generationParams(d: GenerationDefaults): ParamDef[] {
   const al = section('Generation', 'Alignment');
   const b = section('Generation', 'Boundaries');
   const ex = section('Generation', 'Extend parent');
-  const ko = section('Generation', 'Knockout & Limits');
+  const lm = section('Generation', 'Limits');
+  const ko = section('Generation', 'Knockout');
+  const mo = section('Generation', 'More');
   const c = section('Generation', 'Common');
   const tp = section('Generation', 'Tree placement');
 
@@ -203,27 +235,64 @@ export function generationParams(d: GenerationDefaults): ParamDef[] {
 
   // Boundaries
   list.push(
-    b.float('first', 'First', d.first, { min: 0, max: 1, curve: true }),
-    b.float('last', 'Last', d.last, { min: 0, max: 1, curve: true }),
+    b.float('first', 'First', d.first, { min: 0, max: 1, curve: true, tooltip: 'Lowest point on the parent where nodes occur (0 = base, 1 = tip).' }),
+    b.float('last', 'Last', d.last, { min: 0, max: 1, curve: true, tooltip: 'Highest point on the parent where nodes occur (0 = base, 1 = tip).' }),
     b.curve('distributionCurve', 'Distribution curve', getCurvePreset('linear'), {
       tooltip: 'Maps normalized spacing [0..1] across [First..Last].',
     }),
-    b.float('clip', 'Clip', 0.025, { min: 0, max: 0.49, curve: true }),
+    b.float('clip', 'Clip', 0, {
+      min: 0,
+      max: 0.49,
+      tooltip: 'With the checkbox on, nodes that Spread or Position push outside First..Last are removed instead of being held on the boundary. The value insets the range (fraction of First..Last).',
+    }),
     b.bool('clipEnabled', 'Clip enabled', false),
   );
 
+  // Common
+  list.push(
+    c.bool('active', 'Active', true, { curve: true, tooltip: 'Switches the generator on. With a curve over the level of detail (left = highest detail) it is active where the curve is above 0.5.' }),
+    c.int('pass', 'Pass', 1, {
+      min: 1,
+      max: 99,
+      tooltip: 'Generators compute in pass order. A node cannot have a lower pass than any of its ancestors.',
+    }),
+    c.float('rotationOffset', 'Rotation', 0, { min: -180, max: 180, unit: '°', variance: 0, tooltip: 'Rotates all nodes around the parent spine as a group. Variance jumbles the rotation per parent.' }),
+    c.float('positionOffset', 'Position', 0, { min: -0.5, max: 0.5, variance: 0, tooltip: 'Shifts all nodes along the parent (fraction of its length). Variance shifts every parent differently.' }),
+    c.float('sink', 'Sink', 0, { min: -5, max: 5, softMin: -1, softMax: 1, unit: 'm', variance: 0, tooltip: 'Start offset of the nodes into (+) or out of (-) the parent; sinks trunks under the ground.' }),
+    c.curve('pruningCurve', 'Pruning', flatCurve(1), {
+      tooltip: 'Runs over the parent from First (left) to Last (right). Nodes are removed where the curve is below 0.5.',
+    }),
+    c.seed('seed', 'Seed'),
+  );
+
+  // Extend parent
+  if (d.extend) {
+    list.push(
+      ex.enumOf('extendParent', 'Type', 'None', ['None', 'Any', 'Split 1', 'Split 2', 'Skinny', 'Fat', 'Breaks only', 'Bottom'], {
+        tooltip: 'Continues the parent instead of starting a new branch. Valid only under a Branch parent. Split 1 / Split 2 / Skinny / Fat currently behave like Any.',
+      }),
+      ex.int('extendCount', 'Count', 1, { min: 1, max: 8, visibleIf: extendActive, tooltip: 'Extensions created per parent.' }),
+    );
+  }
+
+  // Knockout (+ the recursion limits of the structure generators)
+  list.push(
+    ko.float('knockout', 'Amount', 0, { min: 0, max: 1, curve: true, tooltip: 'Randomly removes this share of the nodes after the mode has placed them. The curve varies it along the parent.' }),
+    ko.float('knockoutResolution', '+ Resolution', 0, {
+      min: -1,
+      max: 1,
+      step: 0.01,
+      tooltip: 'Added to the amount for every level of detail below the highest: positive removes more nodes at lower detail, negative fewer.',
+    }),
+  );
   if (d.includeBranchExtended) {
     list.push(
-      ex.enumOf('extendParent', 'Type', 'None', ['None', 'Any', 'Split 1', 'Split 2']),
-      ex.int('extendCount', 'Count', 1, { min: 1, max: 8, visibleIf: extendActive }),
-      ko.float('knockout', 'Knockout', 0, { min: 0, max: 1, curve: true }),
-      ko.float('pruning', 'Pruning', 0, { min: 0, max: 1, curve: true }),
-      ko.int('generations', 'Sub-generations', 1, {
+      lm.int('generations', 'Sub-generations', 1, {
         min: 1,
         max: 5,
         tooltip: 'Recursive branching levels evaluated inside this generator (1 = single level).',
       }),
-      ko.int('maxGeneration', 'Max generation', 8, {
+      lm.int('maxGeneration', 'Max generation', 8, {
         min: 1,
         max: 16,
         tooltip: 'Maximum hierarchy generation depth allowed for branches.',
@@ -231,14 +300,29 @@ export function generationParams(d: GenerationDefaults): ParamDef[] {
     );
   }
 
-  // Common
+  // Force containers
   list.push(
-    c.float('rotationOffset', 'Rotation', 0, { min: -180, max: 180, unit: '°', variance: 0 }),
-    c.float('positionOffset', 'Position', 0, { min: -0.5, max: 0.5, variance: 0 }),
-    c.float('sink', 'Sink', 0, { min: -5, max: 5, softMin: -1, softMax: 1, unit: 'm', variance: 0, tooltip: 'How deep the base is sunk into the ground (+ variance for placed instances).' }),
-    c.bool('active', 'Active', true, { curve: true }),
-    c.seed('seed', 'Seed'),
+    namedList('forceInclude', 'Include', 'Force containers', 'forceName', 'Force', 'Keeps only the nodes inside the volume of the named Force node (set a volume in the Force node).'),
+    namedList('forceExclude', 'Exclude', 'Force containers', 'forceName', 'Force', 'Removes the nodes inside the volume of the named Force node.'),
   );
+
+  // More
+  list.push(
+    mo.enumOf('clickPlace', 'Click place', 'Ready', ['Ready', 'None', 'Any', 'Number'], {
+      tooltip: 'What a click in the viewport places. It is stored with the node and takes effect with Freehand mode.',
+    }),
+  );
+  if (d.meshAlignment) {
+    list.push(
+      mo.enumOf('meshAlignment', 'Mesh alignment', 'None', ['None', 'Tangent', 'Binormal', 'Parent X', 'Parent Y', 'Parent Z', 'World X', 'World Y', 'World Z'], {
+        tooltip: 'When the parent is a mesh, turns the growth axis of the leaf to the parent tangent / binormal, one of the parent axes, or a world axis.',
+      }),
+    );
+  }
+  list.push(mo.float('sizeScalar', 'Size scalar', 1, { min: 0.01, max: 100, softMax: 5, tooltip: 'Scales this node and every node below it.' }));
+
+  // Masks
+  list.push(namedList('genMasks', 'Mask', 'Masks', 'genMaskId', 'Mask', 'Keeps a node only where every assigned mask (Masks panel) evaluates to 0.5 or more.'));
 
   if (d.placement) {
     const par = { param: 'distMode', value: 'parametric' } as const;

@@ -23,6 +23,20 @@ Every generator (Trunk, Branch, Root, Spine, Leaf, Batched Leaf, Mesh Instance, 
 * **Side.** Every node carries a side: alternating per group member for Interval / Phyllotaxy, otherwise derived from the roll. Leaves use it for *Initial orientation: Classic*.
 * **Back-compat.** Mode `whorled` is now `absolute-steps` (ids `whorlCount`, `whorlPerStep`, `whorlSpread`, `whorlRoll` kept); old Phyllotaxy (Number + Divergence angle) becomes Alternating (distichous) with Spiral = angle - 180; old Bifurcation Number becomes Count. Interval keeps `intervalStep` (now *Frequency*) and `perStep` (now *Count*). Node versions were bumped and `migrateGenerationParams` runs on load.
 
+## Shared Generation properties (Generation tab of every generator)
+
+Sections **Boundaries / Common / Extend parent / Knockout / Force containers / More / Masks**. Order of operations for the nodes of one parent: mode placement -> boundaries / Clip -> Position / Rotation / Sink -> Pruning -> Knockout -> Force containers -> Masks -> Extend parent -> compute (grow the node).
+
+* **Boundaries.** *First* / *Last* = lowest / highest point on the parent where nodes occur. *Clip* (checkbox; the value insets the range as a fraction of First..Last): nodes that Spread or Position push outside First..Last are removed instead of being held on the boundary.
+* **Common.** *Active* (curve over the level of detail, left = highest detail: active where the curve is above 0.5). *Pass* (integer >= 1): generators compute in pass order; a node whose pass is lower than an ancestor's gets an error badge. *Rotation* turns all nodes of a parent around it as a group (variance jumbles it per parent). *Position* shifts all nodes along the parent (variance per parent). *Sink* moves the start of the nodes into (+) or out of (-) the parent (variance per node). *Pruning* curve runs from First (left) to Last (right); nodes are removed where it is below 0.5.
+* **Extend parent** (Branch, Cap, Leaf, Batched leaf; valid under a Branch parent). *Type*: None, Any (tip), Bottom (base), Breaks only (tip of parents that end in a break; detected from the thick tip of the parent), Split 1 / Split 2 / Skinny / Fat (kept as entries, behave like Any until the split data exists). *Count* = extensions per parent.
+* **Knockout.** *Amount* = share of nodes removed at random after the mode ran (curve along the parent). *+ Resolution* is added to the amount for every level of detail below the highest (negative = fewer removed).
+* **Force containers.** *Include* / *Exclude* list Force nodes by name. Give a Force node a volume in its *Volume* section (Shape None / Sphere / Box + Center, Radius or Size). Include keeps only nodes inside at least one named volume, Exclude removes nodes inside any. Unknown names are ignored. The volume works whether or not the force is Active. Nodes are tested where they leave the parent surface.
+* **More.** *Click place* (Ready / None / Any / Number) is stored and takes effect with Freehand mode. *Mesh alignment* (Leaf, Batched leaf): when the parent is a Mesh Instance, the leaf grows along the parent Tangent / Binormal, a parent axis (X = normal, Y = tangent, Z = their cross product) or a world axis. *Size scalar* scales the node (length, radius, leaf / mesh scale ...) and is multiplied into the scalar handed to every node below it; the Tree node's *Size scalar* is the start value.
+* **Masks.** Assign any number of masks from the Masks panel; a node is kept only where every mask evaluates to 0.5 or more (Inclusive / Exclusive from the mask). The elevation range of *relative* masks is the Z range of the parent structure.
+* **Tree node.** Only *Size scalar* applies.
+* **Back-compat.** The old scalar *Pruning* (random removal) is folded into Knockout on load; the new Pruning is the curve `pruningCurve`. `Clip` default is now 0 (no inset). Node versions were bumped.
+
 ## Tree (`output.tree`)
 
 Root of the plant. Its Shape defines the ground disc in which first-generation nodes are placed.
@@ -31,7 +45,7 @@ Root of the plant. Its Shape defines the ground disc in which first-generation n
 
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
-| More | Size scalar | `scale` | 0.01..100 (slider 0.01..5) | 1 |  |  | Uniform scale multiplier. |
+| More | Size scalar | `scale` | 0.01..100 (slider 0.01..5) | 1 |  |  | Scales every node of the plant (each generator multiplies its own Size scalar into this value). |
 | More | Ground offset | `groundOffset` | -10..10 m | 0 |  |  | Moves the whole plant up or down relative to the ground. |
 | Season | Season | `season` | 0..1 | 0 |  |  | Season response: position on the 0…1 season timeline. |
 
@@ -110,16 +124,25 @@ Main stem with crown height, buttress flare, lean, gnarliness, and profile curve
 | Bifurcation | Spread | `bifurcationSpread` | 0..1 | 0 |  |  | Random shift of every node along the parent (1 = 10 % of its length). |
 | Bifurcation | Min spacing | `bifurcationSpacing` | 0.01..0.9 | 0.12 |  |  | Smallest distance between two bends, as a fraction of the parent. |
 | Alignment | Align | `align` | bool | false |  |  | Rolls the new nodes so they face the sky. |
-| Boundaries | First | `first` | 0..1 | 0 |  | yes | Where along the parent the first child may appear (0 = base, 1 = tip). |
-| Boundaries | Last | `last` | 0..1 | 1 |  | yes | Where along the parent the last child may appear (0 = base, 1 = tip). |
+| Boundaries | First | `first` | 0..1 | 0 |  | yes | Lowest point on the parent where nodes occur (0 = base, 1 = tip). |
+| Boundaries | Last | `last` | 0..1 | 1 |  | yes | Highest point on the parent where nodes occur (0 = base, 1 = tip). |
 | Boundaries | Distribution curve | `distributionCurve` | curve | curve |  |  | Maps normalized spacing [0..1] across [First..Last]. |
-| Boundaries | Clip | `clip` | 0..0.49 | 0.025 |  | yes | Fraction of the parent at both ends that stays free of children. |
-| Boundaries | Clip enabled | `clipEnabled` | bool | false |  |  | Enables the clip margins at both ends of the parent. |
-| Common | Rotation | `rotationOffset` | -180..180 ° | 0 | yes |  | Extra rotation (degrees) applied to every child around the parent. |
-| Common | Position | `positionOffset` | -0.5..0.5 | 0 | yes |  | Slides every child along the parent by a fixed fraction. |
-| Common | Sink | `sink` | -5..5 (slider -1..1) m | 0 | yes |  | How deep the base is sunk into the ground (+ variance for placed instances). |
-| Common | Active | `active` | bool | true |  | yes | Turns the whole node on or off without deleting it. |
+| Boundaries | Clip | `clip` | 0..0.49 | 0 |  |  | With the checkbox on, nodes that Spread or Position push outside First..Last are removed instead of being held on the boundary. The value insets the range (fraction of First..Last). |
+| Boundaries | Clip enabled | `clipEnabled` | bool | false |  |  | Removes nodes that Spread or Position push outside First..Last. |
+| Common | Active | `active` | bool | true |  | yes | Switches the generator on. With a curve over the level of detail (left = highest detail) it is active where the curve is above 0.5. |
+| Common | Pass | `pass` | 1..99 | 1 |  |  | Generators compute in pass order. A node cannot have a lower pass than any of its ancestors. |
+| Common | Rotation | `rotationOffset` | -180..180 ° | 0 | yes |  | Rotates all nodes around the parent spine as a group. Variance jumbles the rotation per parent. |
+| Common | Position | `positionOffset` | -0.5..0.5 | 0 | yes |  | Shifts all nodes along the parent (fraction of its length). Variance shifts every parent differently. |
+| Common | Sink | `sink` | -5..5 (slider -1..1) m | 0 | yes |  | Start offset of the nodes into (+) or out of (-) the parent; sinks trunks under the ground. |
+| Common | Pruning | `pruningCurve` | curve | curve |  |  | Runs over the parent from First (left) to Last (right). Nodes are removed where the curve is below 0.5. |
 | Common | Seed | `seed` | seed | 0 |  |  | Random seed. Change it to get a different variation of the same settings. |
+| Knockout | Amount | `knockout` | 0..1 | 0 |  | yes | Randomly removes this share of the nodes after the mode has placed them. The curve varies it along the parent. |
+| Knockout | + Resolution | `knockoutResolution` | -1..1 | 0 |  |  | Added to the amount for every level of detail below the highest: positive removes more nodes at lower detail, negative fewer. |
+| Force containers | Include | `forceInclude` | list | [] |  |  | Keeps only the nodes inside the volume of the named Force node (set a volume in the Force node). |
+| Force containers | Exclude | `forceExclude` | list | [] |  |  | Removes the nodes inside the volume of the named Force node. |
+| More | Click place | `clickPlace` | Ready / None / Any / Number | ready |  |  | What a click in the viewport places. It is stored with the node and takes effect with Freehand mode. |
+| More | Size scalar | `sizeScalar` | 0.01..100 (slider 0.01..5) | 1 |  |  | Scales this node and every node below it. |
+| Masks | Mask | `genMasks` | list | [] |  |  | Keeps a node only where every assigned mask (Masks panel) evaluates to 0.5 or more. |
 | Tree placement | Distribution | `distMode` | Parametric / Uniform / Poisson disk / Ring / Grid / Spiral | uniform |  |  | How Number instances fill the Tree disc. Uniform = area-correct random (r = R*sqrt(u)); Poisson disk = blue noise with a minimum distance. |
 | Tree placement | Position | `distPosition` | 0..1 | 0.5 | yes |  | Normalised distance from the disc centre (0 = centre, 1 = edge), with variance. |
 | Tree placement | Rotation | `distRotation` | 0..1 | 0 | yes |  | Normalised angle around the centre (0..1 = 0..360 degrees), with variance. |
@@ -347,22 +370,29 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 | Bifurcation | Spread | `bifurcationSpread` | 0..1 | 0 |  |  | Random shift of every node along the parent (1 = 10 % of its length). |
 | Bifurcation | Min spacing | `bifurcationSpacing` | 0.01..0.9 | 0.12 |  |  | Smallest distance between two bends, as a fraction of the parent. |
 | Alignment | Align | `align` | bool | false |  |  | Rolls the new nodes so they face the sky. |
-| Boundaries | First | `first` | 0..1 | 0.2 |  | yes | Where along the parent the first child may appear (0 = base, 1 = tip). |
-| Boundaries | Last | `last` | 0..1 | 0.95 |  | yes | Where along the parent the last child may appear (0 = base, 1 = tip). |
+| Boundaries | First | `first` | 0..1 | 0.2 |  | yes | Lowest point on the parent where nodes occur (0 = base, 1 = tip). |
+| Boundaries | Last | `last` | 0..1 | 0.95 |  | yes | Highest point on the parent where nodes occur (0 = base, 1 = tip). |
 | Boundaries | Distribution curve | `distributionCurve` | curve | curve |  |  | Maps normalized spacing [0..1] across [First..Last]. |
-| Boundaries | Clip | `clip` | 0..0.49 | 0.025 |  | yes | Fraction of the parent at both ends that stays free of children. |
-| Boundaries | Clip enabled | `clipEnabled` | bool | false |  |  | Enables the clip margins at both ends of the parent. |
-| Extend parent | Type | `extendParent` | None / Any / Split 1 / Split 2 | none |  |  | Continues the parent through one of the splits instead of spawning a new child. |
-| Extend parent | Count | `extendCount` | 1..8 | 1 |  |  | How many times the parent is extended. |
-| Knockout & Limits | Knockout | `knockout` | 0..1 | 0 |  | yes | Randomly removes this fraction of children. |
-| Knockout & Limits | Pruning | `pruning` | 0..1 | 0 |  | yes | Removes children that collide with others or leave the crown shape. |
-| Knockout & Limits | Sub-generations | `generations` | 1..5 | 1 |  |  | Recursive branching levels evaluated inside this generator (1 = single level). |
-| Knockout & Limits | Max generation | `maxGeneration` | 1..16 | 8 |  |  | Maximum hierarchy generation depth allowed for branches. |
-| Common | Rotation | `rotationOffset` | -180..180 ° | 0 | yes |  | Extra rotation (degrees) applied to every child around the parent. |
-| Common | Position | `positionOffset` | -0.5..0.5 | 0 | yes |  | Slides every child along the parent by a fixed fraction. |
-| Common | Sink | `sink` | -5..5 (slider -1..1) m | 0 | yes |  | How deep the base is sunk into the ground (+ variance for placed instances). |
-| Common | Active | `active` | bool | true |  | yes | Turns the whole node on or off without deleting it. |
+| Boundaries | Clip | `clip` | 0..0.49 | 0 |  |  | With the checkbox on, nodes that Spread or Position push outside First..Last are removed instead of being held on the boundary. The value insets the range (fraction of First..Last). |
+| Boundaries | Clip enabled | `clipEnabled` | bool | false |  |  | Removes nodes that Spread or Position push outside First..Last. |
+| Common | Active | `active` | bool | true |  | yes | Switches the generator on. With a curve over the level of detail (left = highest detail) it is active where the curve is above 0.5. |
+| Common | Pass | `pass` | 1..99 | 1 |  |  | Generators compute in pass order. A node cannot have a lower pass than any of its ancestors. |
+| Common | Rotation | `rotationOffset` | -180..180 ° | 0 | yes |  | Rotates all nodes around the parent spine as a group. Variance jumbles the rotation per parent. |
+| Common | Position | `positionOffset` | -0.5..0.5 | 0 | yes |  | Shifts all nodes along the parent (fraction of its length). Variance shifts every parent differently. |
+| Common | Sink | `sink` | -5..5 (slider -1..1) m | 0 | yes |  | Start offset of the nodes into (+) or out of (-) the parent; sinks trunks under the ground. |
+| Common | Pruning | `pruningCurve` | curve | curve |  |  | Runs over the parent from First (left) to Last (right). Nodes are removed where the curve is below 0.5. |
 | Common | Seed | `seed` | seed | 0 |  |  | Random seed. Change it to get a different variation of the same settings. |
+| Extend parent | Type | `extendParent` | None / Any / Split 1 / Split 2 / Skinny / Fat / Breaks only / Bottom | none |  |  | Continues the parent instead of starting a new branch. Valid only under a Branch parent. Split 1 / Split 2 / Skinny / Fat currently behave like Any. |
+| Extend parent | Count | `extendCount` | 1..8 | 1 |  |  | Extensions created per parent. |
+| Knockout | Amount | `knockout` | 0..1 | 0 |  | yes | Randomly removes this share of the nodes after the mode has placed them. The curve varies it along the parent. |
+| Knockout | + Resolution | `knockoutResolution` | -1..1 | 0 |  |  | Added to the amount for every level of detail below the highest: positive removes more nodes at lower detail, negative fewer. |
+| Limits | Sub-generations | `generations` | 1..5 | 1 |  |  | Recursive branching levels evaluated inside this generator (1 = single level). |
+| Limits | Max generation | `maxGeneration` | 1..16 | 8 |  |  | Maximum hierarchy generation depth allowed for branches. |
+| Force containers | Include | `forceInclude` | list | [] |  |  | Keeps only the nodes inside the volume of the named Force node (set a volume in the Force node). |
+| Force containers | Exclude | `forceExclude` | list | [] |  |  | Removes the nodes inside the volume of the named Force node. |
+| More | Click place | `clickPlace` | Ready / None / Any / Number | ready |  |  | What a click in the viewport places. It is stored with the node and takes effect with Freehand mode. |
+| More | Size scalar | `sizeScalar` | 0.01..100 (slider 0.01..5) | 1 |  |  | Scales this node and every node below it. |
+| Masks | Mask | `genMasks` | list | [] |  |  | Keeps a node only where every assigned mask (Masks panel) evaluates to 0.5 or more. |
 | Tree placement | Distribution | `distMode` | Parametric / Uniform / Poisson disk / Ring / Grid / Spiral | uniform |  |  | How Number instances fill the Tree disc. Uniform = area-correct random (r = R*sqrt(u)); Poisson disk = blue noise with a minimum distance. |
 | Tree placement | Position | `distPosition` | 0..1 | 0.5 | yes |  | Normalised distance from the disc centre (0 = centre, 1 = edge), with variance. |
 | Tree placement | Rotation | `distRotation` | 0..1 | 0 | yes |  | Normalised angle around the centre (0..1 = 0..360 degrees), with variance. |
@@ -598,22 +628,27 @@ Lightweight spine-only structural guides for attaching foliage or child branches
 | Bifurcation | Spread | `bifurcationSpread` | 0..1 | 0 |  |  | Random shift of every node along the parent (1 = 10 % of its length). |
 | Bifurcation | Min spacing | `bifurcationSpacing` | 0.01..0.9 | 0.12 |  |  | Smallest distance between two bends, as a fraction of the parent. |
 | Alignment | Align | `align` | bool | false |  |  | Rolls the new nodes so they face the sky. |
-| Boundaries | First | `first` | 0..1 | 0.15 |  | yes | Where along the parent the first child may appear (0 = base, 1 = tip). |
-| Boundaries | Last | `last` | 0..1 | 0.95 |  | yes | Where along the parent the last child may appear (0 = base, 1 = tip). |
+| Boundaries | First | `first` | 0..1 | 0.15 |  | yes | Lowest point on the parent where nodes occur (0 = base, 1 = tip). |
+| Boundaries | Last | `last` | 0..1 | 0.95 |  | yes | Highest point on the parent where nodes occur (0 = base, 1 = tip). |
 | Boundaries | Distribution curve | `distributionCurve` | curve | curve |  |  | Maps normalized spacing [0..1] across [First..Last]. |
-| Boundaries | Clip | `clip` | 0..0.49 | 0.025 |  | yes | Fraction of the parent at both ends that stays free of children. |
-| Boundaries | Clip enabled | `clipEnabled` | bool | false |  |  | Enables the clip margins at both ends of the parent. |
-| Extend parent | Type | `extendParent` | None / Any / Split 1 / Split 2 | none |  |  | Continues the parent through one of the splits instead of spawning a new child. |
-| Extend parent | Count | `extendCount` | 1..8 | 1 |  |  | How many times the parent is extended. |
-| Knockout & Limits | Knockout | `knockout` | 0..1 | 0 |  | yes | Randomly removes this fraction of children. |
-| Knockout & Limits | Pruning | `pruning` | 0..1 | 0 |  | yes | Removes children that collide with others or leave the crown shape. |
-| Knockout & Limits | Sub-generations | `generations` | 1..5 | 1 |  |  | Recursive branching levels evaluated inside this generator (1 = single level). |
-| Knockout & Limits | Max generation | `maxGeneration` | 1..16 | 8 |  |  | Maximum hierarchy generation depth allowed for branches. |
-| Common | Rotation | `rotationOffset` | -180..180 ° | 0 | yes |  | Extra rotation (degrees) applied to every child around the parent. |
-| Common | Position | `positionOffset` | -0.5..0.5 | 0 | yes |  | Slides every child along the parent by a fixed fraction. |
-| Common | Sink | `sink` | -5..5 (slider -1..1) m | 0 | yes |  | How deep the base is sunk into the ground (+ variance for placed instances). |
-| Common | Active | `active` | bool | true |  | yes | Turns the whole node on or off without deleting it. |
+| Boundaries | Clip | `clip` | 0..0.49 | 0 |  |  | With the checkbox on, nodes that Spread or Position push outside First..Last are removed instead of being held on the boundary. The value insets the range (fraction of First..Last). |
+| Boundaries | Clip enabled | `clipEnabled` | bool | false |  |  | Removes nodes that Spread or Position push outside First..Last. |
+| Common | Active | `active` | bool | true |  | yes | Switches the generator on. With a curve over the level of detail (left = highest detail) it is active where the curve is above 0.5. |
+| Common | Pass | `pass` | 1..99 | 1 |  |  | Generators compute in pass order. A node cannot have a lower pass than any of its ancestors. |
+| Common | Rotation | `rotationOffset` | -180..180 ° | 0 | yes |  | Rotates all nodes around the parent spine as a group. Variance jumbles the rotation per parent. |
+| Common | Position | `positionOffset` | -0.5..0.5 | 0 | yes |  | Shifts all nodes along the parent (fraction of its length). Variance shifts every parent differently. |
+| Common | Sink | `sink` | -5..5 (slider -1..1) m | 0 | yes |  | Start offset of the nodes into (+) or out of (-) the parent; sinks trunks under the ground. |
+| Common | Pruning | `pruningCurve` | curve | curve |  |  | Runs over the parent from First (left) to Last (right). Nodes are removed where the curve is below 0.5. |
 | Common | Seed | `seed` | seed | 0 |  |  | Random seed. Change it to get a different variation of the same settings. |
+| Knockout | Amount | `knockout` | 0..1 | 0 |  | yes | Randomly removes this share of the nodes after the mode has placed them. The curve varies it along the parent. |
+| Knockout | + Resolution | `knockoutResolution` | -1..1 | 0 |  |  | Added to the amount for every level of detail below the highest: positive removes more nodes at lower detail, negative fewer. |
+| Limits | Sub-generations | `generations` | 1..5 | 1 |  |  | Recursive branching levels evaluated inside this generator (1 = single level). |
+| Limits | Max generation | `maxGeneration` | 1..16 | 8 |  |  | Maximum hierarchy generation depth allowed for branches. |
+| Force containers | Include | `forceInclude` | list | [] |  |  | Keeps only the nodes inside the volume of the named Force node (set a volume in the Force node). |
+| Force containers | Exclude | `forceExclude` | list | [] |  |  | Removes the nodes inside the volume of the named Force node. |
+| More | Click place | `clickPlace` | Ready / None / Any / Number | ready |  |  | What a click in the viewport places. It is stored with the node and takes effect with Freehand mode. |
+| More | Size scalar | `sizeScalar` | 0.01..100 (slider 0.01..5) | 1 |  |  | Scales this node and every node below it. |
+| Masks | Mask | `genMasks` | list | [] |  |  | Keeps a node only where every assigned mask (Masks panel) evaluates to 0.5 or more. |
 | Tree placement | Distribution | `distMode` | Parametric / Uniform / Poisson disk / Ring / Grid / Spiral | uniform |  |  | How Number instances fill the Tree disc. Uniform = area-correct random (r = R*sqrt(u)); Poisson disk = blue noise with a minimum distance. |
 | Tree placement | Position | `distPosition` | 0..1 | 0.5 | yes |  | Normalised distance from the disc centre (0 = centre, 1 = edge), with variance. |
 | Tree placement | Rotation | `distRotation` | 0..1 | 0 | yes |  | Normalised angle around the centre (0..1 = 0..360 degrees), with variance. |

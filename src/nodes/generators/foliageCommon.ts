@@ -2,7 +2,7 @@ import { evaluateCurve } from '@/contracts/curve';
 import { OUTPUT_KEY } from '@/contracts/engine';
 import { emptyMeshData, type MeshData } from '@/contracts/mesh';
 import type { NodeContext, NodeInputs, NodeOutputs } from '@/contracts/nodes';
-import { getBool, getNumber, type NodeParams } from '@/contracts/params';
+import { getNumber, type NodeParams } from '@/contracts/params';
 import type { PortValue } from '@/contracts/ports';
 import { emptySkeleton, type Branch, type Skeleton } from '@/contracts/skeleton';
 import { deg2rad } from '@/core/math';
@@ -12,7 +12,9 @@ import { pickMaterialMesh, readMaterialSlots, type PickedMaterialMesh } from '@/
 import { WIND_ATTRIBUTES } from '@/geometry/windAttributes';
 import { hash01, norm, type V3 } from '@/geometry/math3';
 import type { AttachmentSet } from '@/contracts/attachment';
+import { isGeneratorActive } from './common';
 import { generateChildPlacements, type ChildPlacement } from './distribution';
+import { createGenerationEnv } from './generationEnv';
 import type { AnchorSlot } from './cutoutPlacement';
 import { prepareParentBranch, sampleParentBranch, type ParentSample } from './frames';
 import { attachSkeletonWind } from '@/geometry/windAttributes';
@@ -47,13 +49,14 @@ export interface Placement {
 /** Child placements of every parent branch through the shared distribution engine (Generation tab). */
 export function collectPlacements(ctx: NodeContext, parent: Skeleton, params: NodeParams, max = MAX_FOLIAGE_ITEMS): Placement[] {
   const out: Placement[] = [];
+  const env = createGenerationEnv(ctx, params, parent);
   for (const pb of parent.branches) {
     if (out.length >= max) break;
     if (pb.count < 2) continue;
     ctx.cancel.throwIfCancelled();
     const prep = prepareParentBranch(parent, pb);
     const branchRng = ctx.rng.fork(`pb:${pb.id}`);
-    for (const placement of generateChildPlacements(prep, params, branchRng, ctx.lod, max - out.length)) {
+    for (const placement of generateChildPlacements(prep, params, branchRng, ctx.lod, max - out.length, env)) {
       out.push({
         branch: pb,
         sample: sampleParentBranch(prep, placement.u),
@@ -134,7 +137,7 @@ export function postTransform(p: NodeParams): { scale: number; offset: V3; roll:
   };
 }
 
-export const isActive = (p: NodeParams): boolean => getBool(p, 'active', true);
+export const isActive = (p: NodeParams, lod = 0): boolean => isGeneratorActive(p, lod);
 
 /** Standard output of foliage-like generators. `skeleton` holds one short branch per emitted item. */
 export function foliageOutput(skeleton: Skeleton, parent: Skeleton, geometry: MeshData, instances: number, seed: number, attachments?: AttachmentSet): NodeOutputs {

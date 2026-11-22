@@ -17,7 +17,19 @@ import {
   type PhyllotaxyStyle,
   type PlacementRecord,
 } from '@/generators/modes';
-import { findCurvaturePeaks, type PreparedParentBranch } from './frames';
+import {
+  asExtendType,
+  clipRange,
+  extensionPositions,
+  isOutsideClip,
+  knockedOut,
+  knockoutChance,
+  normalizedAlong,
+  pruningKeeps,
+} from '@/generators/common';
+import { EXTEND_PARENT_TYPE } from '@/generators/common/extend';
+import { envFiltersByPosition, keepsAtPosition, type GenerationEnv } from './generationEnv';
+import { findCurvaturePeaks, sampleParentBranch, type PreparedParentBranch } from './frames';
 
 export { GOLDEN_ANGLE_RAD };
 
@@ -144,8 +156,9 @@ function readModeRequest(mode: ModeId, params: NodeParams, modeRng: Rng, jumble:
 /**
  * Generates deterministic child placements `(u, azimuthRad)` for one `PreparedParentBranch`.
  * The node layout itself is computed by the pure `generators/modes` module; this adapter reads the parameters and then applies
- * the shared Clip / Pruning / Knockout / Extend-parent steps. Every random draw uses `branchRng.fork(...)` so sibling
- * branches are completely isolated.
+ * the shared steps in this order: mode placement -> boundaries / Clip -> Position / Rotation (inside the mode frame; Sink is
+ * applied when the child grows) -> Pruning -> Knockout -> Force containers -> Masks -> Extend parent. Every random draw uses
+ * `branchRng.fork(...)` so sibling branches are completely isolated.
  */
 export function generateChildPlacements(
   prep: PreparedParentBranch,
@@ -153,6 +166,7 @@ export function generateChildPlacements(
   branchRng: Rng,
   lod: number,
   maxRemaining: number,
+  env?: GenerationEnv,
 ): ChildPlacement[] {
   if (maxRemaining <= 0 || prep.branch.count < 2) return [];
 
@@ -162,12 +176,9 @@ export function generateChildPlacements(
   const rawLast = clamp(getNumber(params, 'last', 0.95) * evalParamCurve(params, 'last', 0.5, 1), 0, 1);
   const first = Math.min(rawFirst, rawLast);
   const last = Math.max(rawFirst, rawLast);
-  const span = Math.max(0, last - first);
 
   const clipEnabled = getBool(params, 'clipEnabled', false);
-  const clipMargin = clipEnabled ? clamp(getNumber(params, 'clip', 0.025), 0, 0.49) * span : 0;
-  const minU = clamp(first + clipMargin, first, last);
-  const maxU = clamp(last - clipMargin, minU, last);
+  const clipBounds = clipRange(first, last, clipEnabled ? getNumber(params, 'clip', 0) : 0);
 
   const jumble = clamp(getNumber(params, 'jumble', 0), 0, 1);
   const sweep = clamp(getNumber(params, 'sweep', 1), 0.01, 1);
@@ -184,9 +195,9 @@ export function generateChildPlacements(
   const effectiveLodKeep = lod === 0 ? 1 : clamp(baseLodScale * (1 - lodCull * 0.5), 0.1, 1);
 
   const knockoutBase = clamp(getNumber(params, 'knockout', 0), 0, 1);
+  const knockoutResolution = clamp(getNumber(params, 'knockoutResolution', 0), -1, 1);
   const knockoutLut = params.knockout?.curve ? curveToLUT(params.knockout.curve, 256) : null;
-  const pruningBase = clamp(getNumber(params, 'pruning', 0), 0, 1);
-  const pruningLut = params.pruning?.curve ? curveToLUT(params.pruning.curve, 256) : null;
+  const pruningCurve = getCurveParam(params, 'pruningCurve');
 
   const warpNormalized = (s: number): number => {
     const cs = clamp(s, 0, 1);
@@ -223,6 +234,7 @@ export function generateChildPlacements(
     maxCount: maxRemaining,
     lodKeep: effectiveLodKeep,
     rollBase: rotationOffset + groupRoll,
+    clip: clipEnabled,
     branchPhase: (prep.branch.id * GOLDEN_ANGLE_RAD) % (Math.PI * 2),
     positionOffset,
     warp: warpNormalized,
@@ -233,34 +245,42 @@ export function generateChildPlacements(
   const rawCandidates = generatePlacements(frame, readModeRequest(mode, params, modeRng, jumble, sweep));
   const boundless = ignoresBoundaries(mode);
 
+  const clipActive = clipEnabled && !boundless;
+  const byPosition = envFiltersByPosition(env);
+
   const accepted: ChildPlacement[] = [];
   for (let slotIndex = 0; slotIndex < rawCandidates.length; slotIndex++) {
     const cand = rawCandidates[slotIndex] as PlacementRecord;
     if (accepted.length >= maxRemaining) break;
-    if (clipEnabled && !boundless && (cand.t < minU || cand.t > maxU)) {
-      continue;
-    }
-    const u = boundless ? clamp(cand.t, 0, 1) : clamp(cand.t, first, last);
+    // Boundaries / Clip
+    if (clipActive && isOutsideClip(cand.t, clipBounds.min, clipBounds.max)) continue;
+    const u = boundless ? clamp(cand.t, 0, 1) : clipActive ? clamp(cand.t, 0, 1) : clamp(cand.t, first, last);
 
-    // Pruning curve & scalar check along normalized [first..last]
-    const normSpanU = span > 1e-6 ? clamp((u - first) / span, 0, 1) : 0.5;
-    if (pruningLut) {
-      // Convention: curve value < 0.5 prunes when pruning curve is active
-      const pCurveVal = sampleCurveLUT(pruningLut, normSpanU);
-      if (pCurveVal < 0.5 && modeRng.fork(`prn:${slotIndex}`).next() > pCurveVal * 2) {
-        continue;
-      }
-    }
-    if (pruningBase > 0) {
-      if (modeRng.fork(`prnb:${slotIndex}`).next() < pruningBase) {
-        continue;
-      }
-    }
+    // Pruning: curve over First..Last, nodes vanish where it is below 0.5
+    if (!boundless && !pruningKeeps(pruningCurve, normalizedAlong(u, first, last))) continue;
 
-    // Knockout random removal
-    const koProb = clamp(knockoutBase * (knockoutLut ? sampleCurveLUT(knockoutLut, u) : 1), 0, 1);
-    if (koProb > 0 && modeRng.fork(`ko:${slotIndex}`).next() < koProb) {
-      continue;
+    // Knockout
+    const koChance = knockoutChance(knockoutBase, knockoutResolution, lod, knockoutLut ? sampleCurveLUT(knockoutLut, u) : 1);
+    if (koChance > 0 && knockedOut(modeRng.fork(`ko:${slotIndex}`), koChance)) continue;
+
+    // Force containers, Masks (evaluated where the node leaves the parent surface)
+    if (byPosition && env) {
+      const sample = sampleParentBranch(prep, u);
+      const ca = Math.cos(cand.roll);
+      const sa = Math.sin(cand.roll);
+      const out: [number, number, number] = [
+        sample.normal[0] * ca + sample.binormal[0] * sa,
+        sample.normal[1] * ca + sample.binormal[1] * sa,
+        sample.normal[2] * ca + sample.binormal[2] * sa,
+      ];
+      const len = Math.hypot(out[0], out[1], out[2]) || 1;
+      const n: [number, number, number] = [out[0] / len, out[1] / len, out[2] / len];
+      const at: [number, number, number] = [
+        sample.position[0] + n[0] * sample.radius,
+        sample.position[1] + n[1] * sample.radius,
+        sample.position[2] + n[2] * sample.radius,
+      ];
+      if (!keepsAtPosition(env, at, n)) continue;
     }
 
     accepted.push({
@@ -273,16 +293,17 @@ export function generateChildPlacements(
     });
   }
 
-  // Extend parent (seamless tip extensions)
-  const extendType = getString(params, 'extendParent', 'none');
-  if (extendType !== 'none' && accepted.length < maxRemaining) {
+  // Extend parent (seamless extensions at the tip or base of the parent). Only valid under a Branch parent.
+  const extendType = asExtendType(getString(params, 'extendParent', 'none'));
+  if (extendType !== 'none' && accepted.length < maxRemaining && (env === undefined || env.parentType === undefined || env.parentType === EXTEND_PARENT_TYPE)) {
     const extCount = Math.min(maxRemaining - accepted.length, Math.max(1, Math.round(getNumber(params, 'extendCount', 1))));
+    const positions = extensionPositions(extendType, extCount, branchLooksBroken(prep));
     const baseSlot = 100_000;
-    for (let e = 0; e < extCount; e++) {
-      const az = rotationOffset + groupRoll + (e / Math.max(1, extCount)) * Math.PI * 2;
+    for (let e = 0; e < positions.length; e++) {
+      const az = rotationOffset + groupRoll + (e / Math.max(1, positions.length)) * Math.PI * 2;
       accepted.push({
         slotIndex: baseSlot + e,
-        u: 1,
+        u: positions[e] as number,
         azimuthRad: az,
         isExtension: true,
         side: 0,
@@ -292,4 +313,16 @@ export function generateChildPlacements(
   }
 
   return accepted;
+}
+
+/**
+ * Heuristic for Breaks only: a parent that ends in a break keeps a thick tip (a taper would close it), so its tip radius
+ * stays above 30 % of its base radius.
+ */
+export function branchLooksBroken(prep: PreparedParentBranch): boolean {
+  const n = prep.radii.length;
+  if (n < 2) return false;
+  const base = prep.radii[0] as number;
+  const tip = prep.radii[n - 1] as number;
+  return base > 1e-6 && tip / base > 0.3;
 }
