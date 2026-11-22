@@ -244,7 +244,19 @@ Main stem with crown height, buttress flare, lean, gnarliness, and profile curve
 
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
-| Geometry | Spine only | `spineOnly` | bool | false |  |  | Emit pure skeleton spines without building polygon tube geometry. |
+| Type & Visibility | Type | `skinType` | Polygons / Spine only / SubD surface (rectangular attachments) (not yet available) / SubD surface (arbitrary attachments) (not yet available) | polygons |  |  | Polygons builds the tube mesh. Spine only builds no mesh: the spine stays available for children such as fronds and leaves. The SubD surface types are not available yet. |
+| Type & Visibility | Spine only | `spineOnly` | bool | false |  |  | Legacy switch: use Type instead. |
+| Type & Visibility | Visibility | `skinVisibility` | curve | curve |  |  | Runs along the parent (left = base, right = tip). Branches that grow where the curve is above 0.5 get geometry, the others stay invisible but keep their children. |
+| Radius | Absolute | `skinRadiusAbsolute` | 0..10 (slider 0..0.5) m | 0 |  |  | Radius in metres added to the base radius of every branch. |
+| Radius | Length compensation | `skinLengthCompensation` | 0..1 | 0 |  |  | Enlarges the tip radius of branches that thin out to a point too fast: 1 keeps up to half of the base radius at the tip. |
+| Radius | Length kill ratio | `skinLengthKill` | 0..10000 (slider 0..500) | 0 |  |  | Removes branches whose length divided by radius is above this value (very long, thin whips). 0 = off. |
+| Radius | Light seam reduction | `seamReduction` | 0..1 | 0 |  |  | Bends the normals toward the spine direction, strongest at the base of a branch where lighting seams show at the junction. |
+| Radius | Roll | `skinRoll` | -180..180 ° | 0 |  |  | Rotates the skin around the spine without changing its shape (rotates the section, the squash and the texture). |
+| Radius | Smooth | `skinSmooth` | 0..1 | 0 |  |  | Pushes the vertices out on the inner side of bends so the tube does not pinch. |
+| Clamp | Min | `skinRadiusMin` | 0..10 (slider 0..0.05) m | 0 |  |  | Smallest radius of any point. 0 = off. |
+| Clamp | Max | `skinRadiusMax` | 0..10 (slider 0..1) m | 0 |  |  | Largest radius of any point. 0 = off. |
+| Squash | Amount | `squashAmount` | 0..1 | 0 |  |  | Reduces the radius on one side: the section becomes an ellipse (1 = flat). Welds follow the squashed profile. |
+| Squash | Rotate | `squashRotate` | -180..180 ° | 0 |  |  | Direction of the flattened side around the spine. |
 | Geometry | Close end | `capEnd` | bool | true |  |  | Closes the tip of the tube with a cap. |
 | Geometry | Tip rings | `tipRings` | 1..8 | 2 |  |  | Rings of the rounded tip cap. |
 | Geometry | Close base | `capBase` | Auto / Yes / No | auto |  |  | Auto closes branches that do not grow from a parent. |
@@ -526,7 +538,21 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
-| Geometry | Spine only | `spineOnly` | bool | false |  |  | Emit pure skeleton spines without building polygon tube geometry. |
+| Type & Visibility | Type | `skinType` | Polygons / Spine only / SubD surface (rectangular attachments) (not yet available) / SubD surface (arbitrary attachments) (not yet available) | polygons |  |  | Polygons builds the tube mesh. Spine only builds no mesh: the spine stays available for children such as fronds and leaves. The SubD surface types are not available yet. |
+| Type & Visibility | Spine only | `spineOnly` | bool | false |  |  | Legacy switch: use Type instead. |
+| Type & Visibility | Visibility | `skinVisibility` | curve | curve |  |  | Runs along the parent (left = base, right = tip). Branches that grow where the curve is above 0.5 get geometry, the others stay invisible but keep their children. |
+| Radius | Absolute | `skinRadiusAbsolute` | 0..10 (slider 0..0.5) m | 0 |  |  | Radius in metres added to the base radius of every branch. |
+| Radius | + % of parent | `skinRadiusPercent` | 0..2 (slider 0..1) | 0 |  |  | Adds this fraction of the parent radius at the attachment to the base radius. |
+| Radius | Clamp to parent | `skinRadiusClampParent` | bool | false |  |  | A branch never gets thicker than its parent at the attachment. |
+| Radius | Length compensation | `skinLengthCompensation` | 0..1 | 0 |  |  | Enlarges the tip radius of branches that thin out to a point too fast: 1 keeps up to half of the base radius at the tip. |
+| Radius | Length kill ratio | `skinLengthKill` | 0..10000 (slider 0..500) | 0 |  |  | Removes branches whose length divided by radius is above this value (very long, thin whips). 0 = off. |
+| Radius | Light seam reduction | `seamReduction` | 0..1 | 0 |  |  | Bends the normals toward the spine direction, strongest at the base of a branch where lighting seams show at the junction. |
+| Radius | Roll | `skinRoll` | -180..180 ° | 0 |  |  | Rotates the skin around the spine without changing its shape (rotates the section, the squash and the texture). |
+| Radius | Smooth | `skinSmooth` | 0..1 | 0 |  |  | Pushes the vertices out on the inner side of bends so the tube does not pinch. |
+| Clamp | Min | `skinRadiusMin` | 0..10 (slider 0..0.05) m | 0 |  |  | Smallest radius of any point. 0 = off. |
+| Clamp | Max | `skinRadiusMax` | 0..10 (slider 0..1) m | 0 |  |  | Largest radius of any point. 0 = off. |
+| Squash | Amount | `squashAmount` | 0..1 | 0 |  |  | Reduces the radius on one side: the section becomes an ellipse (1 = flat). Welds follow the squashed profile. |
+| Squash | Rotate | `squashRotate` | -180..180 ° | 0 |  |  | Direction of the flattened side around the spine. |
 | Geometry | Close end | `capEnd` | bool | true |  |  | Closes the tip of the tube with a cap. |
 | Geometry | Tip rings | `tipRings` | 1..8 | 2 |  |  | Rings of the rounded tip cap. |
 | Geometry | Close base | `capBase` | Auto / Yes / No | auto |  |  | Auto closes branches that do not grow from a parent. |
@@ -541,6 +567,12 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 | Spread | Amount | `weldSpreadAmount` | 0..2 (slider 0..1) | 0.3 |  |  | How much the base of the branch widens at the weld site (fraction of its radius). |
 | Spread | Upper scale | `weldSpreadUpper` | 0..2 (slider 0..1) | 0.2 |  |  | Extra widening on the side of the base facing the tip of the parent, which forms a web where the branches meet. |
 | Spread | Lower scale | `weldSpreadLower` | 0..2 (slider 0..1) | 0.1 |  |  | Extra widening on the side of the base facing the base of the parent. |
+| Blend | Enabled | `weldBlendEnabled` | bool | true |  |  | Fades the bark texture of the child into the texture of the parent around the weld. Needs a bark material with a Color map. |
+| Blend | Texture | `weldBlendTexture` | 0..10 (slider 0..4) | 1 |  |  | Pulls the blended region further up the child (in branch radii); 0 ends the blend where the weld ends. |
+| Blend | Texture scale | `weldBlendTextureScale` | 0.1..10 (slider 0.1..4) | 1 |  |  | Size of the parent map inside the blended region (above 1 = finer pattern). |
+| Blend | Contrast | `weldBlendContrast` | 0..1 | 0.35 |  |  | Harshness of the blend: 0 is a soft fade, 1 a sharp edge between the two textures. |
+| Blend | Noise | `weldBlendNoise` | 0..1 | 0.3 |  |  | Wave noise around the child so the blend line is not a uniform ring. |
+| Blend | Lighting | `weldBlendLighting` | curve | curve |  |  | Normals in the weld region, from the parent side (left) to the child (right). At the bottom of the curve they follow the spine direction, at the top they point outward from the spine; the middle leaves them unchanged. |
 | Normals | Smoothing | `smoothing` | 0..1 | 1 |  |  | Below 0.5 the tube is faceted (unwelded quads). |
 | Normals | Flatten | `flatten` | 0..1 | 0 |  |  | Flattens normals towards the axis to soften the shading. |
 | Vertex color | Tint | `tint` | color | [0.36, 0.26, 0.18, 1] |  |  | Vertex colour multiplied onto the material. |
@@ -814,7 +846,21 @@ Lightweight spine-only structural guides for attaching foliage or child branches
 
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
-| Geometry | Spine only | `spineOnly` | bool | true |  |  | Emit pure skeleton spines without building polygon tube geometry. |
+| Type & Visibility | Type | `skinType` | Polygons / Spine only / SubD surface (rectangular attachments) (not yet available) / SubD surface (arbitrary attachments) (not yet available) | spine-only |  |  | Polygons builds the tube mesh. Spine only builds no mesh: the spine stays available for children such as fronds and leaves. The SubD surface types are not available yet. |
+| Type & Visibility | Spine only | `spineOnly` | bool | false |  |  | Legacy switch: use Type instead. |
+| Type & Visibility | Visibility | `skinVisibility` | curve | curve |  |  | Runs along the parent (left = base, right = tip). Branches that grow where the curve is above 0.5 get geometry, the others stay invisible but keep their children. |
+| Radius | Absolute | `skinRadiusAbsolute` | 0..10 (slider 0..0.5) m | 0 |  |  | Radius in metres added to the base radius of every branch. |
+| Radius | + % of parent | `skinRadiusPercent` | 0..2 (slider 0..1) | 0 |  |  | Adds this fraction of the parent radius at the attachment to the base radius. |
+| Radius | Clamp to parent | `skinRadiusClampParent` | bool | false |  |  | A branch never gets thicker than its parent at the attachment. |
+| Radius | Length compensation | `skinLengthCompensation` | 0..1 | 0 |  |  | Enlarges the tip radius of branches that thin out to a point too fast: 1 keeps up to half of the base radius at the tip. |
+| Radius | Length kill ratio | `skinLengthKill` | 0..10000 (slider 0..500) | 0 |  |  | Removes branches whose length divided by radius is above this value (very long, thin whips). 0 = off. |
+| Radius | Light seam reduction | `seamReduction` | 0..1 | 0 |  |  | Bends the normals toward the spine direction, strongest at the base of a branch where lighting seams show at the junction. |
+| Radius | Roll | `skinRoll` | -180..180 ° | 0 |  |  | Rotates the skin around the spine without changing its shape (rotates the section, the squash and the texture). |
+| Radius | Smooth | `skinSmooth` | 0..1 | 0 |  |  | Pushes the vertices out on the inner side of bends so the tube does not pinch. |
+| Clamp | Min | `skinRadiusMin` | 0..10 (slider 0..0.05) m | 0 |  |  | Smallest radius of any point. 0 = off. |
+| Clamp | Max | `skinRadiusMax` | 0..10 (slider 0..1) m | 0 |  |  | Largest radius of any point. 0 = off. |
+| Squash | Amount | `squashAmount` | 0..1 | 0 |  |  | Reduces the radius on one side: the section becomes an ellipse (1 = flat). Welds follow the squashed profile. |
+| Squash | Rotate | `squashRotate` | -180..180 ° | 0 |  |  | Direction of the flattened side around the spine. |
 | Geometry | Close end | `capEnd` | bool | true |  |  | Closes the tip of the tube with a cap. |
 | Geometry | Tip rings | `tipRings` | 1..8 | 2 |  |  | Rings of the rounded tip cap. |
 | Geometry | Close base | `capBase` | Auto / Yes / No | auto |  |  | Auto closes branches that do not grow from a parent. |

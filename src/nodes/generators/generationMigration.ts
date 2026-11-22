@@ -37,9 +37,21 @@ export function migrateGenerationParams(params: NodeParams): NodeParams {
   return params;
 }
 
+/**
+ * The Skin `Spine only` switch became the Skin > Type list: `spineOnly: true` -> `skinType: spine-only`, an explicit
+ * `spineOnly: false` is dropped (Polygons is the default).
+ */
+export function migrateSkinParams(params: NodeParams): NodeParams {
+  if (!('spineOnly' in params)) return params;
+  const out: NodeParams = { ...params };
+  if (params.spineOnly?.value === true && out.skinType === undefined) out.skinType = { value: 'spine-only' };
+  delete out.spineOnly;
+  return out;
+}
+
 /** Chains `migrateGenerationParams` after an existing node migration. */
 export function withGenerationMigration(
   previous?: (params: NodeParams, fromVersion: number) => NodeParams,
 ): (params: NodeParams, fromVersion: number) => NodeParams {
-  return (params, fromVersion) => migrateGenerationParams(previous ? previous(params, fromVersion) : params);
+  return (params, fromVersion) => migrateSkinParams(migrateGenerationParams(previous ? previous(params, fromVersion) : params));
 }

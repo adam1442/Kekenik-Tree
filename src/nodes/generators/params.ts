@@ -467,7 +467,7 @@ export function spineParams(
       ? [
           d.bool('unify', 'Unify', false, { tooltip: 'Nodes on opposite sides of the parent share the same orientation (mirrored roll).' }),
           d.bool('weldStart', 'Weld start', false, {
-            visibleIf: { param: 'spineOnly', value: true },
+            visibleIf: { param: 'skinType', value: 'spine-only' },
             tooltip: 'For Spine only branches: starts on the skin of the parent instead of on its spine.',
           }),
         ]
@@ -639,7 +639,9 @@ export function segmentParams(kind: SpineDefaults['kind'], segments: number, sid
 export function weldingParams(): ParamDef[] {
   const w = section('Skin', 'Welding');
   const sp = section('Skin', 'Spread');
+  const bl = section('Skin', 'Blend');
   const on = { param: 'weldEnabled', value: true } as const;
+  const blendOn: Condition = { all: [on, { param: 'weldBlendEnabled', value: true }] };
   return [
     w.bool('weldEnabled', 'Enabled', false, {
       tooltip: 'Pushes the base of the branch out of its parent and fuses it to the parent surface, for a seamless union without a visible seam.',
@@ -684,19 +686,106 @@ export function weldingParams(): ParamDef[] {
       visibleIf: on,
       tooltip: 'Extra widening on the side of the base facing the base of the parent.',
     }),
+    bl.bool('weldBlendEnabled', 'Enabled', true, {
+      visibleIf: on,
+      tooltip: 'Fades the bark texture of the child into the texture of the parent around the weld. Needs a bark material with a Color map.',
+    }),
+    bl.float('weldBlendTexture', 'Texture', 1, {
+      min: 0,
+      max: 10,
+      softMax: 4,
+      visibleIf: blendOn,
+      tooltip: 'Pulls the blended region further up the child (in branch radii); 0 ends the blend where the weld ends.',
+    }),
+    bl.float('weldBlendTextureScale', 'Texture scale', 1, {
+      min: 0.1,
+      max: 10,
+      softMax: 4,
+      visibleIf: blendOn,
+      tooltip: 'Size of the parent map inside the blended region (above 1 = finer pattern).',
+    }),
+    bl.float('weldBlendContrast', 'Contrast', 0.35, {
+      min: 0,
+      max: 1,
+      visibleIf: blendOn,
+      tooltip: 'Harshness of the blend: 0 is a soft fade, 1 a sharp edge between the two textures.',
+    }),
+    bl.float('weldBlendNoise', 'Noise', 0.3, {
+      min: 0,
+      max: 1,
+      visibleIf: blendOn,
+      tooltip: 'Wave noise around the child so the blend line is not a uniform ring.',
+    }),
+    bl.curve('weldBlendLighting', 'Lighting', flatCurve(0.5), {
+      visibleIf: blendOn,
+      tooltip: 'Normals in the weld region, from the parent side (left) to the child (right). At the bottom of the curve they follow the spine direction, at the top they point outward from the spine; the middle leaves them unchanged.',
+    }),
   ];
 }
 
-/** Skin tab. `sides` adds the `Sides` row for nodes without a Segments tab (Cap); `welding` adds the Welding section. */
-export function skinParams(defaultSpineOnly = false, sides?: number, welding = false): ParamDef[] {
+/** Spine-level Skin > Radius options: `trunk` has no parent, `child` also gets the parent-relative ones. */
+export type SkinRadiusKind = 'none' | 'trunk' | 'child';
+
+/** Skin > Radius, Clamp, Squash and Type & Visibility (the generator-level radius options only when `radius` is not `none`). */
+function skinShapeParams(radius: SkinRadiusKind, defaultSpineOnly: boolean): ParamDef[] {
+  const ty = section('Skin', 'Type & Visibility');
+  const r = section('Skin', 'Radius');
+  const cl = section('Skin', 'Clamp');
+  const sq = section('Skin', 'Squash');
+  const squashed = { param: 'squashAmount', op: 'gt', value: 0 } as const;
+  const skinType = ty.enumOf('skinType', 'Type', defaultSpineOnly ? 'Spine only' : 'Polygons', ['Polygons', 'Spine only', 'SubD surface (rectangular attachments)', 'SubD surface (arbitrary attachments)'], {
+    tooltip: 'Polygons builds the tube mesh. Spine only builds no mesh: the spine stays available for children such as fronds and leaves. The SubD surface types are not available yet.',
+  });
+  if (skinType.kind === 'enum') skinType.options = skinType.options.map((o) => (o.value.startsWith('subd-') ? { ...o, label: `${o.label} (not yet available)`, disabled: true } : o));
+  return [
+    skinType,
+    // Legacy switch of older projects and scripts (migrated to Type; never shown, still honoured).
+    ty.bool('spineOnly', 'Spine only', false, { visibleIf: { param: 'skinType', value: '__legacy' }, tooltip: 'Legacy switch: use Type instead.' }),
+    ty.curve('skinVisibility', 'Visibility', flatCurve(1), {
+      tooltip: 'Runs along the parent (left = base, right = tip). Branches that grow where the curve is above 0.5 get geometry, the others stay invisible but keep their children.',
+    }),
+    ...(radius !== 'none'
+      ? [
+          r.float('skinRadiusAbsolute', 'Absolute', 0, { min: 0, max: 10, softMax: 0.5, unit: 'm', tooltip: 'Radius in metres added to the base radius of every branch.' }),
+          ...(radius === 'child'
+            ? [
+                r.float('skinRadiusPercent', '+ % of parent', 0, { min: 0, max: 2, softMax: 1, tooltip: 'Adds this fraction of the parent radius at the attachment to the base radius.' }),
+                r.bool('skinRadiusClampParent', 'Clamp to parent', false, { tooltip: 'A branch never gets thicker than its parent at the attachment.' }),
+              ]
+            : []),
+          r.float('skinLengthCompensation', 'Length compensation', 0, { min: 0, max: 1, tooltip: 'Enlarges the tip radius of branches that thin out to a point too fast: 1 keeps up to half of the base radius at the tip.' }),
+          r.float('skinLengthKill', 'Length kill ratio', 0, { min: 0, max: 10000, softMax: 500, tooltip: 'Removes branches whose length divided by radius is above this value (very long, thin whips). 0 = off.' }),
+        ]
+      : []),
+    r.float('seamReduction', 'Light seam reduction', 0, {
+      min: 0,
+      max: 1,
+      tooltip: 'Bends the normals toward the spine direction, strongest at the base of a branch where lighting seams show at the junction.',
+    }),
+    r.float('skinRoll', 'Roll', 0, { min: -180, max: 180, unit: '°', tooltip: 'Rotates the skin around the spine without changing its shape (rotates the section, the squash and the texture).' }),
+    r.float('skinSmooth', 'Smooth', 0, { min: 0, max: 1, tooltip: 'Pushes the vertices out on the inner side of bends so the tube does not pinch.' }),
+    ...(radius !== 'none'
+      ? [
+          cl.float('skinRadiusMin', 'Min', 0, { min: 0, max: 10, softMax: 0.05, unit: 'm', tooltip: 'Smallest radius of any point. 0 = off.' }),
+          cl.float('skinRadiusMax', 'Max', 0, { min: 0, max: 10, softMax: 1, unit: 'm', tooltip: 'Largest radius of any point. 0 = off.' }),
+        ]
+      : []),
+    sq.float('squashAmount', 'Amount', 0, { min: 0, max: 1, tooltip: 'Reduces the radius on one side: the section becomes an ellipse (1 = flat). Welds follow the squashed profile.' }),
+    sq.float('squashRotate', 'Rotate', 0, { min: -180, max: 180, unit: '°', visibleIf: squashed, tooltip: 'Direction of the flattened side around the spine.' }),
+  ];
+}
+
+/**
+ * Skin tab. `sides` adds the `Sides` row for nodes without a Segments tab (Cap); `welding` adds the Welding section;
+ * `radius` adds the generator-level Radius / Clamp options.
+ */
+export function skinParams(defaultSpineOnly = false, sides?: number, welding = false, radius: SkinRadiusKind = 'none'): ParamDef[] {
   const g = section('Skin', 'Geometry');
   const n = section('Skin', 'Normals');
   const c = section('Skin', 'Vertex color');
   const j = section('Skin', 'Junction');
   return [
-    g.bool('spineOnly', 'Spine only', defaultSpineOnly, {
-      tooltip: 'Emit pure skeleton spines without building polygon tube geometry.',
-    }),
+    ...skinShapeParams(radius, defaultSpineOnly),
     ...(sides !== undefined ? [g.int('sides', 'Sides', sides, { min: 3, max: 64 })] : []),
     g.bool('capEnd', 'Close end', true),
     g.int('tipRings', 'Tip rings', 2, { min: 1, max: 8, tooltip: 'Rings of the rounded tip cap.' }),

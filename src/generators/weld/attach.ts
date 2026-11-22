@@ -1,3 +1,4 @@
+import type { Curve } from '@/contracts/curve';
 import { coneFromPolyline, sagScale, tubeSurface, type ParentSurface } from './surface';
 
 /** Parent segments around the attachment that the ray cast surface and the cone fit consider (each side). */
@@ -27,4 +28,15 @@ export interface WeldMeshOptions {
   lower: number;
   scalar: number;
   forceRays: boolean;
+  /** Texture blending between the parent and the child at the weld (absent = off). */
+  blend?: WeldBlendMeshOptions;
+}
+
+/** Skin > Welding > Blend as the mesher receives it. */
+export interface WeldBlendMeshOptions {
+  texture: number;
+  textureScale: number;
+  contrast: number;
+  noise: number;
+  lighting?: Curve;
 }

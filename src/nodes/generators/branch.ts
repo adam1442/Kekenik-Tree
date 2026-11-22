@@ -25,6 +25,7 @@ import {
 import { evaluateRootLevel, extractPlacement, type RootLevelKind } from './rootLevel';
 import { StructureSkeletonBuilder } from './skeletonBuild';
 import { compileSpineConfig, growSpineIntoBuilder, type CompiledSpineConfig } from './spine';
+import { SUB_LEVEL_ATTR } from '@/generators/skin';
 import { createWeldLevel, readWeldConfig, WELD_ATTR, WELD_SELF_ATTR, weldChild } from './weldApply';
 
 function evalParentCurve(params: NodeParams, id: string, u: number, fallback = 1): number {
@@ -211,6 +212,7 @@ function mergeSkeletons(levels: readonly Skeleton[]): Skeleton {
         ...(rs && (rs[b.start] as number) > 0 ? { radialSides: rs[b.start] as number } : {}),
         ...(oe ? { openEnd: (oe[b.start] as number) > 0 } : {}),
       });
+      if (added.branchId >= 0 && li > 0) builder.setBranchExtra(added.branchId, SUB_LEVEL_ATTR, 1);
       if (added.branchId >= 0 && wl && (wl[b.start] as number) > 0) {
         builder.setBranchExtra(added.branchId, WELD_ATTR, wl[b.start] as number);
         if (ws && (ws[b.start] as number) > 0) builder.setBranchExtra(added.branchId, WELD_SELF_ATTR, 1);

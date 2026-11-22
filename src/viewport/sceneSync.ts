@@ -45,6 +45,9 @@ function canReuse(geo: BufferGeometry, md: MeshData): boolean {
     same('ao', md.ao) &&
     same('windPivot', md.wind?.pivot) &&
     same('windWeights', md.wind?.weights) &&
+    same('weldBlend', md.weld?.blend) &&
+    same('weldParentUV', md.weld?.parentUv) &&
+    same('weldStyle', md.weld?.style) &&
     geo.index !== null &&
     geo.index.array.length === md.indices.length
   );
@@ -68,6 +71,9 @@ function writeInto(geo: BufferGeometry, md: MeshData): void {
   put('ao', md.ao);
   put('windPivot', md.wind?.pivot);
   put('windWeights', md.wind?.weights);
+  put('weldBlend', md.weld?.blend);
+  put('weldParentUV', md.weld?.parentUv);
+  put('weldStyle', md.weld?.style);
   const idx = geo.index as BufferAttribute;
   idx.array = md.indices;
   idx.needsUpdate = true;

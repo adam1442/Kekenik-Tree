@@ -5,6 +5,7 @@ import { clamp, deg2rad } from '@/core/math';
 import { createSimplex, type SimplexNoise } from '@/core/noise';
 import type { Rng } from '@/core/rng';
 import { sampleVariance } from '@/graph/engine/seeds';
+import { clampRadius, compensateTipRadii, exceedsKillRatio, isSpineOnly, skinBaseRadius, type SkinRadiusSettings } from '@/generators/skin';
 import {
   LENGTH_BASIS,
   applyJink,
@@ -122,6 +123,8 @@ export interface CompiledSpineConfig {
   readonly taperBase: number;
   readonly parentRadiusInfluence: number;
   readonly parentRadiusMax: number;
+  /** Skin > Radius / Clamp (neutral by default). */
+  readonly skinRadius: SkinRadiusSettings;
 
   readonly spreadDeg: number;
   readonly spreadVar: number;
@@ -291,6 +294,15 @@ export function compileSpineConfig(
     taperBase: clamp(getNumber(params, 'taper', 0.9), 0, 1),
     parentRadiusInfluence: clamp(getNumber(params, 'parentRadiusInfluence', 0.35), 0, 1),
     parentRadiusMax: clamp(getNumber(params, 'parentRadiusMax', 0.85), 0.05, 2),
+    skinRadius: {
+      absolute: Math.max(0, getNumber(params, 'skinRadiusAbsolute', 0)),
+      percentParent: Math.max(0, getNumber(params, 'skinRadiusPercent', 0)),
+      clampToParent: getBool(params, 'skinRadiusClampParent', false),
+      min: Math.max(0, getNumber(params, 'skinRadiusMin', 0)),
+      max: Math.max(0, getNumber(params, 'skinRadiusMax', 0)),
+      lengthCompensation: clamp(getNumber(params, 'skinLengthCompensation', 0), 0, 1),
+      killRatio: Math.max(0, getNumber(params, 'skinLengthKill', 0)),
+    },
 
     spreadDeg: getNumber(params, 'spread', 45),
     spreadVar: params.spread?.variance ?? 0,
@@ -300,7 +312,7 @@ export function compileSpineConfig(
     pitchVar: params.pitch?.variance ?? 0,
     spineRollDeg: getNumber(params, 'spineRoll', 0),
     alignment: clamp(getNumber(params, 'alignment', 0), 0, 1),
-    weldStart: getBool(params, 'weldStart', false) && getBool(params, 'spineOnly', false),
+    weldStart: getBool(params, 'weldStart', false) && isSpineOnly(params),
     unify: getBool(params, 'unify', false),
 
     curvatureBase: getNumber(params, 'curvature', 0),
@@ -500,7 +512,8 @@ export function computeBaseRadius(cfg: CompiledSpineConfig, spec: SpineSpawnSpec
     }
   }
 
-  return Math.max(cfg.minRadius, baseR);
+  const parentRadius = spec.hasParent && !spec.isExtension && spec.parentRadius > 0 ? spec.parentRadius : null;
+  return Math.max(cfg.minRadius, skinBaseRadius(baseR, parentRadius, cfg.skinRadius));
 }
 
 /**
@@ -567,6 +580,7 @@ export function growSpineIntoBuilder(
 
   const baseRadius = computeBaseRadius(cfg, spec, rng) * Math.max(0.01, spec.radiusScale ?? 1);
   const fullLength = computeBranchLength(cfg, spec, rng, baseRadius) * Math.max(0.01, spec.lengthScale ?? 1);
+  if (splitDepth === 0 && exceedsKillRatio(fullLength, baseRadius, cfg.skinRadius.killRatio)) return 0;
 
   // Determine break / termination behavior
   const isForkMode = cfg.termination === 'fork' && splitDepth === 0;
@@ -817,6 +831,7 @@ export function growSpineIntoBuilder(
   const outRad = new Float32Array(outCount);
   const outAges = new Float32Array(outCount);
   const outTwists = new Float32Array(outCount);
+  const outU = new Float32Array(outCount);
 
   const effectiveTaperScale =
     willSplit ? 0.35 : cfg.termination === 'blunt' ? 0.35 : isBroken ? 0.65 : 1;
@@ -829,10 +844,15 @@ export function growSpineIntoBuilder(
     outPos[k * 3 + 1] = densePos[si * 3 + 1] as number;
     outPos[k * 3 + 2] = densePos[si * 3 + 2] as number;
     outRad[k] = evaluateSpineRadius(cfg, baseRadius, f, noisePhase, effectiveTaperScale);
+    outU[k] = localU;
     outAges[k] = isBroken ? 1 - f : 1 - localU;
     const twFactor = cfg.twistLut ? sampleCurveLUT(cfg.twistLut, f) : f;
     outTwists[k] = totalTwistRad * twFactor;
   }
+
+  const sr = cfg.skinRadius;
+  if (sr.lengthCompensation > 0) compensateTipRadii(outRad, outU, sr.lengthCompensation);
+  if (sr.min > 0 || sr.max > 0) for (let k = 0; k < outCount; k++) outRad[k] = clampRadius(outRad[k] as number, sr.min, sr.max);
 
   const added = builder.addPolylineBranch({
     parentBranch: spec.parentBranch,

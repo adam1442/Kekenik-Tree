@@ -15,6 +15,11 @@ export function meshDataToGeometry(data: MeshData): BufferGeometry {
     geo.setAttribute('windPivot', new BufferAttribute(data.wind.pivot, 3));
     geo.setAttribute('windWeights', new BufferAttribute(data.wind.weights, 4));
   }
+  if (data.weld) {
+    geo.setAttribute('weldBlend', new BufferAttribute(data.weld.blend, 1));
+    geo.setAttribute('weldParentUV', new BufferAttribute(data.weld.parentUv, 2));
+    geo.setAttribute('weldStyle', new BufferAttribute(data.weld.style, 3));
+  }
   geo.setIndex(new BufferAttribute(data.indices, 1));
   geo.computeBoundingSphere();
   geo.computeBoundingBox();

@@ -106,7 +106,7 @@ const structureParams = (
   ...segmentParams(spine.kind, spine.segments, sides),
   ...forcesParams(),
   ...shapeParams(flareRadius, flareHeight),
-  ...skinParams(spineOnly, undefined, spine.kind === 'branch' || spine.kind === 'root'),
+  ...skinParams(spineOnly, undefined, spine.kind === 'branch' || spine.kind === 'root', spine.kind === 'trunk' ? 'trunk' : 'child'),
   ...uvParams(),
   ...lodParams(),
   ...displacementParams(),
@@ -147,7 +147,7 @@ const baseNodeDefs: NodeDef[] = [
     description: 'Main stem with crown height, buttress flare, lean, gnarliness, and profile curves.',
     statsGroup: 'branches',
     ports: withChildren,
-    version: 3,
+    version: 4,
     migrate: withGenerationMigration((params) => migrateSpineParams(params)),
     params: structureParams(
       { number: 1, first: 0, last: 1, placement: true },
@@ -168,7 +168,7 @@ const baseNodeDefs: NodeDef[] = [
     description: 'Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifurcations, and pruning.',
     statsGroup: 'branches',
     ports: withChildren,
-    version: 3,
+    version: 4,
     migrate: withGenerationMigration((params) => migrateSpineParams(params)),
     params: structureParams(
       { number: 12, first: 0.2, last: 0.95, jumble: 0.2, includeBranchExtended: true, placement: true, extend: true },
@@ -187,7 +187,7 @@ const baseNodeDefs: NodeDef[] = [
     description: 'Subterranean and buttress roots grown below ground or blended into the trunk base.',
     statsGroup: 'roots',
     ports: withChildren,
-    version: 3,
+    version: 4,
     migrate: withGenerationMigration((params) => migrateSpineParams(params)),
     params: structureParams(
       { number: 6, first: 0, last: 0.12, jumble: 0.28, includeBranchExtended: true },
@@ -232,7 +232,7 @@ const baseNodeDefs: NodeDef[] = [
     description: 'Lightweight spine-only structural guides for attaching foliage or child branches without tube geometry.',
     statsGroup: 'branches',
     ports: withChildren,
-    version: 3,
+    version: 4,
     migrate: withGenerationMigration((params) => migrateSpineParams(params)),
     params: structureParams(
       { number: 8, first: 0.15, last: 0.95, jumble: 0.2, includeBranchExtended: true, placement: true },
@@ -335,7 +335,7 @@ const baseNodeDefs: NodeDef[] = [
     description: 'Closes the end of a branch.',
     statsGroup: 'caps',
     ports: leafOnly,
-    version: 2,
+    version: 3,
     migrate: withGenerationMigration(),
     params: [...generationParams({ number: 1, first: 1, last: 1, extend: true }), ...capParams(), ...skinParams(false, 8), ...uvParams(), ...displacementParams(), ...materialTabParams()],
     evaluate: withDisplacementWarning(evaluateCap),

@@ -1,7 +1,9 @@
 import { evaluateCurve, type Curve } from '@/contracts/curve';
 import { getBool, getNumber, type NodeParams } from '@/contracts/params';
 import type { Skeleton } from '@/contracts/skeleton';
+import { isSpineOnly } from '@/generators/skin';
 import { parentSurfaceFor, solveWeld, weldHeightFraction, weldKept, weldRingCount, type ChildPath } from '@/generators/weld';
+import { squashedParentSurface } from '@/geometry/tubeMesher';
 import { computePolylineRMF, type PreparedParentBranch, type Vec3 } from './frames';
 import type { StructureSkeletonBuilder } from './skeletonBuild';
 
@@ -32,7 +34,7 @@ export interface WeldConfig {
 
 export function readWeldConfig(params: NodeParams): WeldConfig {
   return {
-    enabled: getBool(params, 'weldEnabled', false) && !getBool(params, 'spineOnly', false),
+    enabled: getBool(params, 'weldEnabled', false) && !isSpineOnly(params),
     keep: params.weldKeep?.curve ?? undefined,
     keepFailed: getBool(params, 'weldKeepFailed', false),
     forceRays: getBool(params, 'weldForceRays', false),
@@ -124,7 +126,8 @@ export function weldChild(level: WeldLevel, builder: StructureSkeletonBuilder, i
   const prep = input.prep;
   const parentSides = level.parent.attributes.get('radialSides')?.[prep.branch.start] ?? 0;
   const base: [number, number, number] = [view.positions[0] as number, view.positions[1] as number, view.positions[2] as number];
-  const surface = parentSurfaceFor(prep.positions, prep.radii, prep.branch.count, base, input.parentPoint - prep.branch.start, parentSides, cfg.forceRays);
+  const rawSurface = parentSurfaceFor(prep.positions, prep.radii, prep.branch.count, base, input.parentPoint - prep.branch.start, parentSides, cfg.forceRays);
+  const surface = rawSurface ? squashedParentSurface(rawSurface, level.parent, input.parentPoint, base) : null;
   let ok = false;
   if (surface) {
     const path = childPathFromPolyline(view.positions, view.radii, view.count);

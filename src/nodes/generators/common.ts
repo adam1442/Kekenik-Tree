@@ -5,14 +5,15 @@ import type { NodeInputs, NodeOutputs } from '@/contracts/nodes';
 import { getBool, getNumber, getString, type NodeParams } from '@/contracts/params';
 import type { PortValue } from '@/contracts/ports';
 import { emptySkeleton, type Skeleton } from '@/contracts/skeleton';
-import { clamp } from '@/core/math';
+import { clamp, deg2rad } from '@/core/math';
 import { RADIAL_BASIS, radialSegmentCount } from '@/generators/spine';
 import { applyGeneratorForces } from './forcesHook';
 import { displacedSides, tubeDisplacementOptions } from './displacement';
 import { resolveMaterialRef } from '@/materials/materialSource';
 import { Rng } from '@/core/rng';
 import type { SectionKind, SectionShape } from '@/geometry/crossSection';
-import { buildTubeMesh, type TubeOptions } from '@/geometry/tubeMesher';
+import { buildTubeMesh, SQUASH_ANGLE_ATTR, SQUASH_ATTR, type TubeOptions } from '@/geometry/tubeMesher';
+import { branchVisibility, isSpineOnly, SUB_LEVEL_ATTR } from '@/generators/skin';
 import { attachSkeletonWind } from '@/geometry/windAttributes';
 import { readWeldConfig } from './weldApply';
 import { fillTableBounds } from '@/instances/scope';
@@ -144,15 +145,41 @@ export function tubeOptionsFromParams(
     tintVariance: getNumber(params, 'tintVariance', 0.1),
     aoStrength: getNumber(params, 'aoStrength', 0.6),
     ...weldMeshOptions(params),
+    roll: getNumber(params, 'skinRoll', 0),
+    smooth: getNumber(params, 'skinSmooth', 0),
+    seam: getNumber(params, 'seamReduction', 0),
+    ...squashOptions(params),
     seed,
   };
+}
+
+/** Skin > Squash Amount (0..1) and Rotate (degrees); the single reader of both parameters. */
+function readSquash(params: NodeParams): { amount: number; rotateDeg: number } {
+  return { amount: clamp(getNumber(params, 'squashAmount', 0), 0, 1), rotateDeg: getNumber(params, 'squashRotate', 0) };
+}
+
+/** Skin > Squash as the mesher receives it (empty when the amount is 0). */
+function squashOptions(params: NodeParams): Pick<TubeOptions, 'squash'> {
+  const { amount, rotateDeg } = readSquash(params);
+  return amount > 0 ? { squash: { amount, rotate: deg2rad(rotateDeg) } } : {};
 }
 
 /** Mesher options of Skin > Welding (empty when welding is off). */
 function weldMeshOptions(params: NodeParams): Pick<TubeOptions, 'weld'> {
   const w = readWeldConfig(params);
   if (!w.enabled) return {};
-  return { weld: { offset: w.offset, spread: w.spreadAmount, upper: w.upperScale, lower: w.lowerScale, scalar: w.scalar, forceRays: w.forceRays } };
+  const blend = getBool(params, 'weldBlendEnabled', true)
+    ? {
+        texture: Math.max(0, getNumber(params, 'weldBlendTexture', 1)),
+        textureScale: Math.max(0.01, getNumber(params, 'weldBlendTextureScale', 1)),
+        contrast: clamp(getNumber(params, 'weldBlendContrast', 0.35), 0, 1),
+        noise: clamp(getNumber(params, 'weldBlendNoise', 0.3), 0, 1),
+        ...(params.weldBlendLighting?.curve ? { lighting: params.weldBlendLighting.curve } : {}),
+      }
+    : undefined;
+  return {
+    weld: { offset: w.offset, spread: w.spreadAmount, upper: w.upperScale, lower: w.lowerScale, scalar: w.scalar, forceRays: w.forceRays, ...(blend ? { blend } : {}) },
+  };
 }
 
 /**
@@ -174,8 +201,9 @@ export function emitStructureOutput(
   applyGeneratorForces(skeleton, params, inputs, seed);
   if (table) fillTableBounds(table, skeleton);
   const hiddenBranches = hiddenBranchSet(table);
-  const spineOnly = getBool(params, 'spineOnly', false);
+  const spineOnly = isSpineOnly(params);
   attachSkeletonWind(skeleton, parent ?? null, seed);
+  writeSquashAttributes(skeleton, params);
   // The Material property overrides the generator's built-in slot id; a Material Set is resolved with the node's RNG.
   const chosen = getString(params, 'material', '') || materialId;
   const resolvedMaterial = resolveMaterialRef(chosen, new Rng(seed).fork('material'));
@@ -184,7 +212,7 @@ export function emitStructureOutput(
       ? emptyMeshData()
       : buildTubeMesh(skeleton, {
           ...tubeOptionsFromParams(params, lod, parent ?? null, resolvedMaterial, seed, skeleton),
-          ...(hiddenBranches ? { skipBranch: (bi: number) => hiddenBranches.has(bi) } : {}),
+          ...skipOptions(skeleton, params, parent ?? null, hiddenBranches),
         });
 
   const instances = instancesOverride ?? skeleton.branches.length;
@@ -194,6 +222,32 @@ export function emitStructureOutput(
     [OUTPUT_KEY.instances]: { kind: 'Scalar', value: instances },
     [OUTPUT_KEY.branchCount]: { kind: 'Scalar', value: skeleton.branches.length },
     [OUTPUT_KEY.pointCount]: { kind: 'Scalar', value: skeleton.count },
+  };
+}
+
+/** The squash of this node's skin, stored on its skeleton so children that weld to it follow the squashed profile. */
+function writeSquashAttributes(skeleton: Skeleton, params: NodeParams): void {
+  const { amount, rotateDeg } = readSquash(params);
+  if (skeleton.count === 0 || !(amount > 0)) return;
+  const angle = deg2rad(rotateDeg + getNumber(params, 'skinRoll', 0));
+  skeleton.attributes.set(SQUASH_ATTR, new Float32Array(skeleton.count).fill(amount));
+  skeleton.attributes.set(SQUASH_ANGLE_ATTR, new Float32Array(skeleton.count).fill(angle));
+}
+
+/** Mesher `skipBranch`: instances hidden in Node mode and branches whose Skin > Visibility curve is not above 0.5. */
+function skipOptions(skeleton: Skeleton, params: NodeParams, parent: Skeleton | null, hidden: Set<number> | null): Pick<TubeOptions, 'skipBranch'> {
+  const curve = params.skinVisibility?.curve;
+  if (!hidden && !curve) return {};
+  const subLevel = skeleton.attributes.get(SUB_LEVEL_ATTR);
+  return {
+    skipBranch: (bi: number): boolean => {
+      if (hidden?.has(bi)) return true;
+      const b = skeleton.branches[bi];
+      if (!curve || !b) return false;
+      const host = subLevel && (subLevel[b.start] ?? 0) > 0 ? skeleton : parent;
+      const u = host && b.parentPoint >= 0 && b.parentPoint < host.count ? (host.t[b.parentPoint] as number) : 0;
+      return !branchVisibility(curve, u);
+    },
   };
 }
 

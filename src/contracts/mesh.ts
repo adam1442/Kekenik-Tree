@@ -16,6 +16,16 @@ export interface WindVertexAttributes {
   weights: Float32Array;
 }
 
+/** Per-vertex texture blending between a welded child and its parent (Skin > Welding > Blend). */
+export interface WeldBlendAttributes {
+  /** 0 on the parent side of the weld .. 1 on the child (one per vertex). */
+  blend: Float32Array;
+  /** UV the parent's bark has at the vertex (uv per vertex). */
+  parentUv: Float32Array;
+  /** (contrast, noise, active) per vertex; active 0 = the vertex is not blended. */
+  style: Float32Array;
+}
+
 /**
  * True GPU-instancing payload. When present, `MeshData` holds ONE copy of the geometry and the
  * viewport draws it with a THREE.InstancedMesh; exporters expand it with `expandInstances` (geometry/instancing.ts).
@@ -56,6 +66,8 @@ export interface MeshData {
   colors?: Float32Array;
   indices: Uint32Array;
   wind?: WindVertexAttributes;
+  /** Weld texture blend channels (bark shader); absent when no vertex is blended. */
+  weld?: WeldBlendAttributes;
   /** Baked ambient-occlusion estimate per vertex (0 dark .. 1 open). Also multiplied into `colors`. */
   ao?: Float32Array;
   instanced?: InstancedMeshPayload;
@@ -129,6 +141,11 @@ export function mergeMeshData(list: readonly MeshData[]): MeshData {
   if (uv1) out.uv1 = concat(uv1, Float32Array);
   if (colors) out.colors = concat(colors, Float32Array);
   if (ao) out.ao = concat(ao, Float32Array);
+  if (list.some((m) => m.weld)) {
+    const fill = (pick: (w: WeldBlendAttributes) => Float32Array, per: number): Float32Array =>
+      concat(list.map((m) => (m.weld ? pick(m.weld) : new Float32Array(meshVertexCount(m) * per))), Float32Array);
+    out.weld = { blend: fill((w) => w.blend, 1), parentUv: fill((w) => w.parentUv, 2), style: fill((w) => w.style, 3) };
+  }
   if (windParts.every((w) => w !== undefined)) {
     out.wind = {
       pivot: concat(windParts.map((w) => (w as NonNullable<typeof w>).pivot), Float32Array),

@@ -5,7 +5,8 @@ import { createSectionEvaluator, ROUND_SECTION, type SectionShape } from './cros
 import { cross, dot, hash01, len, mul, norm, orthogonalize, perpendicular, rotate, sub, type V3 } from './math3';
 import { MeshAccumulator, newVertex, type VertexAttrs } from './meshAccumulator';
 import { computeSkeletonWind, WIND_ATTRIBUTES } from './windAttributes';
-import { ChildPathEvaluator, parentSurfaceFor, solveWeld, weldRingCount, type ChildPath, type WeldMeshOptions, type WeldResult } from '@/generators/weld';
+import { ChildPathEvaluator, frameNormalFor, lightingNormal, lightingValue, parentSurfaceFor, solveWeld, squashSurface, weldBlendValue, weldRingCount, type ChildPath, type ParentSurface, type WeldMeshOptions, type WeldResult } from '@/generators/weld';
+import { bendPushFactor, leanNormal, seamWeight, squashRadius } from '@/generators/skin';
 
 export interface TubeUv {
   /** false = metric (V = metres / uvMetres, tiles by world length), true = V runs 0..1 per branch. */
@@ -61,6 +62,37 @@ export interface TubeOptions {
   maxSegmentLength?: number;
   /** Fuse branches whose skeleton `weld` attribute is 1 into their parent's surface (see `generators/weld`). */
   weld?: WeldMeshOptions;
+  /** Skin > Radius > Roll in degrees: rotates the rings (section, squash, texture) around the spine. */
+  roll?: number;
+  /** Skin > Radius > Smooth 0..1: pushes the rings out on bends. */
+  smooth?: number;
+  /** Skin > Radius > Light seam reduction 0..1: bends normals toward the spine, strongest at the base of a junction. */
+  seam?: number;
+  /** Skin > Squash: Amount 0..1 and the Rotate angle in radians. */
+  squash?: { amount: number; rotate: number };
+}
+
+/** Skeleton attributes written by `emitStructureOutput`: the squash of a branch's own skin (read when a child welds to it). */
+export const SQUASH_ATTR = 'skinSquash';
+export const SQUASH_ANGLE_ATTR = 'skinSquashAngle';
+
+/** Where a welded child leaves its parent, in the parent's ring frame (for the parent-side texture coordinates). */
+interface ParentAttach {
+  position: V3;
+  axis: V3;
+  normal: V3;
+  binormal: V3;
+  /** Metres along the parent from its base to the attachment, and the parent's total length. */
+  along: number;
+  length: number;
+  radius: number;
+  /** Ring angle of the child's own direction (the unwrapped reference of the parent U). */
+  childPhi: number;
+}
+
+interface BranchWeld {
+  result: WeldResult;
+  attach: ParentAttach;
 }
 
 interface Samples {
@@ -188,6 +220,7 @@ function buildNormals(sk: Skeleton, b: Branch, sm: Samples, o: TubeOptions): V3[
   const T = (i: number): V3 => [sm.tan[i * 3] as number, sm.tan[i * 3 + 1] as number, sm.tan[i * 3 + 2] as number];
   const Pt = (i: number): V3 => [sm.pos[i * 3] as number, sm.pos[i * 3 + 1] as number, sm.pos[i * 3 + 2] as number];
   const twistRad = ((o.twist ?? 0) * Math.PI) / 180;
+  const rollRad = ((o.roll ?? 0) * Math.PI) / 180;
   let prev: V3 | null = null;
   for (let i = 0; i < sm.n; i++) {
     const t = T(i);
@@ -221,7 +254,7 @@ function buildNormals(sk: Skeleton, b: Branch, sm: Samples, o: TubeOptions): V3[
       }
     }
     prev = nrm;
-    out.push(twistRad !== 0 ? rotate(nrm, t, twistRad * (sm.s[i] as number)) : nrm);
+    out.push(twistRad !== 0 || rollRad !== 0 ? rotate(nrm, t, twistRad * (sm.s[i] as number) + rollRad) : nrm);
   }
   return out;
 }
@@ -248,6 +281,26 @@ function parentBranchOf(sk: Skeleton, b: Branch, parent: Skeleton | undefined): 
   return pb && pb.count >= 2 ? { sk: psk, branch: pb } : null;
 }
 
+/** Squash of the parent skin at global point `idx` of `sk` (neutral when the parent has none). */
+function parentSquash(sk: Skeleton, idx: number): { amount: number; angle: number } {
+  const amount = sk.attributes.get(SQUASH_ATTR)?.[idx] ?? 0;
+  return { amount, angle: sk.attributes.get(SQUASH_ANGLE_ATTR)?.[idx] ?? 0 };
+}
+
+/** Parent skin at the attachment (`at` = base of the child, on the parent spine), squashed like the parent's own mesh. */
+export function squashedParentSurface(surface: ParentSurface, sk: Skeleton, idx: number, at: V3): ParentSurface {
+  const sq = parentSquash(sk, idx);
+  if (!(sq.amount > 0)) return surface;
+  // The base of the child lies on the parent spine: it is the point of the parent axis the rings are measured around.
+  const position = at;
+  const nx = sk.attributes.get('rmfNormalX');
+  const ny = sk.attributes.get('rmfNormalY');
+  const nz = sk.attributes.get('rmfNormalZ');
+  const rmf: V3 | null = nx && ny && nz ? [nx[idx] as number, ny[idx] as number, nz[idx] as number] : null;
+  const normal = frameNormalFor(rmf, surface.axis);
+  return squashSurface(surface, { position, normal, amount: sq.amount, angle: sq.angle });
+}
+
 /** Solves the weld of branch `b` on its rings; null when the parent is missing or the solver fails (the junction then stays unwelded). */
 function solveBranchWeld(
   sk: Skeleton,
@@ -258,7 +311,7 @@ function solveBranchWeld(
   o: TubeOptions,
   section: ReturnType<typeof createSectionEvaluator>,
   sqrtA: number,
-): WeldResult | null {
+): BranchWeld | null {
   const w = o.weld;
   const pr = parentBranchOf(sk, b, o.parent);
   if (!w || !pr) return null;
@@ -268,8 +321,11 @@ function solveBranchWeld(
   const base: [number, number, number] = [sm.pos[0] as number, sm.pos[1] as number, sm.pos[2] as number];
   const hint = Math.min(pr.branch.count - 1, Math.max(0, b.parentPoint - start));
   const parentSides = pr.sk.attributes.get('radialSides')?.[start] ?? 0;
-  const surface = parentSurfaceFor(positions, radii, pr.branch.count, base, hint, parentSides, w.forceRays);
-  if (!surface) return null;
+  const raw = parentSurfaceFor(positions, radii, pr.branch.count, base, hint, parentSides, w.forceRays);
+  if (!raw) return null;
+  const point = start + hint;
+  const attachPos: V3 = [pr.sk.position[point * 3] as number, pr.sk.position[point * 3 + 1] as number, pr.sk.position[point * 3 + 2] as number];
+  const surface = squashedParentSurface(raw, pr.sk, point, base);
   const nrm = new Float32Array(sm.n * 3);
   for (let i = 0; i < sm.n; i++) {
     const f = frames[i] as V3;
@@ -278,6 +334,7 @@ function solveBranchWeld(
     nrm[i * 3 + 2] = f[2];
   }
   const path: ChildPath = { count: sm.n, pos: sm.pos, rad: sm.rad, nrm, tan: sm.tan, s: sm.s };
+  const sq = o.squash;
   const res = solveWeld(path, surface, {
     sides,
     segments: weldRingCount(w.scalar) - 1,
@@ -286,9 +343,41 @@ function solveBranchWeld(
     upper: w.upper,
     lower: w.lower,
     aspect: sqrtA,
-    section: (a, s) => section.radius(a, s),
+    section: (a, s) => section.radius(a, s) * (sq ? squashRadius(a, sq.amount, sq.rotate) : 1),
   });
-  return res.ok ? res : null;
+  if (!res.ok) return null;
+
+  // Parent frame for the parent-side texture coordinates.
+  const axis: V3 = [surface.axis[0], surface.axis[1], surface.axis[2]];
+  const nx = pr.sk.attributes.get('rmfNormalX');
+  const ny = pr.sk.attributes.get('rmfNormalY');
+  const nz = pr.sk.attributes.get('rmfNormalZ');
+  const frame = frameNormalFor(nx && ny && nz ? [nx[point] as number, ny[point] as number, nz[point] as number] : null, axis);
+  const binormal = cross(axis, frame);
+  let along = 0;
+  let length = 0;
+  for (let k = 1; k < pr.branch.count; k++) {
+    length += Math.hypot(
+      (positions[k * 3] as number) - (positions[(k - 1) * 3] as number),
+      (positions[k * 3 + 1] as number) - (positions[(k - 1) * 3 + 1] as number),
+      (positions[k * 3 + 2] as number) - (positions[(k - 1) * 3 + 2] as number),
+    );
+    if (k === hint) along = length;
+  }
+  const t0: V3 = [sm.tan[0] as number, sm.tan[1] as number, sm.tan[2] as number];
+  return {
+    result: res,
+    attach: {
+      position: attachPos,
+      axis,
+      normal: frame,
+      binormal,
+      along,
+      length: Math.max(1e-6, length),
+      radius: Math.max(1e-6, surface.radius),
+      childPhi: Math.atan2(dot(t0, binormal), dot(t0, frame)),
+    },
+  };
 }
 
 /**
@@ -379,11 +468,14 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
     let frames: V3[] = [];
     // Welded junction: the weld rings replace the buried ring and the collar (Spread takes the collar's role).
     let weld: WeldResult | null = null;
+    let attach: ParentAttach | null = null;
     if (junction && opts.weld && (sk.attributes.get(WELD_ATTR)?.[b.start] ?? 0) === 1) {
       const plain = sampleBranch(sk, b, opts, false, 0);
       if (plain.n >= 2) {
         const plainFrames = buildNormals(sk, b, plain, opts);
-        weld = solveBranchWeld(sk, b, plain, plainFrames, sides, opts, section, sqrtA);
+        const solved = solveBranchWeld(sk, b, plain, plainFrames, sides, opts, section, sqrtA);
+        weld = solved ? solved.result : null;
+        attach = solved ? solved.attach : null;
         if (weld) {
           const spliced = spliceWeld(plain, plainFrames, weld);
           sm = spliced.sm;
@@ -400,6 +492,16 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
     if (R < 2) continue;
     const weldRings = weld ? weld.rings : 0;
     const r0 = sm.rad[sm.first] as number;
+    const squash = opts.squash && opts.squash.amount > 0 ? opts.squash : null;
+    const smoothAmount = Math.min(1, Math.max(0, opts.smooth ?? 0));
+    const seamAmount = junction ? Math.min(1, Math.max(0, opts.seam ?? 0)) : 0;
+    // Weld texture blend: the value of every ring (0 at the parent side .. 1 up the child).
+    const blendOpt = weld && attach ? (opts.weld?.blend ?? null) : null;
+    const blendVals = new Float32Array(blendOpt && weld ? R : 0);
+    if (blendOpt && weld) {
+      const rEnd = sm.rad[Math.min(R - 1, weldRings)] as number;
+      for (let i = 0; i < R; i++) blendVals[i] = weldBlendValue(sm.s[i] as number, sm.s[0] as number, weld.sEnd, rEnd, blendOpt.texture);
+    }
     let rMax = 0;
     for (let i = 0; i < R; i++) rMax = Math.max(rMax, sm.rad[i] as number);
     const uTiles = uvo.normalized ? uvo.scaleU : Math.max(1, Math.round(((2 * Math.PI * rMax * uvo.scaleU) / Math.max(1e-4, opts.uvMetres))));
@@ -446,6 +548,28 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
         dv.sEnd = (sm.s[R - 1] as number) - s;
         dv.radius = radius;
       }
+      // Smooth: on a bend the ring plane cuts the tube obliquely, so the section stretches by 1 / cos(half the turn) in the bend plane.
+      let bendK = 0;
+      let ex = 0;
+      let ey = 0;
+      let ez = 0;
+      if (smoothAmount > 0 && i > 0 && i < R - 1) {
+        const d1 = sub([sm.pos[i * 3] as number, sm.pos[i * 3 + 1] as number, sm.pos[i * 3 + 2] as number], [sm.pos[(i - 1) * 3] as number, sm.pos[(i - 1) * 3 + 1] as number, sm.pos[(i - 1) * 3 + 2] as number]);
+        const d2 = sub([sm.pos[(i + 1) * 3] as number, sm.pos[(i + 1) * 3 + 1] as number, sm.pos[(i + 1) * 3 + 2] as number], [sm.pos[i * 3] as number, sm.pos[i * 3 + 1] as number, sm.pos[i * 3 + 2] as number]);
+        const l1 = len(d1);
+        const l2 = len(d2);
+        if (l1 > 1e-9 && l2 > 1e-9) {
+          const turn = sub(mul(d2, 1 / l2), mul(d1, 1 / l1));
+          const flat = sub(turn, mul(Tn, dot(turn, Tn)));
+          const fl = len(flat);
+          if (fl > 1e-6) {
+            bendK = smoothAmount * (bendPushFactor(dot(d1, d2) / (l1 * l2)) - 1);
+            ex = flat[0] / fl;
+            ey = flat[1] / fl;
+            ez = flat[2] / fl;
+          }
+        }
+      }
       for (let j = 0; j < V; j++) {
         const a = (2 * Math.PI * (j % sides)) / sides;
         const c = Math.cos(a);
@@ -453,7 +577,8 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
         const ox = N[0] * c * sqrtA + B[0] * sn / sqrtA;
         const oy = N[1] * c * sqrtA + B[1] * sn / sqrtA;
         const oz = N[2] * c * sqrtA + B[2] * sn / sqrtA;
-        const m = section.radius(a, s) * radius;
+        let m = section.radius(a, s) * radius;
+        if (squash) m *= squashRadius(a, squash.amount, squash.rotate);
         const o = (i * V + j) * 3;
         let dd = 0;
         if (opts.displace) {
@@ -461,6 +586,10 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
           dd = opts.displace(dv);
         }
         const dl = Math.hypot(ox, oy, oz) || 1;
+        if (bendK > 0) {
+          const inPlane = (ox * ex + oy * ey + oz * ez) / dl;
+          m *= 1 + bendK * inPlane * inPlane;
+        }
         gp[o] = (sm.pos[i * 3] as number) + ox * m + (ox / dl - Tn[0] * slope) * dd;
         gp[o + 1] = (sm.pos[i * 3 + 1] as number) + oy * m + (oy / dl - Tn[1] * slope) * dd;
         gp[o + 2] = (sm.pos[i * 3 + 2] as number) + oz * m + (oz / dl - Tn[2] * slope) * dd;
@@ -525,6 +654,10 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
             n[2] + ((weld.parentNormals[pi + 2] as number) - n[2]) * bw,
           ], d);
         }
+        const spineDir: V3 = [sm.tan[i * 3] as number, sm.tan[i * 3 + 1] as number, sm.tan[i * 3 + 2] as number];
+        const blendHere = blendOpt ? (blendVals[i] as number) : 1;
+        if (blendOpt && blendHere < 1) n = lightingNormal(n, spineDir, d, lightingValue(blendOpt.lighting, blendHere));
+        if (seamAmount > 0) n = leanNormal(n, spineDir, seamWeight(s, r0, seamAmount));
         const tg = norm(dPu, perpendicular(n));
         const bit = cross(n, tg);
         const u = (j / sides) * uTiles + uvo.offsetU;
@@ -542,6 +675,28 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
         vx.ao = ao;
         vx.pvx = basePivot[0]; vx.pvy = basePivot[1]; vx.pvz = basePivot[2];
         vx.w0 = w0; vx.w1 = w1; vx.w2 = w2; vx.w3 = w3;
+        if (blendOpt && attach) {
+          // Parent-side UV: the vertex projected into the parent's ring frame (angle unwrapped around the child's direction).
+          const rx = (gp[o] as number) - attach.position[0];
+          const ry = (gp[o + 1] as number) - attach.position[1];
+          const rz = (gp[o + 2] as number) - attach.position[2];
+          const al = rx * attach.axis[0] + ry * attach.axis[1] + rz * attach.axis[2];
+          const qx = rx - al * attach.axis[0];
+          const qy = ry - al * attach.axis[1];
+          const qz = rz - al * attach.axis[2];
+          let dphi = Math.atan2(qx * attach.binormal[0] + qy * attach.binormal[1] + qz * attach.binormal[2], qx * attach.normal[0] + qy * attach.normal[1] + qz * attach.normal[2]) - attach.childPhi;
+          dphi -= Math.round(dphi / (2 * Math.PI)) * 2 * Math.PI;
+          const pTiles = uvo.normalized ? uvo.scaleU : Math.max(1, Math.round((2 * Math.PI * attach.radius * uvo.scaleU) / Math.max(1e-4, opts.uvMetres)));
+          const pu = (((attach.childPhi + dphi) / (2 * Math.PI)) * pTiles + uvo.offsetU) * blendOpt.textureScale;
+          const alongP = attach.along + al;
+          const pv = ((uvo.normalized ? alongP / attach.length : alongP / Math.max(1e-4, opts.uvMetres)) * uvo.scaleV + uvo.offsetV) * blendOpt.textureScale;
+          vx.wb = blendHere;
+          vx.wu = uvo.rotate ? pv : pu;
+          vx.wv = uvo.rotate ? pu : pv;
+          vx.wc = blendOpt.contrast;
+          vx.wn = blendOpt.noise;
+          vx.wa = 1;
+        }
         grid[i * V + j] = vx;
       }
     }

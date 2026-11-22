@@ -9,7 +9,7 @@ import { getNodeDef } from '@/graph/registry';
 const SECTION_STATE_KEY = 'inspector.collapsedSections';
 const ACTIVE_TAB_KEY = 'inspector.activeTabs';
 
-/** Subgroups that render as `.kt-subhead` inside the preceding section card. */
+/** Subgroups that render as `.kt-subhead` inside the preceding section card (`Tab/Subgroup` keys apply to one tab only). */
 const COUPLED_PARENT_SECTION: Record<string, string> = {
   Absolute: 'Generation',
   Density: 'Generation',
@@ -17,6 +17,7 @@ const COUPLED_PARENT_SECTION: Record<string, string> = {
   Early: 'Noise',
   Late: 'Noise',
   Spread: 'Welding',
+  'Skin/Blend': 'Welding',
 };
 
 export interface InspectorParamEntry {
@@ -196,7 +197,7 @@ export function buildInspectorSections(defs: readonly ParamDef[], activeTab: str
     if (pairedSkipIds.has(def.id)) continue;
 
     const rawSub = def.subgroup ?? def.group;
-    const coupledParent = COUPLED_PARENT_SECTION[rawSub];
+    const coupledParent = COUPLED_PARENT_SECTION[`${def.group}/${rawSub}`] ?? COUPLED_PARENT_SECTION[rawSub];
     const sectionTitle = coupledParent ?? rawSub;
     const subheadTitle = coupledParent ? rawSub : null;
     const sectionKey = `${def.group}::${sectionTitle}`;

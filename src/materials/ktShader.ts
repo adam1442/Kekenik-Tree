@@ -47,6 +47,13 @@ export function createKtUniforms(): KtUniforms {
 const VERT_DECL = /* glsl */ `
 varying vec2 vKtUv;
 varying float vKtRand;
+// Welded branches (Skin > Welding > Blend): blend 0 = parent .. 1 = child, the parent's UV, (contrast, noise, active).
+attribute float weldBlend;
+attribute vec2 weldParentUV;
+attribute vec3 weldStyle;
+varying float vKtWeldBlend;
+varying vec2 vKtWeldUv;
+varying vec3 vKtWeldStyle;
 #ifdef KT_BACK_OFFSET
 uniform float uKtBackOffset;
 #endif
@@ -63,6 +70,13 @@ uniform float uKtAoMix;
 
 const VERT_BODY = /* glsl */ `
 vKtUv = uv;
+vKtWeldBlend = weldBlend;
+vKtWeldStyle = weldStyle;
+#ifdef USE_MAP
+vKtWeldUv = (mapTransform * vec3(weldParentUV, 1.0)).xy;
+#else
+vKtWeldUv = weldParentUV;
+#endif
 #ifdef KT_WIND_RAND
 float ktR = windWeights.w;
 #ifdef USE_INSTANCING
@@ -99,6 +113,9 @@ vColor.rgb = vec3(mix(1.0, ao, uKtAoMix));
 const FRAG_DECL = /* glsl */ `
 varying vec2 vKtUv;
 varying float vKtRand;
+varying float vKtWeldBlend;
+varying vec2 vKtWeldUv;
+varying vec3 vKtWeldStyle;
 uniform vec3 uKtVar0;
 uniform vec3 uKtVar1;
 uniform vec3 uKtVar2;
@@ -123,6 +140,30 @@ vec3 ktVariationTint(float r) {
   vec3 tint = min(c / l, vec3(2.0));
   return mix(vec3(1.0), tint, clamp(uKtVarAmount, 0.0, 1.0));
 }
+`;
+
+/**
+ * Bark map sampled twice near a weld: the child's UV and the parent's UV, mixed by a smoothstep over the blend value. Contrast
+ * narrows the transition, noise bends the blend line with waves around the child (the sines have whole periods per U tile, so
+ * the line closes without a seam). Fragments without the active flag (every other mesh) take the plain sample.
+ */
+const WELD_FRAGMENT = /* glsl */ `
+#ifdef USE_MAP
+vec4 ktSampleBark(vec2 uvChild) {
+  vec4 c = texture2D(map, uvChild, uKtMipBias);
+  vec2 gx = dFdx(vKtWeldUv);
+  vec2 gy = dFdy(vKtWeldUv);
+  if (vKtWeldStyle.z > 0.5 && vKtWeldBlend < 0.999) {
+    float bias = exp2(uKtMipBias);
+    vec4 p = textureGrad(map, vKtWeldUv, gx * bias, gy * bias);
+    float wave = sin(vKtUv.x * 18.849556 + 0.7) * 0.6 + sin(vKtUv.x * 43.982297 + vKtUv.y * 3.0) * 0.4;
+    float e = vKtWeldBlend + wave * vKtWeldStyle.y * 0.25 * sin(3.14159265 * vKtWeldBlend);
+    float w = mix(0.5, 0.02, clamp(vKtWeldStyle.x, 0.0, 1.0));
+    c = mix(p, c, smoothstep(0.5 - w, 0.5 + w, e));
+  }
+  return c;
+}
+#endif
 `;
 
 const ROUGHNESS = /* glsl */ `
@@ -186,7 +227,7 @@ export function lightsFragmentBegin(): string {
 let lightsChunk: string | null = null;
 
 /** three.js map / alphaMap chunks with a global texture LOD bias (Viewport Quality > Mip bias). */
-const MAP_FRAGMENT = ShaderChunk.map_fragment.replace('texture2D( map, vMapUv )', 'texture2D( map, vMapUv, uKtMipBias )');
+const MAP_FRAGMENT = ShaderChunk.map_fragment.replace('texture2D( map, vMapUv )', 'ktSampleBark( vMapUv )');
 const ALPHAMAP_FRAGMENT = ShaderChunk.alphamap_fragment.replace('texture2D( alphaMap, vAlphaMapUv )', 'texture2D( alphaMap, vAlphaMapUv, uKtMipBias )');
 
 function patch(shader: WebGLProgramParametersWithUniforms, u: KtUniforms): void {
@@ -198,6 +239,7 @@ function patch(shader: WebGLProgramParametersWithUniforms, u: KtUniforms): void 
     .replace('#include <begin_vertex>', `#include <begin_vertex>\n${VERT_BODY}`);
   shader.fragmentShader = shader.fragmentShader
     .replace('#include <common>', `#include <common>\n${FRAG_DECL}`)
+    .replace('#include <map_pars_fragment>', `#include <map_pars_fragment>\n${WELD_FRAGMENT}`)
     .replace('#include <map_fragment>', MAP_FRAGMENT)
     .replace('#include <alphamap_fragment>', ALPHAMAP_FRAGMENT)
     .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= ktVariationTint(vKtRand);')
@@ -213,7 +255,9 @@ export class KtPhysicalMaterial extends MeshPhysicalMaterial {
     this.ktUniforms = uniforms;
     this.roughness = 1;
     this.onBeforeCompile = (shader) => patch(shader, this.ktUniforms);
-    this.customProgramCacheKey = () => 'kt3';
+    this.customProgramCacheKey = () => 'kt4';
+    // Meshes without the weld channels read neutral values (blend inactive).
+    Object.assign(this, { defaultAttributeValues: { weldBlend: [0], weldParentUV: [0, 0], weldStyle: [0, 0, 0] } });
   }
 
   override copy(source: MeshPhysicalMaterial): this {
