@@ -257,6 +257,15 @@ Main stem with crown height, buttress flare, lean, gnarliness, and profile curve
 | Clamp | Max | `skinRadiusMax` | 0..10 (slider 0..1) m | 0 |  |  | Largest radius of any point. 0 = off. |
 | Squash | Amount | `squashAmount` | 0..1 | 0 |  |  | Reduces the radius on one side: the section becomes an ellipse (1 = flat). Welds follow the squashed profile. |
 | Squash | Rotate | `squashRotate` | -180..180 ° | 0 |  |  | Direction of the flattened side around the spine. |
+| Splits | Chance | `splitsChance` | 0..1 | 0 |  |  | Probability that the branch divides into two open ends at its tip. Needs a bark texture with at least two U tiles around the tube. |
+| Splits | Balance | `splitsBalance` | 0..1 | 0.5 |  |  | 0.5 gives both sides the same radius; lower or higher moves radius from Side 1 to Side 2 (the cross-section area is kept). |
+| Splits | Seed | `splitsSeed` | seed | 0 |  |  | Seed of the split decision: changes which branches split without changing anything else. |
+| Split spread | Side 1 | `splitsSpread1` | 0..85 ° | 25 |  |  | Angle of Side 1 away from the centre of the tree. |
+| Split spread | Side 2 | `splitsSpread2` | 0..85 ° | 25 |  |  | Angle of Side 2 toward the centre of the tree. |
+| Split expand | Side 1 | `splitsExpand1` | 0.25..3 | 1 |  |  | Scales the cross-section of Side 1 from its default (1). |
+| Split expand | Side 2 | `splitsExpand2` | 0.25..3 | 1 |  |  | Scales the cross-section of Side 2 from its default (1). |
+| Split smooth | Inner | `splitsSmoothInner` | 0..1 | 0.25 |  |  | 0 = hard crease between the two sides, 1 = no crease. |
+| Split smooth | Outer | `splitsSmoothOuter` | 0..1 | 0.5 |  |  | Smoothness of the outer bend where the split occurs (0 = hard corner). |
 | Geometry | Close end | `capEnd` | bool | true |  |  | Closes the tip of the tube with a cap. |
 | Geometry | Tip rings | `tipRings` | 1..8 | 2 |  |  | Rings of the rounded tip cap. |
 | Geometry | Close base | `capBase` | Auto / Yes / No | auto |  |  | Auto closes branches that do not grow from a parent. |
@@ -417,8 +426,8 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 | Common | Sink | `sink` | -5..5 (slider -1..1) m | 0 | yes |  | Start offset of the nodes into (+) or out of (-) the parent; sinks trunks under the ground. |
 | Common | Pruning | `pruningCurve` | curve | curve |  |  | Runs over the parent from First (left) to Last (right). Nodes are removed where the curve is below 0.5. |
 | Common | Seed | `seed` | seed | 0 |  |  | Random seed. Change it to get a different variation of the same settings. |
-| Extend parent | Type | `extendParent` | None / Any / Split 1 / Split 2 / Skinny / Fat / Breaks only / Bottom | none |  |  | Continues the parent instead of starting a new branch. Valid only under a Branch parent. Split 1 / Split 2 / Skinny / Fat currently behave like Any. |
-| Extend parent | Count | `extendCount` | 1..8 | 1 |  |  | Extensions created per parent. |
+| Extend parent | Type | `extendParent` | None / Any / Split 1 / Split 2 / Skinny / Fat / Breaks only / Bottom | none |  |  | Continues an open end of the parent instead of starting a new branch. Valid only under a Branch or Trunk parent. Any = every open end (the two sides of a split count, the split branch itself does not), Split 1 / Split 2 = that side, Skinny / Fat = the thinner / thicker side, Breaks only = branches that broke, Bottom = the base of the parent. |
+| Extend parent | Count | `extendCount` | 1..8 | 1 |  |  | Extensions created per open end (several extensions on one end separate by Extensions > Spread). |
 | Knockout | Amount | `knockout` | 0..1 | 0 |  | yes | Randomly removes this share of the nodes after the mode has placed them. The curve varies it along the parent. |
 | Knockout | + Resolution | `knockoutResolution` | -1..1 | 0 |  |  | Added to the amount for every level of detail below the highest: positive removes more nodes at lower detail, negative fewer. |
 | Limits | Sub-generations | `generations` | 1..5 | 1 |  |  | Recursive branching levels evaluated inside this generator (1 = single level). |
@@ -501,6 +510,8 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 | Splits & Termination | Split balance | `splitBalance` | 0.15..0.85 | 0.5 |  |  | Share of the radius that goes to the main fork. |
 | Splits & Termination | Split position | `splitStart` | 0.15..0.9 | 0.58 |  |  | Position along the spine from which forks may occur. |
 | Splits & Termination | Max split depth | `splitMaxDepth` | 1..3 | 1 |  |  | Maximum number of successive forks. |
+| Extensions | Length scale | `extensionLengthScale` | 0.05..8 (slider 0.05..3) | 1 |  |  | Scales the spine length of the extensions made by this node (see Generation > Extend parent). |
+| Extensions | Spread | `extensionSpread` | 0..90 ° | 15 |  | yes | Separates extensions that share one open end (Count above 1). The curve sets how much of the spread applies along the length. |
 | Prune | Interior | `pruneInterior` | 0..1 | 0 |  | yes | Removes branches that grow towards the inside of the model. The curve scales it along the parent. |
 | Prune | Up | `pruneUp` | 0..1 | 0 |  | yes | Removes branches that grow upwards (the steeper, the more likely). |
 | Prune | Down | `pruneDown` | 0..1 | 0 |  | yes | Removes branches that grow downwards (the steeper, the more likely). |
@@ -553,6 +564,18 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 | Clamp | Max | `skinRadiusMax` | 0..10 (slider 0..1) m | 0 |  |  | Largest radius of any point. 0 = off. |
 | Squash | Amount | `squashAmount` | 0..1 | 0 |  |  | Reduces the radius on one side: the section becomes an ellipse (1 = flat). Welds follow the squashed profile. |
 | Squash | Rotate | `squashRotate` | -180..180 ° | 0 |  |  | Direction of the flattened side around the spine. |
+| Splits | Chance | `splitsChance` | 0..1 | 0 |  |  | Probability that the branch divides into two open ends at its tip. Needs a bark texture with at least two U tiles around the tube. |
+| Splits | Balance | `splitsBalance` | 0..1 | 0.5 |  |  | 0.5 gives both sides the same radius; lower or higher moves radius from Side 1 to Side 2 (the cross-section area is kept). |
+| Splits | Seed | `splitsSeed` | seed | 0 |  |  | Seed of the split decision: changes which branches split without changing anything else. |
+| Split spread | Side 1 | `splitsSpread1` | 0..85 ° | 25 |  |  | Angle of Side 1 away from the centre of the tree. |
+| Split spread | Side 2 | `splitsSpread2` | 0..85 ° | 25 |  |  | Angle of Side 2 toward the centre of the tree. |
+| Split expand | Side 1 | `splitsExpand1` | 0.25..3 | 1 |  |  | Scales the cross-section of Side 1 from its default (1). |
+| Split expand | Side 2 | `splitsExpand2` | 0.25..3 | 1 |  |  | Scales the cross-section of Side 2 from its default (1). |
+| Split smooth | Inner | `splitsSmoothInner` | 0..1 | 0.25 |  |  | 0 = hard crease between the two sides, 1 = no crease. |
+| Split smooth | Outer | `splitsSmoothOuter` | 0..1 | 0.5 |  |  | Smoothness of the outer bend where the split occurs (0 = hard corner). |
+| Extensions | Radius | `extensionRadius` | 0..1 | 1 |  | yes | How much of the profile curve is used. The curve is the radius along the extension relative to the radius the branch would have there (it starts at the parent radius). |
+| Extensions | Normal smooth | `extensionNormalSmooth` | 0..1 | 0.5 |  |  | Smooths the normals at the base of extensions to hide seams between several extensions. |
+| Extensions | Displacement scale | `extensionDisplaceScale` | 0..8 (slider 0..3) | 1 |  |  | Scales the displacement on the extensions made by this node. |
 | Geometry | Close end | `capEnd` | bool | true |  |  | Closes the tip of the tube with a cap. |
 | Geometry | Tip rings | `tipRings` | 1..8 | 2 |  |  | Rings of the rounded tip cap. |
 | Geometry | Close base | `capBase` | Auto / Yes / No | auto |  |  | Auto closes branches that do not grow from a parent. |
@@ -583,6 +606,7 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
+| Extensions | Extension style | `extensionUvStyle` | Automatic / Manual (match) / Manual (match u only) / Manual (full control) | automatic |  |  | How the texture coordinates of extensions follow their parent. Extensions always continue the parent mapping; the manual styles arrive with the UV mapping update and map as Automatic for now. |
 | Mapping | Mode | `uvMode` | Metric / Normalized | metric |  |  | How UVs are laid out: metric (real-world scale) or normalized (0…1). |
 | Mapping | Rotate 90° | `uvRotate` | bool | false |  |  | Rotates the UV layout by 90°. |
 | Tiling | U scale | `uvScaleU` | 0.01..100 (slider 0.01..10) | 1 |  |  | Texture tiling around the stem. |
@@ -861,6 +885,15 @@ Lightweight spine-only structural guides for attaching foliage or child branches
 | Clamp | Max | `skinRadiusMax` | 0..10 (slider 0..1) m | 0 |  |  | Largest radius of any point. 0 = off. |
 | Squash | Amount | `squashAmount` | 0..1 | 0 |  |  | Reduces the radius on one side: the section becomes an ellipse (1 = flat). Welds follow the squashed profile. |
 | Squash | Rotate | `squashRotate` | -180..180 ° | 0 |  |  | Direction of the flattened side around the spine. |
+| Splits | Chance | `splitsChance` | 0..1 | 0 |  |  | Probability that the branch divides into two open ends at its tip. Needs a bark texture with at least two U tiles around the tube. |
+| Splits | Balance | `splitsBalance` | 0..1 | 0.5 |  |  | 0.5 gives both sides the same radius; lower or higher moves radius from Side 1 to Side 2 (the cross-section area is kept). |
+| Splits | Seed | `splitsSeed` | seed | 0 |  |  | Seed of the split decision: changes which branches split without changing anything else. |
+| Split spread | Side 1 | `splitsSpread1` | 0..85 ° | 25 |  |  | Angle of Side 1 away from the centre of the tree. |
+| Split spread | Side 2 | `splitsSpread2` | 0..85 ° | 25 |  |  | Angle of Side 2 toward the centre of the tree. |
+| Split expand | Side 1 | `splitsExpand1` | 0.25..3 | 1 |  |  | Scales the cross-section of Side 1 from its default (1). |
+| Split expand | Side 2 | `splitsExpand2` | 0.25..3 | 1 |  |  | Scales the cross-section of Side 2 from its default (1). |
+| Split smooth | Inner | `splitsSmoothInner` | 0..1 | 0.25 |  |  | 0 = hard crease between the two sides, 1 = no crease. |
+| Split smooth | Outer | `splitsSmoothOuter` | 0..1 | 0.5 |  |  | Smoothness of the outer bend where the split occurs (0 = hard corner). |
 | Geometry | Close end | `capEnd` | bool | true |  |  | Closes the tip of the tube with a cap. |
 | Geometry | Tip rings | `tipRings` | 1..8 | 2 |  |  | Rings of the rounded tip cap. |
 | Geometry | Close base | `capBase` | Auto / Yes / No | auto |  |  | Auto closes branches that do not grow from a parent. |

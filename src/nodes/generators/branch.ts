@@ -25,7 +25,9 @@ import {
 import { evaluateRootLevel, extractPlacement, type RootLevelKind } from './rootLevel';
 import { StructureSkeletonBuilder } from './skeletonBuild';
 import { compileSpineConfig, growSpineIntoBuilder, type CompiledSpineConfig } from './spine';
+import { EXTENSION_SLOT_BASE } from '@/generators/common/extend';
 import { SUB_LEVEL_ATTR } from '@/generators/skin';
+import { EXTENSION_ATTR, EXTENSION_DISPLACE_ATTR, EXTENSION_SMOOTH_ATTR, SPLIT_ATTR } from '@/generators/split';
 import { createWeldLevel, readWeldConfig, WELD_ATTR, WELD_SELF_ATTR, weldChild } from './weldApply';
 
 function evalParentCurve(params: NodeParams, id: string, u: number, fallback = 1): number {
@@ -69,6 +71,7 @@ function growOneLevel(
     const prep = prepareParentBranch(parentSk, pb);
     const branchRng = ctx.rng.fork(`lvl:${levelIndex}:pb:${pb.id}`);
     const placements = generateChildPlacements(prep, params, branchRng, ctx.lod, maxTotalRemaining - written, env);
+    const extensionCount = placements.reduce((n, p) => n + (p.isExtension ? 1 : 0), 0);
 
     for (let pi = 0; pi < placements.length && written < maxTotalRemaining; pi++) {
       if ((pi & 127) === 0) ctx.cancel.throwIfCancelled();
@@ -88,9 +91,10 @@ function growOneLevel(
         pl.side ?? 0,
         icfg.unify,
       );
-      const pitchDeg =
-        sampleVariance(childRng.fork('pit'), icfg.pitchDeg, icfg.pitchVar, 30) *
-        evalParentCurve(inst.params, 'pitch', u, 1);
+      // Extensions continue the parent's direction: no pitch
+      const pitchDeg = pl.isExtension
+        ? 0
+        : sampleVariance(childRng.fork('pit'), icfg.pitchDeg, icfg.pitchVar, 30) * evalParentCurve(inst.params, 'pitch', u, 1);
 
       const start = buildChildInitialFrame(
         { tangent: sample.tangent, normal: sample.normal, binormal: sample.binormal },
@@ -119,7 +123,7 @@ function growOneLevel(
         origin = v3Add(origin, v3Scale(radial, sample.radius));
       }
       const sink = sampledSink(params, childRng);
-      if (Math.abs(sink) > 1e-5) {
+      if (!pl.isExtension && Math.abs(sink) > 1e-5) {
         origin = v3Add(origin, v3Scale(frame.tangent, -sink));
       }
 
@@ -139,7 +143,8 @@ function growOneLevel(
           parentRadius: sample.radius,
           hasParent: true,
           isExtension: pl.isExtension,
-          lengthScale: inst.lengthScale,
+          lengthScale: inst.lengthScale * (pl.isExtension ? icfg.extension.lengthScale : 1),
+          ...(pl.isExtension ? { extensionIndex: Math.max(0, pl.slotIndex - EXTENSION_SLOT_BASE), extensionCount, extensionAzimuth: pl.azimuthRad } : {}),
           radiusScale: inst.radiusScale,
           side: pl.side,
           parentLengthSegments: Math.max(0, pb.count - 1),
@@ -181,6 +186,10 @@ function mergeSkeletons(levels: readonly Skeleton[]): Skeleton {
     const sd = sk.attributes.get('side');
     const rs = sk.attributes.get('radialSides');
     const oe = sk.attributes.get('openEnd');
+    const splitInfo = sk.attributes.get(SPLIT_ATTR);
+    const extInfo = sk.attributes.get(EXTENSION_ATTR);
+    const extSmooth = sk.attributes.get(EXTENSION_SMOOTH_ATTR);
+    const extDisplace = sk.attributes.get(EXTENSION_DISPLACE_ATTR);
     const wl = sk.attributes.get(WELD_ATTR);
     const ws = sk.attributes.get(WELD_SELF_ATTR);
     const curPointOffset = builder.pointCount;
@@ -213,6 +222,12 @@ function mergeSkeletons(levels: readonly Skeleton[]): Skeleton {
         ...(oe ? { openEnd: (oe[b.start] as number) > 0 } : {}),
       });
       if (added.branchId >= 0 && li > 0) builder.setBranchExtra(added.branchId, SUB_LEVEL_ATTR, 1);
+      if (added.branchId >= 0) {
+        for (const [attr, arr] of [[SPLIT_ATTR, splitInfo], [EXTENSION_ATTR, extInfo], [EXTENSION_SMOOTH_ATTR, extSmooth], [EXTENSION_DISPLACE_ATTR, extDisplace]] as const) {
+          const v = arr ? (arr[b.start] as number) : 0;
+          if (v !== 0) builder.setBranchExtra(added.branchId, attr, v);
+        }
+      }
       if (added.branchId >= 0 && wl && (wl[b.start] as number) > 0) {
         builder.setBranchExtra(added.branchId, WELD_ATTR, wl[b.start] as number);
         if (ws && (ws[b.start] as number) > 0) builder.setBranchExtra(added.branchId, WELD_SELF_ATTR, 1);

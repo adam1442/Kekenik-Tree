@@ -18,8 +18,10 @@ export interface GenerationDefaults {
   includeBranchExtended?: boolean;
   /** First-generation capable: adds the `Tree placement` section (distribution inside the Tree disc). */
   placement?: boolean;
-  /** Adds the `Extend parent` section (Branch, Cap, Leaf, Batched leaf: valid under a Branch parent). */
+  /** Adds the `Extend parent` section (Branch, Cap, Leaf, Batched leaf: valid under a Branch or Trunk parent). */
   extend?: boolean;
+  /** Hides `Extend parent > Count` (the Cap closes every open end it takes, one cap each). */
+  extendNoCount?: boolean;
   /** Adds `Mesh alignment` to the `More` section (Leaf, Batched leaf: used when the parent is a mesh). */
   meshAlignment?: boolean;
 }
@@ -269,9 +271,9 @@ export function generationParams(d: GenerationDefaults): ParamDef[] {
   if (d.extend) {
     list.push(
       ex.enumOf('extendParent', 'Type', 'None', ['None', 'Any', 'Split 1', 'Split 2', 'Skinny', 'Fat', 'Breaks only', 'Bottom'], {
-        tooltip: 'Continues the parent instead of starting a new branch. Valid only under a Branch parent. Split 1 / Split 2 / Skinny / Fat currently behave like Any.',
+        tooltip: 'Continues an open end of the parent instead of starting a new branch. Valid only under a Branch or Trunk parent. Any = every open end (the two sides of a split count, the split branch itself does not), Split 1 / Split 2 = that side, Skinny / Fat = the thinner / thicker side, Breaks only = branches that broke, Bottom = the base of the parent.',
       }),
-      ex.int('extendCount', 'Count', 1, { min: 1, max: 8, visibleIf: extendActive, tooltip: 'Extensions created per parent.' }),
+      ...(d.extendNoCount ? [] : [ex.int('extendCount', 'Count', 1, { min: 1, max: 8, visibleIf: extendActive, tooltip: 'Extensions created per open end (several extensions on one end separate by Extensions > Spread).' })]),
     );
   }
 
@@ -544,6 +546,20 @@ export function spineParams(
     );
   }
 
+  if (opts.kind === 'branch') {
+    const ex = section('Spine', 'Extensions');
+    out.push(
+      ex.float('extensionLengthScale', 'Length scale', 1, { min: 0.05, max: 8, softMax: 3, tooltip: 'Scales the spine length of the extensions made by this node (see Generation > Extend parent).' }),
+      ex.float('extensionSpread', 'Spread', 15, {
+        min: 0,
+        max: 90,
+        unit: '°',
+        curve: true,
+        tooltip: 'Separates extensions that share one open end (Count above 1). The curve sets how much of the spread applies along the length.',
+      }),
+    );
+  }
+
   const rank = (p: ParamDef): number => {
     const i = SPINE_SECTION_ORDER.indexOf(p.subgroup ?? '');
     return i < 0 ? SPINE_SECTION_ORDER.length : i;
@@ -552,7 +568,7 @@ export function spineParams(
 }
 
 /** Section order of the Spine tab. */
-const SPINE_SECTION_ORDER = ['Length', 'Clamp', 'Orientation', 'Shape', 'Parent Curl', 'Zigzag', 'Segment length', 'Radius', 'Noise', 'Early', 'Late', 'Jink', 'Path', 'Break', 'Splits & Termination', 'Prune', 'Root Growth'];
+const SPINE_SECTION_ORDER = ['Length', 'Clamp', 'Orientation', 'Shape', 'Parent Curl', 'Zigzag', 'Segment length', 'Radius', 'Noise', 'Early', 'Late', 'Jink', 'Path', 'Break', 'Splits & Termination', 'Extensions', 'Prune', 'Root Growth'];
 
 export function forcesParams(): ParamDef[] {
   const f = section('Forces', 'Forces');
@@ -779,13 +795,53 @@ function skinShapeParams(radius: SkinRadiusKind, defaultSpineOnly: boolean): Par
  * Skin tab. `sides` adds the `Sides` row for nodes without a Segments tab (Cap); `welding` adds the Welding section;
  * `radius` adds the generator-level Radius / Clamp options.
  */
-export function skinParams(defaultSpineOnly = false, sides?: number, welding = false, radius: SkinRadiusKind = 'none'): ParamDef[] {
+/** Skin > Splits: the branch ends in two fused open ends (Extend parent / Cap continue them). */
+export function splitParams(): ParamDef[] {
+  const s = section('Skin', 'Splits');
+  const sp = section('Skin', 'Split spread');
+  const ex = section('Skin', 'Split expand');
+  const sm = section('Skin', 'Split smooth');
+  return [
+    s.float('splitsChance', 'Chance', 0, {
+      min: 0,
+      max: 1,
+      tooltip: 'Probability that the branch divides into two open ends at its tip. Needs a bark texture with at least two U tiles around the tube.',
+    }),
+    s.float('splitsBalance', 'Balance', 0.5, { min: 0, max: 1, tooltip: '0.5 gives both sides the same radius; lower or higher moves radius from Side 1 to Side 2 (the cross-section area is kept).' }),
+    s.seed('splitsSeed', 'Seed'),
+    sp.float('splitsSpread1', 'Side 1', 25, { min: 0, max: 85, unit: '°', tooltip: 'Angle of Side 1 away from the centre of the tree.' }),
+    sp.float('splitsSpread2', 'Side 2', 25, { min: 0, max: 85, unit: '°', tooltip: 'Angle of Side 2 toward the centre of the tree.' }),
+    ex.float('splitsExpand1', 'Side 1', 1, { min: 0.25, max: 3, tooltip: 'Scales the cross-section of Side 1 from its default (1).' }),
+    ex.float('splitsExpand2', 'Side 2', 1, { min: 0.25, max: 3, tooltip: 'Scales the cross-section of Side 2 from its default (1).' }),
+    sm.float('splitsSmoothInner', 'Inner', 0.25, { min: 0, max: 1, tooltip: '0 = hard crease between the two sides, 1 = no crease.' }),
+    sm.float('splitsSmoothOuter', 'Outer', 0.5, { min: 0, max: 1, tooltip: 'Smoothness of the outer bend where the split occurs (0 = hard corner).' }),
+  ];
+}
+
+/** Skin > Extensions (Branch only): how the extensions made by this node blend into their parent. */
+function extensionSkinParams(): ParamDef[] {
+  const ex = section('Skin', 'Extensions');
+  return [
+    ex.float('extensionRadius', 'Radius', 1, {
+      min: 0,
+      max: 1,
+      curve: true,
+      tooltip: 'How much of the profile curve is used. The curve is the radius along the extension relative to the radius the branch would have there (it starts at the parent radius).',
+    }),
+    ex.float('extensionNormalSmooth', 'Normal smooth', 0.5, { min: 0, max: 1, tooltip: 'Smooths the normals at the base of extensions to hide seams between several extensions.' }),
+    ex.float('extensionDisplaceScale', 'Displacement scale', 1, { min: 0, max: 8, softMax: 3, tooltip: 'Scales the displacement on the extensions made by this node.' }),
+  ];
+}
+
+export function skinParams(defaultSpineOnly = false, sides?: number, welding = false, radius: SkinRadiusKind = 'none', extensions = false): ParamDef[] {
   const g = section('Skin', 'Geometry');
   const n = section('Skin', 'Normals');
   const c = section('Skin', 'Vertex color');
   const j = section('Skin', 'Junction');
   return [
     ...skinShapeParams(radius, defaultSpineOnly),
+    ...(radius !== 'none' ? splitParams() : []),
+    ...(extensions ? extensionSkinParams() : []),
     ...(sides !== undefined ? [g.int('sides', 'Sides', sides, { min: 3, max: 64 })] : []),
     g.bool('capEnd', 'Close end', true),
     g.int('tipRings', 'Tip rings', 2, { min: 1, max: 8, tooltip: 'Rings of the rounded tip cap.' }),
@@ -802,10 +858,18 @@ export function skinParams(defaultSpineOnly = false, sides?: number, welding = f
   ];
 }
 
-export function uvParams(): ParamDef[] {
+export function uvParams(extensions = false): ParamDef[] {
   const m = section('UV', 'Mapping');
   const t = section('UV', 'Tiling');
+  const ex = section('UV', 'Extensions');
   return [
+    ...(extensions
+      ? [
+          ex.enumOf('extensionUvStyle', 'Extension style', 'Automatic', ['Automatic', 'Manual (match)', 'Manual (match u only)', 'Manual (full control)'], {
+            tooltip: 'How the texture coordinates of extensions follow their parent. Extensions always continue the parent mapping; the manual styles arrive with the UV mapping update and map as Automatic for now.',
+          }),
+        ]
+      : []),
     m.enumOf('uvMode', 'Mode', 'Metric', ['Metric', 'Normalized']),
     m.bool('uvRotate', 'Rotate 90°', false),
     t.float('uvScaleU', 'U scale', 1, { min: 0.01, max: 100, softMax: 10 }),
@@ -846,9 +910,9 @@ export function displacementParams(): ParamDef[] {
       tooltip: 'Height map from the Displacements panel. A warning badge shows on the node when the map is missing or not loaded.',
     },
     d.bool('displaceEnabled', 'Enabled', true, { visibleIf: active }),
-    d.float('displaceAmount', 'Amount', 0, { min: -5, max: 5, softMin: 0, softMax: 0.2, unit: 'm', curve: true, visibleIf: active, tooltip: 'Displacement in metres at full height. The curve scales it along the branch length.' }),
-    d.float('displaceRadiusAmount', '+ % of radius', 0, { min: -1, max: 2, visibleIf: active, tooltip: 'Extra amount relative to the local radius (thick trunks get deeper bark).' }),
-    d.float('displaceOffset', 'Offset', 0, { min: -1, max: 1, visibleIf: active, tooltip: 'Bias added to the height before scaling.' }),
+    d.float('displaceAmount', 'Amount', 0, { min: -5, max: 5, softMin: 0, softMax: 0.2, unit: 'm', curve: true, tooltip: 'Displacement in metres at full height. The curve scales it along the branch length.' }),
+    d.float('displaceRadiusAmount', '+ % of radius', 0, { min: -1, max: 2, tooltip: 'Extra amount relative to the local radius (thick trunks get deeper bark).' }),
+    d.float('displaceOffset', 'Offset', 0, { min: -1, max: 1, tooltip: 'Bias added to the height before scaling.' }),
     d.bool('displaceMidGrey', 'Mid-grey is neutral', true, { visibleIf: active, tooltip: 'On: 50% grey does not move the surface (both directions). Off: black = no displacement, white = full amount outward.' }),
     d.enumOf('displaceDirection', 'Direction', 'Normal', ['Normal', 'Radial'], { visibleIf: active }),
     m.enumOf('displaceTiling', 'Tiling', 'World', ['World', 'Normalized'], { visibleIf: active, tooltip: 'World: one image tile covers "Tile size" metres, no stretching on long or thick branches.' }),
@@ -856,13 +920,13 @@ export function displacementParams(): ParamDef[] {
     m.float('displaceScale', 'Scale', 1, { min: 0.01, max: 50, visibleIf: active }),
     m.float('displaceScaleU', 'Scale U', 1, { min: 0.01, max: 50, visibleIf: active }),
     m.float('displaceScaleV', 'Scale V', 1, { min: 0.01, max: 50, visibleIf: active }),
-    m.float('displaceRotation', 'Rotation', 0, { min: -360, max: 360, unit: '°', visibleIf: active, tooltip: 'Snapped to 90° steps while seams are locked.' }),
+    m.float('displaceRotation', 'Rotation', 0, { min: -360, max: 360, unit: '°', tooltip: 'Snapped to 90° steps while seams are locked.' }),
     m.bool('displaceLockSeams', 'Lock seams', true, { visibleIf: active, tooltip: 'Round the tiling around the trunk to a whole number so the U seam is continuous.' }),
-    f.float('displaceFadeBase', 'Fade at junctions', 1.5, { min: 0, max: 10, visibleIf: active, tooltip: 'Fade-in length (in radii) where a branch leaves its parent: prevents cracks at junctions.' }),
-    f.float('displaceFadeTip', 'Fade at tips', 1, { min: 0, max: 10, visibleIf: active, tooltip: 'Fade-out length (in radii) toward the tip / cap.' }),
+    f.float('displaceFadeBase', 'Fade at junctions', 1.5, { min: 0, max: 10, tooltip: 'Fade-in length (in radii) where a branch leaves its parent: prevents cracks at junctions.' }),
+    f.float('displaceFadeTip', 'Fade at tips', 1, { min: 0, max: 10, tooltip: 'Fade-out length (in radii) toward the tip / cap.' }),
     f.bool('displaceLodFade', 'LOD fade', true, { visibleIf: active, tooltip: 'Fade the amount out between LOD 1 and 3.' }),
     sd.bool('displaceAutoSubdivide', 'Auto-subdivide', true, { visibleIf: active, tooltip: 'Add rings and sides so the mesh has enough vertices to carry the height detail.' }),
-    sd.float('displaceDetail', 'Detail size', 0.03, { min: 0.002, max: 1, softMax: 0.2, unit: 'm', visibleIf: active, tooltip: 'Target quad size when auto-subdividing (smaller = more detail, more triangles).' }),
+    sd.float('displaceDetail', 'Detail size', 0.03, { min: 0.002, max: 1, softMax: 0.2, unit: 'm', tooltip: 'Target quad size when auto-subdividing (smaller = more detail, more triangles).' }),
     sd.int('displaceMinSides', 'Min sides', 16, { min: 3, max: 128, visibleIf: active }),
     n.float('displaceNoise', 'Noise', 0.5, { min: 0, max: 1 }),
     n.seed('displaceSeed', 'Seed'),

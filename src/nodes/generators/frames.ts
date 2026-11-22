@@ -1,3 +1,4 @@
+import { SPLIT_ATTR } from '@/generators/split';
 import type { Branch, Skeleton } from '@/contracts/skeleton';
 import { clamp } from '@/core/math';
 
@@ -268,6 +269,8 @@ export interface PreparedParentBranch {
   arcLength: number;
   /** The branch ends in a break (open end). Undefined when the upstream skeleton carries no `openEnd` attribute. */
   openEnd?: boolean;
+  /** `splitInfo` flags of the branch (`generators/split`): it ends in a split / it is one side of a split. 0 = ordinary. */
+  splitFlags: number;
 }
 
 export interface ParentSample {
@@ -369,7 +372,9 @@ export function prepareParentBranch(skeleton: Skeleton, branch: Branch): Prepare
 
   const openAttr = skeleton.attributes.get('openEnd');
   const openEnd = openAttr && openAttr.length === skeleton.count ? (openAttr[branch.start] as number) > 0 : undefined;
-  return { branch, positions, radii, ages, t, tangents, normals, binormals, curvatures, arcLength, ...(openEnd !== undefined ? { openEnd } : {}) };
+  const splitAttr = skeleton.attributes.get(SPLIT_ATTR);
+  const splitInfo = splitAttr && splitAttr.length === skeleton.count ? Math.round(splitAttr[branch.start] as number) : 0;
+  return { branch, positions, radii, ages, t, tangents, normals, binormals, curvatures, arcLength, splitFlags: splitInfo, ...(openEnd !== undefined ? { openEnd } : {}) };
 }
 
 /** Continuously interpolate position, RMF frame, radius, and nearest vertex index at `u` in [0, 1]. */

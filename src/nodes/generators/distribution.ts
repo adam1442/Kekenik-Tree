@@ -27,7 +27,7 @@ import {
   normalizedAlong,
   pruningKeeps,
 } from '@/generators/common';
-import { EXTEND_PARENT_TYPE } from '@/generators/common/extend';
+import { EXTEND_PARENT_TYPES, EXTENSION_SLOT_BASE } from '@/generators/common/extend';
 import { envFiltersByPosition, keepsAtPosition, type GenerationEnv } from './generationEnv';
 import { findCurvaturePeaks, sampleParentBranch, type PreparedParentBranch } from './frames';
 
@@ -293,12 +293,12 @@ export function generateChildPlacements(
     });
   }
 
-  // Extend parent (seamless extensions at the tip or base of the parent). Only valid under a Branch parent.
+  // Extend parent (seamless extensions at the tip or base of the parent). Only valid under a Branch or Trunk parent.
   const extendType = asExtendType(getString(params, 'extendParent', 'none'));
-  if (extendType !== 'none' && accepted.length < maxRemaining && (env === undefined || env.parentType === undefined || env.parentType === EXTEND_PARENT_TYPE)) {
+  if (extendType !== 'none' && accepted.length < maxRemaining && (env === undefined || env.parentType === undefined || EXTEND_PARENT_TYPES.has(env.parentType))) {
     const extCount = Math.min(maxRemaining - accepted.length, Math.max(1, Math.round(getNumber(params, 'extendCount', 1))));
-    const positions = extensionPositions(extendType, extCount, branchLooksBroken(prep));
-    const baseSlot = 100_000;
+    const positions = extensionPositions(extendType, extCount, branchLooksBroken(prep), prep.splitFlags);
+    const baseSlot = EXTENSION_SLOT_BASE;
     for (let e = 0; e < positions.length; e++) {
       const az = rotationOffset + groupRoll + (e / Math.max(1, positions.length)) * Math.PI * 2;
       accepted.push({

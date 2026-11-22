@@ -1,7 +1,9 @@
 import type { MeshData } from '@/contracts/mesh';
 import type { NodeContext, NodeInputs, NodeOutputs } from '@/contracts/nodes';
 import { getBool, getNumber, getString, type NodeParams } from '@/contracts/params';
-import { emptySkeleton, SkeletonBuilder } from '@/contracts/skeleton';
+import { emptySkeleton, SkeletonBuilder, type Skeleton } from '@/contracts/skeleton';
+import { asExtendType } from '@/generators/common/extend';
+import { collectOpenEnds } from '@/generators/split';
 import { deg2rad } from '@/core/math';
 import { AttachmentBuilder } from '@/geometry/attachments';
 import { composeMatrix, placeMeshes } from '@/geometry/instancing';
@@ -278,20 +280,24 @@ export function evaluateMeshInstances(ctx: NodeContext, inputs: NodeInputs, p: N
 /** Cap: closes the end of every parent branch with a rounded disc. */
 export function evaluateCap(ctx: NodeContext, inputs: NodeInputs, p: NodeParams): NodeOutputs {
   const parent = extractParentSkeleton(inputs);
-  if (!isGeneratorActive(p, ctx.lod) || parent.count === 0) return emitStructureOutput(emptySkeleton(), p, ctx.lod, 'bark', 0, parent, ctx.seed);
+  if (!isGeneratorActive(p, ctx.lod) || parent.count === 0) return emptyCapOutput(ctx, p, parent);
   const scale = getNumber(p, 'capRadiusScale', 1);
   const thickness = Math.max(0.002, getNumber(p, 'capThickness', 0.01));
   const sb = new SkeletonBuilder();
   const gen = (parent.branches[0]?.generation ?? -1) + 1;
-  for (const pb of parent.branches) {
-    if (pb.count < 2) continue;
+  // A cap closes open ends (broken branches, split sides). Extend parent narrows them down; Bottom caps the base of every branch.
+  const type = asExtendType(getString(p, 'extendParent', 'none'));
+  const ends: CapEnd[] =
+    type === 'bottom'
+      ? baseEnds(parent)
+      : collectOpenEnds(parent, type === 'none' ? 'any' : type).map((e) => ({ branchId: e.branchId, pointIndex: e.pointIndex, position: e.position, direction: e.direction, radius: e.radius }));
+  for (const end of ends) {
     ctx.cancel.throwIfCancelled();
-    const idx = pb.start + pb.count - 1;
-    const o: V3 = [parent.position[idx * 3] as number, parent.position[idx * 3 + 1] as number, parent.position[idx * 3 + 2] as number];
-    const d: V3 = [parent.direction[idx * 3] as number, parent.direction[idx * 3 + 1] as number, parent.direction[idx * 3 + 2] as number];
-    const r = Math.max((parent.radius[idx] as number) * scale, 0.002);
+    const o = end.position;
+    const d = end.direction;
+    const r = Math.max(end.radius * scale, 0.002);
     const h = thickness + r * 0.4;
-    sb.beginBranch(pb.id, idx, gen);
+    sb.beginBranch(end.branchId, end.pointIndex, gen);
     sb.addPoint(o[0], o[1], o[2], r);
     sb.addPoint(o[0] + d[0] * h * 0.5, o[1] + d[1] * h * 0.5, o[2] + d[2] * h * 0.5, r * 0.85);
     sb.addPoint(o[0] + d[0] * h, o[1] + d[1] * h, o[2] + d[2] * h, r * 0.35);
@@ -299,4 +305,37 @@ export function evaluateCap(ctx: NodeContext, inputs: NodeInputs, p: NodeParams)
   }
   const capParams: NodeParams = { ...p, tipRings: { value: getNumber(p, 'capRings', 2) }, collarAmount: { value: 0 } };
   return emitStructureOutput(sb.build(), capParams, ctx.lod, 'bark', undefined, parent, ctx.seed);
+}
+
+interface CapEnd {
+  branchId: number;
+  pointIndex: number;
+  position: readonly [number, number, number];
+  direction: readonly [number, number, number];
+  radius: number;
+}
+
+/** The first point of every branch, pointing back out of the base (Extend parent > Bottom). */
+function baseEnds(parent: Skeleton): CapEnd[] {
+  const out: CapEnd[] = [];
+  for (const b of parent.branches) {
+    if (b.count < 2) continue;
+    const i = b.start;
+    const dx = -(parent.direction[i * 3] as number);
+    const dy = -(parent.direction[i * 3 + 1] as number);
+    const dz = -(parent.direction[i * 3 + 2] as number);
+    const l = Math.hypot(dx, dy, dz) || 1;
+    out.push({
+      branchId: b.id,
+      pointIndex: i,
+      position: [parent.position[i * 3] as number, parent.position[i * 3 + 1] as number, parent.position[i * 3 + 2] as number],
+      direction: [dx / l, dy / l, dz / l],
+      radius: parent.radius[i] as number,
+    });
+  }
+  return out;
+}
+
+function emptyCapOutput(ctx: NodeContext, p: NodeParams, parent: Skeleton): NodeOutputs {
+  return emitStructureOutput(emptySkeleton(), p, ctx.lod, 'bark', 0, parent, ctx.seed);
 }

@@ -27,7 +27,6 @@ import {
   readForceContainers,
   readForceVolume,
   readPass,
-  resolveExtendType,
   clipRange,
   validatePasses,
   type ForceVolume,
@@ -207,9 +206,8 @@ describe('Pass', () => {
 });
 
 describe('Extend parent', () => {
-  it('lists the eight types; Split / Skinny / Fat resolve as Any for now', () => {
+  it('lists the eight types', () => {
     expect(EXTEND_TYPES).toHaveLength(8);
-    for (const t of ['split-1', 'split-2', 'skinny', 'fat', 'any'] as const) expect(resolveExtendType(t)).toBe('any');
     expect(asExtendType('Nonsense')).toBe('none');
   });
 
@@ -221,11 +219,12 @@ describe('Extend parent', () => {
     expect(extensionPositions('breaks-only', 2, true)).toEqual([1, 1]);
   });
 
-  it('is valid only for a Branch parent and Branch / Cap / Leaf / Batched leaf children', () => {
+  it('is valid only for a Branch or Trunk parent and Branch / Cap / Leaf / Batched leaf children', () => {
     expect(extendIsValid('generator.leaf', 'generator.branch')).toBe(true);
     expect(extendIsValid('generator.cap', 'generator.branch')).toBe(true);
+    expect(extendIsValid('generator.leaf', 'generator.trunk')).toBe(true);
     expect(extendIsValid('generator.trunk', 'generator.branch')).toBe(false);
-    expect(extendIsValid('generator.leaf', 'generator.trunk')).toBe(false);
+    expect(extendIsValid('generator.leaf', 'generator.root')).toBe(false);
   });
 
   it('only Branch, Cap, Leaf and Batched leaf show the section', () => {
@@ -420,7 +419,7 @@ describe('node integration', () => {
     const bottom = grow('generator.branch', { ...BASE, number: 0, extendParent: 'bottom', extendCount: 1 }, { parentType: 'generator.branch' });
     expect(direct(bottom)).toHaveLength(1);
     expect(direct(bottom)[0]?.parentPoint).toBe(0);
-    const wrongParent = grow('generator.branch', { ...BASE, number: 3, extendParent: 'any' }, { parentType: 'generator.trunk' });
+    const wrongParent = grow('generator.branch', { ...BASE, number: 3, extendParent: 'any' }, { parentType: 'generator.root' });
     expect(direct(wrongParent)).toHaveLength(3);
     const none = grow('generator.branch', { ...BASE, number: 3, extendParent: 'none' }, { parentType: 'generator.branch' });
     expect(direct(none)).toHaveLength(3);

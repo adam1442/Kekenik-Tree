@@ -9,7 +9,10 @@ import { getNodeDef } from '@/graph/registry';
 const SECTION_STATE_KEY = 'inspector.collapsedSections';
 const ACTIVE_TAB_KEY = 'inspector.activeTabs';
 
-/** Subgroups that render as `.kt-subhead` inside the preceding section card (`Tab/Subgroup` keys apply to one tab only). */
+/**
+ * Subgroups that render as `.kt-subhead` inside the preceding section card (`Tab/Subgroup` keys apply to one tab only).
+ * `Parent>Title` shows the sub-head as `Title` instead of the subgroup name.
+ */
 const COUPLED_PARENT_SECTION: Record<string, string> = {
   Absolute: 'Generation',
   Density: 'Generation',
@@ -18,6 +21,9 @@ const COUPLED_PARENT_SECTION: Record<string, string> = {
   Late: 'Noise',
   Spread: 'Welding',
   'Skin/Blend': 'Welding',
+  'Skin/Split spread': 'Splits>Spread',
+  'Skin/Split expand': 'Splits>Expand',
+  'Skin/Split smooth': 'Splits>Smooth',
 };
 
 export interface InspectorParamEntry {
@@ -197,9 +203,10 @@ export function buildInspectorSections(defs: readonly ParamDef[], activeTab: str
     if (pairedSkipIds.has(def.id)) continue;
 
     const rawSub = def.subgroup ?? def.group;
-    const coupledParent = COUPLED_PARENT_SECTION[`${def.group}/${rawSub}`] ?? COUPLED_PARENT_SECTION[rawSub];
+    const coupled = COUPLED_PARENT_SECTION[`${def.group}/${rawSub}`] ?? COUPLED_PARENT_SECTION[rawSub];
+    const [coupledParent, coupledTitle] = coupled ? coupled.split('>') : [undefined, undefined];
     const sectionTitle = coupledParent ?? rawSub;
-    const subheadTitle = coupledParent ? rawSub : null;
+    const subheadTitle = coupledParent ? (coupledTitle ?? rawSub) : null;
     const sectionKey = `${def.group}::${sectionTitle}`;
 
     let sec = sectionByKey.get(sectionKey);

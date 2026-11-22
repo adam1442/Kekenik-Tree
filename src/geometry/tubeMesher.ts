@@ -7,6 +7,7 @@ import { MeshAccumulator, newVertex, type VertexAttrs } from './meshAccumulator'
 import { computeSkeletonWind, WIND_ATTRIBUTES } from './windAttributes';
 import { ChildPathEvaluator, frameNormalFor, lightingNormal, lightingValue, parentSurfaceFor, solveWeld, squashSurface, weldBlendValue, weldRingCount, type ChildPath, type ParentSurface, type WeldMeshOptions, type WeldResult } from '@/generators/weld';
 import { bendPushFactor, leanNormal, seamWeight, squashRadius } from '@/generators/skin';
+import { EXTENSION_ATTR, EXTENSION_DISPLACE_ATTR, EXTENSION_SMOOTH_ATTR } from '@/generators/split';
 
 export interface TubeUv {
   /** false = metric (V = metres / uvMetres, tiles by world length), true = V runs 0..1 per branch. */
@@ -462,7 +463,12 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
     for (let k = 0; k < b.count; k++) maxR = Math.max(maxR, sk.radius[b.start + k] as number);
     const sides = Math.max(3, Math.round(opts.radialSegments(b.generation, maxR, bi)));
     const V = sides + 1;
-    const junction = b.parentPoint >= 0;
+    // Extensions (and the sides of a split) continue their parent's end: no buried ring, no collar, no base cap.
+    const attached = b.parentPoint >= 0;
+    const isExtension = attached && (sk.attributes.get(EXTENSION_ATTR)?.[b.start] ?? 0) > 0;
+    const extensionSmooth = isExtension ? Math.min(1, Math.max(0, sk.attributes.get(EXTENSION_SMOOTH_ATTR)?.[b.start] ?? 0)) : 0;
+    const junction = attached && !isExtension;
+    const displaceScale = isExtension ? Math.max(0, sk.attributes.get(EXTENSION_DISPLACE_ATTR)?.[b.start] ?? 1) : 1;
     let collarAmount = junction ? collarAmountOpt : 0;
     let sm: Samples | null = null;
     let frames: V3[] = [];
@@ -583,7 +589,7 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
         let dd = 0;
         if (opts.displace) {
           dv.u = (j % sides) / sides;
-          dd = opts.displace(dv);
+          dd = opts.displace(dv) * displaceScale;
         }
         const dl = Math.hypot(ox, oy, oz) || 1;
         if (bendK > 0) {
@@ -658,6 +664,7 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
         const blendHere = blendOpt ? (blendVals[i] as number) : 1;
         if (blendOpt && blendHere < 1) n = lightingNormal(n, spineDir, d, lightingValue(blendOpt.lighting, blendHere));
         if (seamAmount > 0) n = leanNormal(n, spineDir, seamWeight(s, r0, seamAmount));
+        if (extensionSmooth > 0) n = leanNormal(n, d, seamWeight(s, r0, extensionSmooth));
         const tg = norm(dPu, perpendicular(n));
         const bit = cross(n, tg);
         const u = (j / sides) * uTiles + uvo.offsetU;
@@ -734,7 +741,7 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
     // --- tip dome
     if (opts.capEnd !== false) emitTipDome(acc, grid, sm, R, V, sides, tipRings, opts, uvo);
     // --- flat base cap
-    const capStart = opts.capStart === undefined || opts.capStart === 'auto' ? !junction : opts.capStart;
+    const capStart = opts.capStart === undefined || opts.capStart === 'auto' ? !attached : opts.capStart;
     if (capStart) emitBaseCap(acc, grid, sm, V, sides);
   }
   return acc.build(opts.materialId, true);
