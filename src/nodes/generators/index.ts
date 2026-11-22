@@ -44,6 +44,7 @@ import { leafPlacementParams } from './leafPlacementParams';
 import { leafDeformParams, leafDependencyKey, materialHeightKey } from './leafDeformParams';
 import { leafLightingParams } from './leafLightingParams';
 import { migrateLeafParams } from './foliage';
+import { withGenerationMigration } from './generationMigration';
 import { withLineage } from './lineageHook';
 import { evaluateRoot } from './root';
 import { evaluateTrunk } from './trunk';
@@ -140,6 +141,8 @@ export const nodeDefs: NodeDef[] = [
     description: 'Main stem with crown height, buttress flare, lean, gnarliness, and profile curves.',
     statsGroup: 'branches',
     ports: withChildren,
+    version: 2,
+    migrate: withGenerationMigration(),
     params: structureParams(
       { number: 1, first: 0, last: 1, placement: true },
       { kind: 'trunk', length: 12, radius: 0.32, taper: 0.88, segments: 24, spread: 12, gravity: 0, upDown: 0.04, noiseAmount: 0.16 },
@@ -159,6 +162,8 @@ export const nodeDefs: NodeDef[] = [
     description: 'Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifurcations, and pruning.',
     statsGroup: 'branches',
     ports: withChildren,
+    version: 2,
+    migrate: withGenerationMigration(),
     params: structureParams(
       { number: 12, first: 0.2, last: 0.95, jumble: 0.2, includeBranchExtended: true, placement: true },
       { kind: 'branch', length: 3.2, radius: 0.06, taper: 0.88, segments: 10, spread: 48, gravity: 0.16, upDown: 0.06, noiseAmount: 0.2 },
@@ -176,6 +181,8 @@ export const nodeDefs: NodeDef[] = [
     description: 'Subterranean and buttress roots grown below ground or blended into the trunk base.',
     statsGroup: 'roots',
     ports: withChildren,
+    version: 2,
+    migrate: withGenerationMigration(),
     params: structureParams(
       { number: 6, first: 0, last: 0.12, jumble: 0.28, includeBranchExtended: true },
       { kind: 'root', length: 3.4, radius: 0.09, taper: 0.92, segments: 12, spread: 68, gravity: 0.2, upDown: -0.25, noiseAmount: 0.28 },
@@ -219,6 +226,8 @@ export const nodeDefs: NodeDef[] = [
     description: 'Lightweight spine-only structural guides for attaching foliage or child branches without tube geometry.',
     statsGroup: 'branches',
     ports: withChildren,
+    version: 2,
+    migrate: withGenerationMigration(),
     params: structureParams(
       { number: 8, first: 0.15, last: 0.95, jumble: 0.2, includeBranchExtended: true, placement: true },
       { kind: 'spine', length: 1.8, radius: 0.02, taper: 0.9, segments: 8, spread: 42, gravity: 0.12, upDown: 0.05, noiseAmount: 0.12 },
@@ -239,8 +248,8 @@ export const nodeDefs: NodeDef[] = [
     description: 'Leaf cards or meshes.',
     statsGroup: 'leaf meshes',
     ports: withChildren,
-    version: 2,
-    migrate: migrateLeafParams,
+    version: 3,
+    migrate: withGenerationMigration(migrateLeafParams),
     params: leafTabs({ number: 6, first: 0.1, last: 1 }),
     evaluate: withLineage(evaluateLeaf),
     dependencyKey: leafDependencyKey,
@@ -254,7 +263,8 @@ export const nodeDefs: NodeDef[] = [
     description: 'Leaf cards or meshes merged into one batched mesh per material (fewer draw calls). Always uses the highest detail and has no Mesh LOD offset, vertex-noise seed, Unify or World up.',
     statsGroup: 'leaf meshes',
     ports: withChildren,
-    version: 1,
+    version: 2,
+    migrate: withGenerationMigration(),
     params: leafTabs({ number: 6, first: 0.1, last: 1 }, [], true),
     evaluate: withLineage(evaluateBatchedLeaf),
     dependencyKey: leafDependencyKey,
@@ -305,8 +315,10 @@ export const nodeDefs: NodeDef[] = [
       ...postParams(),
     ],
     evaluate: evaluateMeshInstances,
-    version: 2,
-    migrate: (params, fromVersion) => (fromVersion >= 2 ? params : migrateLegacyMaterialParam(params, 'meshTypes', 'meshMaterial')),
+    version: 3,
+    migrate: withGenerationMigration((params, fromVersion) =>
+      fromVersion >= 2 ? params : migrateLegacyMaterialParam(params, 'meshTypes', 'meshMaterial'),
+    ),
   },
   {
     type: 'generator.cap',
@@ -317,6 +329,8 @@ export const nodeDefs: NodeDef[] = [
     description: 'Closes the end of a branch.',
     statsGroup: 'caps',
     ports: leafOnly,
+    version: 2,
+    migrate: withGenerationMigration(),
     params: [...generationParams({ number: 1, first: 1, last: 1 }), ...capParams(), ...skinParams(8), ...uvParams(), ...displacementParams(), ...materialTabParams()],
     evaluate: withDisplacementWarning(evaluateCap),
     dependencyKey: displacementDeps,
@@ -330,6 +344,8 @@ export const nodeDefs: NodeDef[] = [
     description: 'Instances small bodies (berries, cones) at branch ends.',
     statsGroup: 'clusters',
     ports: leafOnly,
+    version: 2,
+    migrate: withGenerationMigration(),
     params: [...generationParams({ number: 1, first: 0.8, last: 1 }), ...clusterParams(), ...forcesParams(), ...orientationParams(), ...leafMaterialParams(), ...leafWindParams(), ...postParams()],
     evaluate: evaluateCluster,
   },

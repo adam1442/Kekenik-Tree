@@ -3,10 +3,23 @@ import { getBool, getNumber, getString, type NodeParams } from '@/contracts/para
 import { clamp, deg2rad } from '@/core/math';
 import type { Rng } from '@/core/rng';
 import { sampleVariance } from '@/graph/engine/seeds';
+import {
+  GOLDEN_ANGLE_RAD,
+  generatePlacements,
+  ignoresBoundaries,
+  normalizeMode,
+  PHYLLOTAXY_STYLES,
+  type CountAlignStyle,
+  type GroupAlignStyle,
+  type ModeFrame,
+  type ModeId,
+  type ModeRequest,
+  type PhyllotaxyStyle,
+  type PlacementRecord,
+} from '@/generators/modes';
 import { findCurvaturePeaks, type PreparedParentBranch } from './frames';
 
-/** Golden angle in radians (~137.507764 deg). */
-export const GOLDEN_ANGLE_RAD = Math.PI * (3 - Math.sqrt(5));
+export { GOLDEN_ANGLE_RAD };
 
 const LOD_COUNT_SCALE = [1, 0.72, 0.45, 0.25] as const;
 
@@ -20,14 +33,13 @@ export interface ChildPlacement {
   /** True when spawned by `extendParent` at the parent tip. */
   isExtension: boolean;
   /**
-   * Left / right side (+1 / -1) of the child on its parent. Interval and Phyllotaxy alternate it per slot;
-   * 0 = unknown (other modes, extensions).
+   * Left / right side (+1 / -1) of the child on its parent, written by every mode (Interval / Phyllotaxy alternate it per
+   * group member, the others derive it from the roll); 0 = extensions.
    */
   side: number;
+  /** Index of the group (step, internode, bend ...) the child belongs to; 0 for extensions. */
+  groupIndex: number;
 }
-
-/** Modes whose slots alternate between the two sides of the parent. */
-const SIDE_MODES: ReadonlySet<string> = new Set(['interval', 'phyllotaxy']);
 
 function evalParamCurve(params: NodeParams, id: string, x: number, fallback = 1): number {
   const c = params[id]?.curve;
@@ -42,9 +54,98 @@ function getCurveParam(params: NodeParams, id: string): Curve | null {
   return null;
 }
 
+const COUNT_ALIGN_STYLES: ReadonlySet<string> = new Set(['group', 'individual', 'alternate', 'opposite', 'spiral']);
+
+function countAlignStyle(params: NodeParams): CountAlignStyle {
+  const v = getString(params, 'alignStyle', 'group');
+  return COUNT_ALIGN_STYLES.has(v) ? (v as CountAlignStyle) : 'group';
+}
+
+function groupAlignStyle(params: NodeParams, id: string): GroupAlignStyle {
+  return getString(params, id, 'group') === 'individual' ? 'individual' : 'group';
+}
+
+function phyllotaxyStyle(params: NodeParams): PhyllotaxyStyle {
+  const v = getString(params, 'phyllotaxyStyle', 'alternating-distichous');
+  return (PHYLLOTAXY_STYLES as readonly string[]).includes(v) ? (v as PhyllotaxyStyle) : 'alternating-distichous';
+}
+
+/** Reads the parameters of `mode` into a pure `ModeRequest`. */
+function readModeRequest(mode: ModeId, params: NodeParams, modeRng: Rng, jumble: number, sweep: number): ModeRequest {
+  const resolvedNumber = (fallback: number): number => {
+    const raw = sampleVariance(modeRng.fork('num'), getNumber(params, 'number', fallback), params.number?.variance ?? 0);
+    return raw * evalParamCurve(params, 'number', 0.5, 1);
+  };
+  const spread = { jumble, sweep, alignStyle: countAlignStyle(params) };
+  switch (mode) {
+    case 'proportional':
+      return { mode, frequency: Math.max(0, getNumber(params, 'proportionalCount', 2.5)), ...spread };
+    case 'density':
+      return {
+        mode,
+        density: Math.max(0, getNumber(params, 'density', 1) * evalParamCurve(params, 'density', 0.5, 1)),
+        jitter: clamp(getNumber(params, 'densityJitter', 0.2), 0, 1),
+        ...spread,
+      };
+    case 'flood':
+      return { mode, number: resolvedNumber(12), sweep };
+    case 'parent':
+      return { mode, number: resolvedNumber(1), sweep };
+    case 'absolute-steps':
+    case 'proportional-steps':
+      return {
+        mode,
+        steps: Math.max(0, mode === 'absolute-steps' ? getNumber(params, 'whorlCount', 5) : getNumber(params, 'stepsFrequency', 0.5)),
+        perStep: Math.max(1, getNumber(params, 'whorlPerStep', 4)),
+        spread: clamp(getNumber(params, 'whorlSpread', 0.03), 0, 1),
+        stepRoll: deg2rad(getNumber(params, 'whorlRoll', 15)),
+        balance: clamp(getNumber(params, 'stepsBalance', 1), 0, 1),
+      };
+    case 'phyllotaxy':
+      return {
+        mode,
+        style: phyllotaxyStyle(params),
+        internode: Math.max(0, getNumber(params, 'phyllotaxyInternode', 0.25)),
+        childrenPerNode: Math.max(1, getNumber(params, 'phyllotaxyChildren', 3)),
+        spread: clamp(getNumber(params, 'phyllotaxySpread', 0), 0, 1),
+        spiral: deg2rad(getNumber(params, 'phyllotaxySpiral', 0)),
+        limit: Math.max(0, getNumber(params, 'phyllotaxyLimit', 0)),
+        alignStyle: groupAlignStyle(params, 'phyllotaxyAlignStyle'),
+      };
+    case 'interval': {
+      const curve = params.intervalStep?.curve;
+      return {
+        mode,
+        frequency: Math.max(0.001, getNumber(params, 'intervalStep', 0.6)),
+        frequencyCurve: (x: number): number => (curve ? Math.max(0, evaluateCurve(curve, x)) : 1),
+        count: Math.max(1, getNumber(params, 'perStep', 1)),
+        spread: clamp(getNumber(params, 'intervalSpread', 0), 0, 1),
+        spiral: deg2rad(getNumber(params, 'intervalSpiral', 0)),
+        limit: Math.max(0, getNumber(params, 'intervalLimit', 0)),
+        alignStyle: groupAlignStyle(params, 'intervalAlignStyle'),
+        balance: clamp(getNumber(params, 'intervalBalance', 0), 0, 1),
+      };
+    }
+    case 'bifurcation':
+      return {
+        mode,
+        count: Math.max(0, getNumber(params, 'bifurcationCount', 4)),
+        threshold: deg2rad(Math.max(0.5, getNumber(params, 'bifurcationThreshold', 6))),
+        spread: clamp(getNumber(params, 'bifurcationSpread', 0), 0, 1),
+        minSpacing: clamp(getNumber(params, 'bifurcationSpacing', 0.12), 0.01, 0.9),
+      };
+    case 'absolute':
+    case 'classic':
+    default:
+      return { mode: 'absolute', number: resolvedNumber(10), ...spread };
+  }
+}
+
 /**
  * Generates deterministic child placements `(u, azimuthRad)` for one `PreparedParentBranch`.
- * Every random draw uses `branchRng.fork(...)` so sibling branches are completely isolated.
+ * The node layout itself is computed by the pure `generators/modes` module; this adapter reads the parameters and then applies
+ * the shared Clip / Pruning / Knockout / Extend-parent steps. Every random draw uses `branchRng.fork(...)` so sibling
+ * branches are completely isolated.
  */
 export function generateChildPlacements(
   prep: PreparedParentBranch,
@@ -55,7 +156,8 @@ export function generateChildPlacements(
 ): ChildPlacement[] {
   if (maxRemaining <= 0 || prep.branch.count < 2) return [];
 
-  const mode = getString(params, 'mode', 'absolute');
+  const rawMode = getString(params, 'mode', 'absolute');
+  const mode = normalizeMode(rawMode);
   const rawFirst = clamp(getNumber(params, 'first', 0.15) * evalParamCurve(params, 'first', 0.5, 1), 0, 1);
   const rawLast = clamp(getNumber(params, 'last', 0.95) * evalParamCurve(params, 'last', 0.5, 1), 0, 1);
   const first = Math.min(rawFirst, rawLast);
@@ -73,7 +175,6 @@ export function generateChildPlacements(
   const rotationOffset = deg2rad(sampleVariance(branchRng.fork('rot'), getNumber(params, 'rotationOffset', 0), params.rotationOffset?.variance ?? 0));
   const positionOffset = sampleVariance(branchRng.fork('posOff'), getNumber(params, 'positionOffset', 0), params.positionOffset?.variance ?? 0, 0.5);
   const favorSplits = clamp(getNumber(params, 'favorSplits', 0), -1, 1);
-  const alignStyle = getString(params, 'alignStyle', 'group');
 
   const distCurve = getCurveParam(params, 'distributionCurve');
   const distLut = distCurve ? curveToLUT(distCurve, 256) : null;
@@ -113,220 +214,62 @@ export function generateChildPlacements(
     return u0 + (bestU - u0) * Math.abs(favorSplits) * 0.65;
   };
 
-  const computeAzimuth = (idx: number, stepPhase: number, slotRng: Rng): number => {
-    const sector = Math.PI * 2 * sweep;
-    const basePhase = rotationOffset + groupRoll + (prep.branch.id * GOLDEN_ANGLE_RAD) % (Math.PI * 2);
-    const jitter = (slotRng.next() - 0.5) * jumble * Math.PI * 1.2;
-
-    switch (alignStyle) {
-      case 'individual':
-        return basePhase + slotRng.next() * sector;
-      case 'alternate':
-        return basePhase + (idx % 2) * Math.PI * sweep + jitter * 0.5;
-      case 'opposite': {
-        const pair = Math.floor(idx / 2);
-        const side = idx % 2;
-        return basePhase + side * Math.PI + pair * (Math.PI * 0.5) + jitter * 0.35;
-      }
-      case 'spiral':
-        return basePhase + idx * GOLDEN_ANGLE_RAD * sweep + jitter * 0.4;
-      case 'group':
-      default:
-        return basePhase + stepPhase * sweep + jitter;
-    }
+  const modeRng = branchRng.fork(`dist:${rawMode}`);
+  const frame: ModeFrame = {
+    rng: modeRng,
+    first,
+    last,
+    parentLength: prep.arcLength,
+    maxCount: maxRemaining,
+    lodKeep: effectiveLodKeep,
+    rollBase: rotationOffset + groupRoll,
+    branchPhase: (prep.branch.id * GOLDEN_ANGLE_RAD) % (Math.PI * 2),
+    positionOffset,
+    warp: warpNormalized,
+    attract: attractToCurvature,
+    bends: (thresholdRad, minSpacing) =>
+      findCurvaturePeaks(prep, first, last, thresholdRad, minSpacing).map((p) => ({ t: p.u, curvature: p.curvature, roll: p.azimuthRad })),
   };
-
-  const rawCandidates: { slotIndex: number; rawU: number; azimuthRad: number; isExtension: boolean }[] = [];
-  const modeRng = branchRng.fork(`dist:${mode}`);
-
-  const scaledCount = (base: number): number => {
-    const c = Math.round(base * effectiveLodKeep);
-    return Math.min(maxRemaining, Math.max(0, c));
-  };
-
-  switch (mode) {
-    case 'density': {
-      const dens = Math.max(0, getNumber(params, 'density', 1) * evalParamCurve(params, 'density', 0.5, 1));
-      const metricSpan = Math.max(0, prep.arcLength * span);
-      const count = scaledCount(dens * metricSpan);
-      const jitterAmt = clamp(getNumber(params, 'densityJitter', 0.2), 0, 1);
-      for (let k = 0; k < count; k++) {
-        const slotRng = modeRng.fork(k);
-        const baseS = count === 1 ? 0.5 : (k + 0.5) / count;
-        const jS = baseS + (slotRng.next() - 0.5) * (jitterAmt / Math.max(1, count));
-        const u = first + warpNormalized(jS) * span + positionOffset;
-        const az = computeAzimuth(k, k * GOLDEN_ANGLE_RAD, slotRng);
-        rawCandidates.push({ slotIndex: k, rawU: u, azimuthRad: az, isExtension: false });
-      }
-      break;
-    }
-
-    case 'proportional': {
-      const propRate = Math.max(0, getNumber(params, 'proportionalCount', 2.5));
-      const count = scaledCount(propRate * Math.max(0.25, prep.arcLength * span));
-      for (let k = 0; k < count; k++) {
-        const slotRng = modeRng.fork(k);
-        const baseS = count === 1 ? 0.5 : k / (count - 1);
-        const jS = baseS + (slotRng.next() - 0.5) * jumble * (1 / Math.max(1, count)) * 1.6;
-        const u = attractToCurvature(first + warpNormalized(jS) * span + positionOffset);
-        const az = computeAzimuth(k, k * GOLDEN_ANGLE_RAD, slotRng);
-        rawCandidates.push({ slotIndex: k, rawU: u, azimuthRad: az, isExtension: false });
-      }
-      break;
-    }
-
-    case 'interval': {
-      const stepMetres = Math.max(0.02, getNumber(params, 'intervalStep', 0.6));
-      const perStep = Math.max(1, Math.round(getNumber(params, 'perStep', 1)));
-      const metricSpan = Math.max(0, prep.arcLength * span);
-      const steps = Math.min(Math.ceil(maxRemaining / perStep), Math.max(1, Math.floor(metricSpan / stepMetres) + 1));
-      let slot = 0;
-      for (let s = 0; s < steps && slot < maxRemaining; s++) {
-        const baseS = steps === 1 ? 0.5 : s / (steps - 1);
-        const stepU = first + warpNormalized(baseS) * span + positionOffset;
-        for (let m = 0; m < perStep && slot < maxRemaining; m++) {
-          if (lod > 0 && modeRng.fork(`lod:${slot}`).next() > effectiveLodKeep) {
-            slot += 1;
-            continue;
-          }
-          const slotRng = modeRng.fork(slot);
-          const u = stepU + (slotRng.next() - 0.5) * jumble * 0.08 * span;
-          const stepAz = (m / perStep) * Math.PI * 2 + s * GOLDEN_ANGLE_RAD;
-          const az = rotationOffset + groupRoll + stepAz * sweep + (slotRng.next() - 0.5) * jumble * 0.6;
-          rawCandidates.push({ slotIndex: slot, rawU: u, azimuthRad: az, isExtension: false });
-          slot += 1;
-        }
-      }
-      break;
-    }
-
-    case 'phyllotaxy': {
-      const rawNum = sampleVariance(modeRng.fork('num'), getNumber(params, 'number', 12), params.number?.variance ?? 0);
-      const count = scaledCount(rawNum * evalParamCurve(params, 'number', 0.5, 1));
-      const divergenceRad = deg2rad(getNumber(params, 'phyllotaxyAngle', 137.508));
-      const phase0 = rotationOffset + groupRoll + (prep.branch.id * 1.6180339) % (Math.PI * 2);
-      for (let k = 0; k < count; k++) {
-        const slotRng = modeRng.fork(k);
-        const baseS = count === 1 ? 0.5 : k / (count - 1);
-        const u = first + warpNormalized(baseS) * span + positionOffset + (slotRng.next() - 0.5) * jumble * 0.1 * span;
-        const az = phase0 + k * divergenceRad + (slotRng.next() - 0.5) * jumble * 0.35;
-        rawCandidates.push({ slotIndex: k, rawU: u, azimuthRad: az, isExtension: false });
-      }
-      break;
-    }
-
-    case 'whorled': {
-      const whorls = Math.max(1, Math.round(getNumber(params, 'whorlCount', 5) * Math.sqrt(effectiveLodKeep)));
-      const perWhorl = Math.max(1, Math.round(getNumber(params, 'whorlPerStep', 4) * Math.sqrt(effectiveLodKeep)));
-      const whorlSpread = clamp(getNumber(params, 'whorlSpread', 0.03), 0, 0.5);
-      let slot = 0;
-      for (let w = 0; w < whorls && slot < maxRemaining; w++) {
-        const baseS = whorls === 1 ? 0.5 : w / (whorls - 1);
-        const centerU = first + warpNormalized(baseS) * span + positionOffset;
-        // Alternate half-step rotation per whorl for natural conifer packing
-        const whorlPhase = rotationOffset + groupRoll + (w % 2) * (Math.PI / perWhorl) + w * deg2rad(getNumber(params, 'whorlRoll', 15));
-        for (let m = 0; m < perWhorl && slot < maxRemaining; m++) {
-          const slotRng = modeRng.fork(slot);
-          const u = centerU + (slotRng.next() - 0.5) * (whorlSpread + jumble * 0.08) * span;
-          const az = whorlPhase + (m / perWhorl) * Math.PI * 2 * sweep + (slotRng.next() - 0.5) * jumble * 0.45;
-          rawCandidates.push({ slotIndex: slot, rawU: u, azimuthRad: az, isExtension: false });
-          slot += 1;
-        }
-      }
-      break;
-    }
-
-    case 'bifurcation': {
-      const threshRad = deg2rad(Math.max(0.5, getNumber(params, 'bifurcationThreshold', 6)));
-      const minSpacing = clamp(getNumber(params, 'bifurcationSpacing', 0.12), 0.01, 0.9);
-      const peaks = findCurvaturePeaks(prep, first, last, threshRad, minSpacing);
-      const maxPeaks = scaledCount(Math.max(peaks.length, getNumber(params, 'number', 4)));
-      if (peaks.length > 0) {
-        const chosen = peaks.slice(0, maxPeaks);
-        for (let k = 0; k < chosen.length; k++) {
-          const pk = chosen[k]!;
-          const slotRng = modeRng.fork(k);
-          const az = pk.azimuthRad + groupRoll + (slotRng.next() - 0.5) * jumble * 0.5;
-          rawCandidates.push({ slotIndex: k, rawU: pk.u + positionOffset, azimuthRad: az, isExtension: false });
-        }
-      } else {
-        // Fallback when parent has zero bends above threshold: place sparse fork points along [first, last]
-        const fallbackCount = Math.min(maxRemaining, Math.max(1, Math.round(getNumber(params, 'number', 3) * 0.5 * effectiveLodKeep)));
-        for (let k = 0; k < fallbackCount; k++) {
-          const slotRng = modeRng.fork(k);
-          const s = (k + 0.5) / fallbackCount;
-          const u = first + warpNormalized(s) * span + positionOffset;
-          const az = computeAzimuth(k, k * Math.PI + 0.4, slotRng);
-          rawCandidates.push({ slotIndex: k, rawU: u, azimuthRad: az, isExtension: false });
-        }
-      }
-      break;
-    }
-
-    case 'flood': {
-      const rawNum = sampleVariance(modeRng.fork('num'), getNumber(params, 'number', 12), params.number?.variance ?? 0);
-      const count = scaledCount(rawNum * evalParamCurve(params, 'number', 0.5, 1));
-      for (let k = 0; k < count; k++) {
-        const slotRng = modeRng.fork(k);
-        const u = first + warpNormalized(slotRng.next()) * span + positionOffset;
-        const az = rotationOffset + groupRoll + slotRng.next() * Math.PI * 2 * sweep;
-        rawCandidates.push({ slotIndex: k, rawU: u, azimuthRad: az, isExtension: false });
-      }
-      break;
-    }
-
-    case 'absolute':
-    default: {
-      const rawNum = sampleVariance(modeRng.fork('num'), getNumber(params, 'number', 10), params.number?.variance ?? 0);
-      const count = scaledCount(rawNum * evalParamCurve(params, 'number', 0.5, 1));
-      for (let k = 0; k < count; k++) {
-        const slotRng = modeRng.fork(k);
-        const baseS = count === 1 ? 0.5 : k / (count - 1);
-        const jitterSpan = count > 1 ? 0.65 / (count - 1) : 0.25;
-        const jS = baseS + (slotRng.next() - 0.5) * 2 * jumble * jitterSpan;
-        const u = attractToCurvature(first + warpNormalized(jS) * span + positionOffset);
-        const az = computeAzimuth(k, k * GOLDEN_ANGLE_RAD, slotRng);
-        rawCandidates.push({ slotIndex: k, rawU: u, azimuthRad: az, isExtension: false });
-      }
-      break;
-    }
-  }
+  const rawCandidates = generatePlacements(frame, readModeRequest(mode, params, modeRng, jumble, sweep));
+  const boundless = ignoresBoundaries(mode);
 
   const accepted: ChildPlacement[] = [];
-  for (const cand of rawCandidates) {
+  for (let slotIndex = 0; slotIndex < rawCandidates.length; slotIndex++) {
+    const cand = rawCandidates[slotIndex] as PlacementRecord;
     if (accepted.length >= maxRemaining) break;
-    if (clipEnabled && (cand.rawU < minU || cand.rawU > maxU)) {
+    if (clipEnabled && !boundless && (cand.t < minU || cand.t > maxU)) {
       continue;
     }
-    const u = clamp(cand.rawU, first, last);
+    const u = boundless ? clamp(cand.t, 0, 1) : clamp(cand.t, first, last);
 
     // Pruning curve & scalar check along normalized [first..last]
     const normSpanU = span > 1e-6 ? clamp((u - first) / span, 0, 1) : 0.5;
     if (pruningLut) {
       // Convention: curve value < 0.5 prunes when pruning curve is active
       const pCurveVal = sampleCurveLUT(pruningLut, normSpanU);
-      if (pCurveVal < 0.5 && modeRng.fork(`prn:${cand.slotIndex}`).next() > pCurveVal * 2) {
+      if (pCurveVal < 0.5 && modeRng.fork(`prn:${slotIndex}`).next() > pCurveVal * 2) {
         continue;
       }
     }
     if (pruningBase > 0) {
-      if (modeRng.fork(`prnb:${cand.slotIndex}`).next() < pruningBase) {
+      if (modeRng.fork(`prnb:${slotIndex}`).next() < pruningBase) {
         continue;
       }
     }
 
     // Knockout random removal
     const koProb = clamp(knockoutBase * (knockoutLut ? sampleCurveLUT(knockoutLut, u) : 1), 0, 1);
-    if (koProb > 0 && modeRng.fork(`ko:${cand.slotIndex}`).next() < koProb) {
+    if (koProb > 0 && modeRng.fork(`ko:${slotIndex}`).next() < koProb) {
       continue;
     }
 
     accepted.push({
-      slotIndex: cand.slotIndex,
+      slotIndex,
       u,
-      azimuthRad: cand.azimuthRad,
+      azimuthRad: cand.roll,
       isExtension: false,
-      side: SIDE_MODES.has(mode) ? (cand.slotIndex % 2 === 0 ? 1 : -1) : 0,
+      side: cand.side,
+      groupIndex: cand.groupIndex,
     });
   }
 
@@ -343,6 +286,7 @@ export function generateChildPlacements(
         azimuthRad: az,
         isExtension: true,
         side: 0,
+        groupIndex: 0,
       });
     }
   }

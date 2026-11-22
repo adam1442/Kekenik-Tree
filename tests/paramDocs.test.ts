@@ -50,6 +50,25 @@ function table(type: string): string {
   return lines.join('\n');
 }
 
+const MODE_NOTES = [
+  '## Generation modes (Generation > Mode)',
+  '',
+  'Every generator (Trunk, Branch, Root, Spine, Leaf, Batched Leaf, Mesh Instance, Cap, Cluster) has the same `Mode` dropdown; only the parameters of the chosen mode are shown. The layout is computed by the pure module `src/generators/modes/` and returns one record `{ t, roll, side, groupIndex }` per node (`t` 0..1 along the parent, `roll` around its axis, `side` +1 / -1, `groupIndex` of the step / internode / bend). All modes stay inside **First .. Last** (Parent is the exception: it sits at the origin). Everything is seeded: same graph + seed = same result.',
+  '',
+  '* **Absolute** - exactly *Number* nodes, evenly spread; Jumble, Sweep, Roll, Favor splits, Align style.',
+  '* **Proportional** - *Frequency* x parent length nodes, one at a random place in each equal stretch of First..Last; same extras as Absolute.',
+  '* **Absolute steps / Proportional steps** - *Steps* (a number, or steps per metre of parent length) rings of *Per step* nodes from First to Last. *Spread* moves the nodes of a ring lengthwise (fraction of First..Last), *Roll* turns each ring against the previous one, *Balance* 1 spaces a ring evenly around the parent, 0 scatters it.',
+  '* **Phyllotaxy** - groups every *Internode length* metres (world space) from **Last towards First**; the first group sits at Last. *Style*: Opposite (distichous: pairs, every group the same way), Opposite (decussate: each group turned 90 degrees), Opposite (random orientation: pairs turned at random), Alternating (distichous: one node, sides alternate), Alternating (random: one node at a random roll), Whorled (*Children per node*). *Spread* offsets nodes lengthwise inside a group (1 = up to the neighbouring group), *Spiral* adds rotation per group, *Limit* caps the groups (0 = unlimited). *Internode length* 0 spreads *Limit* groups (8 if unlimited) evenly between Last and First (this is how projects saved with the old golden-angle Phyllotaxy are migrated).',
+  '* **Interval** - groups from **Last towards First**: the first group is exactly at Last, there is no guarantee of one at First. *Frequency* is the distance between groups in metres; its curve scales it along the parent (First = 0, Last = 1), a lower value packs groups tighter. *Count* nodes per group, *Spread*, *Spiral*, *Limit* as in Phyllotaxy, *Balance* turns every other group by half the angular gap so it fills the gaps of the previous group.',
+  '* **Bifurcation** - one node at each of the strongest bends of the parent (turning angle above *Threshold*, at least *Min spacing* apart, at most *Count*), rolled towards the outside of the bend. *Spread* shifts nodes along the parent (1 = 10 % of its length). A straight parent gets a few evenly spaced nodes instead. The reference parameters are not specified; these three plus Min spacing are this app\'s own design.',
+  '* **Flood** - exactly *Number* nodes at random places along the parent. **Parent** - exactly *Number* nodes at the origin of the parent, spread around it.',
+  '* **Density** (existing) places nodes per metre; **Classic** is listed as a disabled legacy entry.',
+  '* **Align style** (Phyllotaxy / Interval): *Group* keeps the nodes of a group in their layout, *Individual* turns every node on its own within its share of the circle. **Align** (section Alignment) is the shared skyward roll, read by generators that grow their own branches.',
+  '* **Side.** Every node carries a side: alternating per group member for Interval / Phyllotaxy, otherwise derived from the roll. Leaves use it for *Initial orientation: Classic*.',
+  '* **Back-compat.** Mode `whorled` is now `absolute-steps` (ids `whorlCount`, `whorlPerStep`, `whorlSpread`, `whorlRoll` kept); old Phyllotaxy (Number + Divergence angle) becomes Alternating (distichous) with Spiral = angle - 180; old Bifurcation Number becomes Count. Interval keeps `intervalStep` (now *Frequency*) and `perStep` (now *Count*). Node versions were bumped and `migrateGenerationParams` runs on load.',
+  '',
+].join('\n');
+
 const LEAF_NOTES = [
   '### Leaves tab - how the pieces fit together',
   '',
@@ -143,8 +162,9 @@ describe('PARAMETERS.md', () => {
       '* Curves on a parameter are evaluated along the *parent* (0 = base, 1 = tip) for placement params, and along the *spine* for shape params.',
       '',
     ].join('\n');
-    const doc = [header, ...['output.tree', 'generator.trunk', 'generator.branch', 'generator.spine'].map(table), leafTab()].join('\n');
+    const doc = [header, MODE_NOTES, ...['output.tree', 'generator.trunk', 'generator.branch', 'generator.spine'].map(table), leafTab()].join('\n');
     expect(doc).toContain('Tree placement');
+    expect(doc).toContain('Internode length');
     expect(doc).toContain('Sensitivity → Parent');
     expect(doc).toContain('Left-Right Variance');
     if (process.env.WRITE_PARAM_DOCS) writeFileSync('docs/PARAMETERS.md', doc);

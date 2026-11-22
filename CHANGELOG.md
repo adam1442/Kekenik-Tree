@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- Generation modes for every generator (Trunk, Branch, Root, Spine, Leaf, Batched Leaf, Mesh Instance, Cap, Cluster): Absolute, Proportional, Absolute steps / Proportional steps (Steps, Per step, Spread, Roll, Balance), Phyllotaxy (Internode length in metres from Last towards First; Style Opposite distichous / decussate / random, Alternating distichous / random, Whorled; Children per node, Spread, Spiral, Limit, Align style), Interval (Frequency with a profile curve, Count, Spread, Spiral, Limit, Align style, Balance), Bifurcation (Count, Threshold, Spread), Flood and Parent. Only the parameters of the chosen mode are shown; *Classic* is listed as a disabled legacy entry. The layouts live in the pure module `src/generators/modes/` and every node publishes its `side` (+1 / -1) and `groupIndex`.
+
+### Changed
+- Old projects are migrated on load: `whorled` is now Absolute steps, the golden-angle Phyllotaxy becomes Alternating (distichous) with a Spiral, Bifurcation keeps its count. Built-in presets use the new parameters. Absolute mode now also publishes a `side` attribute (derived from the roll).
+
 ### Fixed
 - Edit Mesh dialog, shared dialog buttons/footers (info, prompt, choice, Export, LOD editor) and a few inspector widgets were missing their stylesheet rules in the published build; the rules now live in `ui/theme/editmesh.css` and `panels.css`.
 

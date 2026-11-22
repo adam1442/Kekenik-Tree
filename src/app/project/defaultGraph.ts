@@ -77,7 +77,10 @@ export function defaultGraph(): GraphJSON {
       parent: 'big',
       params: {
         mode: 'phyllotaxy',
+        phyllotaxyInternode: 0,
         number: 9,
+        phyllotaxyLimit: 9,
+        phyllotaxySpiral: -42.492,
         length: 1.45,
         lengthPercent: 0.15,
         radius: 0.026,

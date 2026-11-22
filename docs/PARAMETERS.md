@@ -7,6 +7,22 @@ Generated from the node registry by `WRITE_PARAM_DOCS=1 npx vitest run tests/par
 * Counts above `warnAbove` (1000 for `Number`) show a yellow "!" performance badge next to the label.
 * Curves on a parameter are evaluated along the *parent* (0 = base, 1 = tip) for placement params, and along the *spine* for shape params.
 
+## Generation modes (Generation > Mode)
+
+Every generator (Trunk, Branch, Root, Spine, Leaf, Batched Leaf, Mesh Instance, Cap, Cluster) has the same `Mode` dropdown; only the parameters of the chosen mode are shown. The layout is computed by the pure module `src/generators/modes/` and returns one record `{ t, roll, side, groupIndex }` per node (`t` 0..1 along the parent, `roll` around its axis, `side` +1 / -1, `groupIndex` of the step / internode / bend). All modes stay inside **First .. Last** (Parent is the exception: it sits at the origin). Everything is seeded: same graph + seed = same result.
+
+* **Absolute** - exactly *Number* nodes, evenly spread; Jumble, Sweep, Roll, Favor splits, Align style.
+* **Proportional** - *Frequency* x parent length nodes, one at a random place in each equal stretch of First..Last; same extras as Absolute.
+* **Absolute steps / Proportional steps** - *Steps* (a number, or steps per metre of parent length) rings of *Per step* nodes from First to Last. *Spread* moves the nodes of a ring lengthwise (fraction of First..Last), *Roll* turns each ring against the previous one, *Balance* 1 spaces a ring evenly around the parent, 0 scatters it.
+* **Phyllotaxy** - groups every *Internode length* metres (world space) from **Last towards First**; the first group sits at Last. *Style*: Opposite (distichous: pairs, every group the same way), Opposite (decussate: each group turned 90 degrees), Opposite (random orientation: pairs turned at random), Alternating (distichous: one node, sides alternate), Alternating (random: one node at a random roll), Whorled (*Children per node*). *Spread* offsets nodes lengthwise inside a group (1 = up to the neighbouring group), *Spiral* adds rotation per group, *Limit* caps the groups (0 = unlimited). *Internode length* 0 spreads *Limit* groups (8 if unlimited) evenly between Last and First (this is how projects saved with the old golden-angle Phyllotaxy are migrated).
+* **Interval** - groups from **Last towards First**: the first group is exactly at Last, there is no guarantee of one at First. *Frequency* is the distance between groups in metres; its curve scales it along the parent (First = 0, Last = 1), a lower value packs groups tighter. *Count* nodes per group, *Spread*, *Spiral*, *Limit* as in Phyllotaxy, *Balance* turns every other group by half the angular gap so it fills the gaps of the previous group.
+* **Bifurcation** - one node at each of the strongest bends of the parent (turning angle above *Threshold*, at least *Min spacing* apart, at most *Count*), rolled towards the outside of the bend. *Spread* shifts nodes along the parent (1 = 10 % of its length). A straight parent gets a few evenly spaced nodes instead. The reference parameters are not specified; these three plus Min spacing are this app's own design.
+* **Flood** - exactly *Number* nodes at random places along the parent. **Parent** - exactly *Number* nodes at the origin of the parent, spread around it.
+* **Density** (existing) places nodes per metre; **Classic** is listed as a disabled legacy entry.
+* **Align style** (Phyllotaxy / Interval): *Group* keeps the nodes of a group in their layout, *Individual* turns every node on its own within its share of the circle. **Align** (section Alignment) is the shared skyward roll, read by generators that grow their own branches.
+* **Side.** Every node carries a side: alternating per group member for Interval / Phyllotaxy, otherwise derived from the roll. Leaves use it for *Initial orientation: Classic*.
+* **Back-compat.** Mode `whorled` is now `absolute-steps` (ids `whorlCount`, `whorlPerStep`, `whorlSpread`, `whorlRoll` kept); old Phyllotaxy (Number + Divergence angle) becomes Alternating (distichous) with Spiral = angle - 180; old Bifurcation Number becomes Count. Interval keeps `intervalStep` (now *Frequency*) and `perStep` (now *Count*). Node versions were bumped and `migrateGenerationParams` runs on load.
+
 ## Tree (`output.tree`)
 
 Root of the plant. Its Shape defines the ground disc in which first-generation nodes are placed.
@@ -59,16 +75,41 @@ Main stem with crown height, buttress flare, lean, gnarliness, and profile curve
 
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
-| Generation | Mode | `mode` | Absolute / Density | absolute |  |  | How the number and spacing of children are decided (absolute count, density, phyllotaxy, whorls, …). |
-| Absolute | Number | `number` | 0..100000 (slider 0..100) | 1 | yes | yes | How many children are created on each parent (or how many stems for a Trunk). Large values are slow. |
+| Generation | Mode | `mode` | Absolute / Proportional / Absolute steps / Proportional steps / Phyllotaxy / Interval / Bifurcation / Flood / Parent / Density / Classic (legacy) | absolute |  |  | How children are placed on the parent: an exact number, proportional to its length, in steps (whorls), by phyllotaxy, at intervals, at bends, flooded along it or all at its origin. |
+| Absolute | Number | `number` | 0..100000 (slider 0..100) | 1 | yes | yes | Exact number of nodes created on each parent. |
 | Absolute | Jumble | `jumble` | 0..1 | 0 |  | yes | Randomises the order of spacing so children do not form a regular pattern. |
 | Absolute | Sweep | `sweep` | 0.01..1 (slider 0.01..1) | 1 |  | yes | Fraction of the full circle the children are spread around the parent. |
 | Absolute | Roll | `roll` | -1..1 | 0 |  | yes | Rotates children around the parent axis (−1…1 = a full turn each way). |
 | Absolute | Favor splits | `favorSplits` | -1..1 | 0 |  | yes | Prefers (+) or avoids (−) placing children on split points. |
 | Absolute | Align style | `alignStyle` | Group / Individual / Spiral / Alternate / Opposite | group |  |  | How the rotation of consecutive children is arranged: group, individual, spiral, alternate or opposite. |
-| Absolute | Align | `align` | bool | false |  |  | Aligns all children to the same angular position instead of rotating them. |
 | Density | Density | `density` | 0..100 (slider 0..10) /m | 1.5 |  | yes | Children per metre of parent length (Density mode). |
 | Density | Jitter | `densityJitter` | 0..1 | 0.2 |  |  | Random variation of the spacing in Density mode. |
+| Proportional | Frequency | `proportionalCount` | 0..50 (slider 0..10) /m | 2.5 |  |  | Nodes per metre of parent length: longer parents get more nodes, spread at random along them. |
+| Steps | Steps | `whorlCount` | 1..128 | 5 |  |  | Number of steps (rings of nodes) along the parent. |
+| Steps | Steps | `stepsFrequency` | 0..20 (slider 0..5) /m | 0.5 |  |  | Steps per metre of parent length. |
+| Steps | Per step | `whorlPerStep` | 1..128 (slider 1..24) | 4 |  |  | Nodes in every step. |
+| Steps | Spread | `whorlSpread` | 0..1 | 0.03 |  |  | Lengthwise spacing of the nodes inside one step, as a fraction of the First..Last stretch. |
+| Steps | Roll | `whorlRoll` | -180..180 ° | 15 |  |  | Rotation of every step relative to the previous one. |
+| Steps | Balance | `stepsBalance` | 0..1 | 1 |  |  | How evenly the nodes of a step are spaced around the parent (1 = evenly, 0 = random). |
+| Phyllotaxy | Style | `phyllotaxyStyle` | Opposite (distichous) / Opposite (decussate) / Opposite (random orientation) / Alternating (distichous) / Alternating (random) / Whorled | alternating-distichous- |  |  | How the nodes of a group are arranged and how consecutive groups are turned against each other. |
+| Phyllotaxy | Internode length | `phyllotaxyInternode` | 0..50 (slider 0..2) m | 0.25 |  |  | Distance between groups, measured along the parent from Last towards First. 0 spreads Limit groups evenly instead. |
+| Phyllotaxy | Children per node | `phyllotaxyChildren` | 1..32 | 3 |  |  | Nodes in each whorled group. |
+| Phyllotaxy | Spread | `phyllotaxySpread` | 0..1 | 0 |  |  | Random lengthwise offset of every node inside its group (1 = up to the neighbouring group). |
+| Phyllotaxy | Spiral | `phyllotaxySpiral` | -180..180 ° | 0 |  |  | Extra rotation added for every group. |
+| Phyllotaxy | Limit | `phyllotaxyLimit` | 0..10000 (slider 0..100) | 0 |  |  | Maximum number of groups (0 = no limit). |
+| Phyllotaxy | Align style | `phyllotaxyAlignStyle` | Group / Individual | group |  |  | Group keeps the nodes of a group in their fixed layout; Individual turns every node on its own within its share of the circle. |
+| Interval | Frequency | `intervalStep` | 0.001..50 (slider 0.001..3) m | 0.6 |  | yes | Distance between groups from Last towards First. The curve scales it along the parent: lower values pack groups tighter. |
+| Interval | Count | `perStep` | 1..64 (slider 1..16) | 1 |  |  | Nodes in every group. |
+| Interval | Spread | `intervalSpread` | 0..1 | 0 |  |  | Random lengthwise offset of every node inside its group (1 = up to the neighbouring group). |
+| Interval | Spiral | `intervalSpiral` | -180..180 ° | 0 |  |  | Extra rotation added for every group. |
+| Interval | Limit | `intervalLimit` | 0..10000 (slider 0..100) | 0 |  |  | Maximum number of groups (0 = no limit). |
+| Interval | Align style | `intervalAlignStyle` | Group / Individual | group |  |  | Group keeps the nodes of a group in their fixed layout; Individual turns every node on its own within its share of the circle. |
+| Interval | Balance | `intervalBalance` | 0..1 | 0 |  |  | Turns every other group so its nodes fill the gaps left by the previous group. |
+| Bifurcation | Count | `bifurcationCount` | 0..1000 (slider 0..32) | 4 |  |  | Maximum number of nodes; the strongest bends win. |
+| Bifurcation | Threshold | `bifurcationThreshold` | 0.5..90 ° | 6 |  |  | Smallest bend of the parent that gets a node. |
+| Bifurcation | Spread | `bifurcationSpread` | 0..1 | 0 |  |  | Random shift of every node along the parent (1 = 10 % of its length). |
+| Bifurcation | Min spacing | `bifurcationSpacing` | 0.01..0.9 | 0.12 |  |  | Smallest distance between two bends, as a fraction of the parent. |
+| Alignment | Align | `align` | bool | false |  |  | Rolls the new nodes so they face the sky. |
 | Boundaries | First | `first` | 0..1 | 0 |  | yes | Where along the parent the first child may appear (0 = base, 1 = tip). |
 | Boundaries | Last | `last` | 0..1 | 1 |  | yes | Where along the parent the last child may appear (0 = base, 1 = tip). |
 | Boundaries | Distribution curve | `distributionCurve` | curve | curve |  |  | Maps normalized spacing [0..1] across [First..Last]. |
@@ -271,26 +312,41 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
-| Generation | Mode | `mode` | Absolute / Density / Proportional / Interval / Phyllotaxy / Whorled / Bifurcation / Flood | absolute |  |  | How the number and spacing of children are decided (absolute count, density, phyllotaxy, whorls, …). |
-| Absolute | Number | `number` | 0..100000 (slider 0..100) | 12 | yes | yes | How many children are created on each parent (or how many stems for a Trunk). Large values are slow. |
+| Generation | Mode | `mode` | Absolute / Proportional / Absolute steps / Proportional steps / Phyllotaxy / Interval / Bifurcation / Flood / Parent / Density / Classic (legacy) | absolute |  |  | How children are placed on the parent: an exact number, proportional to its length, in steps (whorls), by phyllotaxy, at intervals, at bends, flooded along it or all at its origin. |
+| Absolute | Number | `number` | 0..100000 (slider 0..100) | 12 | yes | yes | Exact number of nodes created on each parent. |
 | Absolute | Jumble | `jumble` | 0..1 | 0.2 |  | yes | Randomises the order of spacing so children do not form a regular pattern. |
 | Absolute | Sweep | `sweep` | 0.01..1 (slider 0.01..1) | 1 |  | yes | Fraction of the full circle the children are spread around the parent. |
 | Absolute | Roll | `roll` | -1..1 | 0 |  | yes | Rotates children around the parent axis (−1…1 = a full turn each way). |
 | Absolute | Favor splits | `favorSplits` | -1..1 | 0 |  | yes | Prefers (+) or avoids (−) placing children on split points. |
 | Absolute | Align style | `alignStyle` | Group / Individual / Spiral / Alternate / Opposite | group |  |  | How the rotation of consecutive children is arranged: group, individual, spiral, alternate or opposite. |
-| Absolute | Align | `align` | bool | false |  |  | Aligns all children to the same angular position instead of rotating them. |
 | Density | Density | `density` | 0..100 (slider 0..10) /m | 1.5 |  | yes | Children per metre of parent length (Density mode). |
 | Density | Jitter | `densityJitter` | 0..1 | 0.2 |  |  | Random variation of the spacing in Density mode. |
-| Proportional | Steps per meter | `proportionalCount` | 0..50 (slider 0..10) | 2.5 |  |  | Children per metre in Proportional mode. |
-| Interval | Interval | `intervalStep` | 0.02..20 (slider 0.02..3) m | 0.6 |  |  | Distance between children in Interval mode. |
-| Interval | Per step | `perStep` | 1..16 | 1 |  |  | Children created at each interval step. |
-| Phyllotaxy | Divergence angle | `phyllotaxyAngle` | 0..360 ° | 137.508 |  |  | Rotation between consecutive children (137.5° gives the golden angle). |
-| Whorled | Whorls | `whorlCount` | 1..128 | 5 |  |  | Number of whorls (rings of children). |
-| Whorled | Per whorl | `whorlPerStep` | 1..128 (slider 1..24) | 4 |  |  | Children per whorl. |
-| Whorled | Whorl spread | `whorlSpread` | 0..0.5 | 0.03 |  |  | Random jitter of the children inside a whorl. |
-| Whorled | Step roll | `whorlRoll` | -180..180 ° | 15 |  |  | Rotation between consecutive whorls. |
-| Bifurcation | Bend threshold | `bifurcationThreshold` | 0.5..90 ° | 6 |  |  | Bend angle above which a bifurcation is placed. |
-| Bifurcation | Min spacing | `bifurcationSpacing` | 0.01..0.9 | 0.12 |  |  | Minimum distance between bifurcations. |
+| Proportional | Frequency | `proportionalCount` | 0..50 (slider 0..10) /m | 2.5 |  |  | Nodes per metre of parent length: longer parents get more nodes, spread at random along them. |
+| Steps | Steps | `whorlCount` | 1..128 | 5 |  |  | Number of steps (rings of nodes) along the parent. |
+| Steps | Steps | `stepsFrequency` | 0..20 (slider 0..5) /m | 0.5 |  |  | Steps per metre of parent length. |
+| Steps | Per step | `whorlPerStep` | 1..128 (slider 1..24) | 4 |  |  | Nodes in every step. |
+| Steps | Spread | `whorlSpread` | 0..1 | 0.03 |  |  | Lengthwise spacing of the nodes inside one step, as a fraction of the First..Last stretch. |
+| Steps | Roll | `whorlRoll` | -180..180 ° | 15 |  |  | Rotation of every step relative to the previous one. |
+| Steps | Balance | `stepsBalance` | 0..1 | 1 |  |  | How evenly the nodes of a step are spaced around the parent (1 = evenly, 0 = random). |
+| Phyllotaxy | Style | `phyllotaxyStyle` | Opposite (distichous) / Opposite (decussate) / Opposite (random orientation) / Alternating (distichous) / Alternating (random) / Whorled | alternating-distichous- |  |  | How the nodes of a group are arranged and how consecutive groups are turned against each other. |
+| Phyllotaxy | Internode length | `phyllotaxyInternode` | 0..50 (slider 0..2) m | 0.25 |  |  | Distance between groups, measured along the parent from Last towards First. 0 spreads Limit groups evenly instead. |
+| Phyllotaxy | Children per node | `phyllotaxyChildren` | 1..32 | 3 |  |  | Nodes in each whorled group. |
+| Phyllotaxy | Spread | `phyllotaxySpread` | 0..1 | 0 |  |  | Random lengthwise offset of every node inside its group (1 = up to the neighbouring group). |
+| Phyllotaxy | Spiral | `phyllotaxySpiral` | -180..180 ° | 0 |  |  | Extra rotation added for every group. |
+| Phyllotaxy | Limit | `phyllotaxyLimit` | 0..10000 (slider 0..100) | 0 |  |  | Maximum number of groups (0 = no limit). |
+| Phyllotaxy | Align style | `phyllotaxyAlignStyle` | Group / Individual | group |  |  | Group keeps the nodes of a group in their fixed layout; Individual turns every node on its own within its share of the circle. |
+| Interval | Frequency | `intervalStep` | 0.001..50 (slider 0.001..3) m | 0.6 |  | yes | Distance between groups from Last towards First. The curve scales it along the parent: lower values pack groups tighter. |
+| Interval | Count | `perStep` | 1..64 (slider 1..16) | 1 |  |  | Nodes in every group. |
+| Interval | Spread | `intervalSpread` | 0..1 | 0 |  |  | Random lengthwise offset of every node inside its group (1 = up to the neighbouring group). |
+| Interval | Spiral | `intervalSpiral` | -180..180 ° | 0 |  |  | Extra rotation added for every group. |
+| Interval | Limit | `intervalLimit` | 0..10000 (slider 0..100) | 0 |  |  | Maximum number of groups (0 = no limit). |
+| Interval | Align style | `intervalAlignStyle` | Group / Individual | group |  |  | Group keeps the nodes of a group in their fixed layout; Individual turns every node on its own within its share of the circle. |
+| Interval | Balance | `intervalBalance` | 0..1 | 0 |  |  | Turns every other group so its nodes fill the gaps left by the previous group. |
+| Bifurcation | Count | `bifurcationCount` | 0..1000 (slider 0..32) | 4 |  |  | Maximum number of nodes; the strongest bends win. |
+| Bifurcation | Threshold | `bifurcationThreshold` | 0.5..90 ° | 6 |  |  | Smallest bend of the parent that gets a node. |
+| Bifurcation | Spread | `bifurcationSpread` | 0..1 | 0 |  |  | Random shift of every node along the parent (1 = 10 % of its length). |
+| Bifurcation | Min spacing | `bifurcationSpacing` | 0.01..0.9 | 0.12 |  |  | Smallest distance between two bends, as a fraction of the parent. |
+| Alignment | Align | `align` | bool | false |  |  | Rolls the new nodes so they face the sky. |
 | Boundaries | First | `first` | 0..1 | 0.2 |  | yes | Where along the parent the first child may appear (0 = base, 1 = tip). |
 | Boundaries | Last | `last` | 0..1 | 0.95 |  | yes | Where along the parent the last child may appear (0 = base, 1 = tip). |
 | Boundaries | Distribution curve | `distributionCurve` | curve | curve |  |  | Maps normalized spacing [0..1] across [First..Last]. |
@@ -507,26 +563,41 @@ Lightweight spine-only structural guides for attaching foliage or child branches
 
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
-| Generation | Mode | `mode` | Absolute / Density / Proportional / Interval / Phyllotaxy / Whorled / Bifurcation / Flood | absolute |  |  | How the number and spacing of children are decided (absolute count, density, phyllotaxy, whorls, …). |
-| Absolute | Number | `number` | 0..100000 (slider 0..100) | 8 | yes | yes | How many children are created on each parent (or how many stems for a Trunk). Large values are slow. |
+| Generation | Mode | `mode` | Absolute / Proportional / Absolute steps / Proportional steps / Phyllotaxy / Interval / Bifurcation / Flood / Parent / Density / Classic (legacy) | absolute |  |  | How children are placed on the parent: an exact number, proportional to its length, in steps (whorls), by phyllotaxy, at intervals, at bends, flooded along it or all at its origin. |
+| Absolute | Number | `number` | 0..100000 (slider 0..100) | 8 | yes | yes | Exact number of nodes created on each parent. |
 | Absolute | Jumble | `jumble` | 0..1 | 0.2 |  | yes | Randomises the order of spacing so children do not form a regular pattern. |
 | Absolute | Sweep | `sweep` | 0.01..1 (slider 0.01..1) | 1 |  | yes | Fraction of the full circle the children are spread around the parent. |
 | Absolute | Roll | `roll` | -1..1 | 0 |  | yes | Rotates children around the parent axis (−1…1 = a full turn each way). |
 | Absolute | Favor splits | `favorSplits` | -1..1 | 0 |  | yes | Prefers (+) or avoids (−) placing children on split points. |
 | Absolute | Align style | `alignStyle` | Group / Individual / Spiral / Alternate / Opposite | group |  |  | How the rotation of consecutive children is arranged: group, individual, spiral, alternate or opposite. |
-| Absolute | Align | `align` | bool | false |  |  | Aligns all children to the same angular position instead of rotating them. |
 | Density | Density | `density` | 0..100 (slider 0..10) /m | 1.5 |  | yes | Children per metre of parent length (Density mode). |
 | Density | Jitter | `densityJitter` | 0..1 | 0.2 |  |  | Random variation of the spacing in Density mode. |
-| Proportional | Steps per meter | `proportionalCount` | 0..50 (slider 0..10) | 2.5 |  |  | Children per metre in Proportional mode. |
-| Interval | Interval | `intervalStep` | 0.02..20 (slider 0.02..3) m | 0.6 |  |  | Distance between children in Interval mode. |
-| Interval | Per step | `perStep` | 1..16 | 1 |  |  | Children created at each interval step. |
-| Phyllotaxy | Divergence angle | `phyllotaxyAngle` | 0..360 ° | 137.508 |  |  | Rotation between consecutive children (137.5° gives the golden angle). |
-| Whorled | Whorls | `whorlCount` | 1..128 | 5 |  |  | Number of whorls (rings of children). |
-| Whorled | Per whorl | `whorlPerStep` | 1..128 (slider 1..24) | 4 |  |  | Children per whorl. |
-| Whorled | Whorl spread | `whorlSpread` | 0..0.5 | 0.03 |  |  | Random jitter of the children inside a whorl. |
-| Whorled | Step roll | `whorlRoll` | -180..180 ° | 15 |  |  | Rotation between consecutive whorls. |
-| Bifurcation | Bend threshold | `bifurcationThreshold` | 0.5..90 ° | 6 |  |  | Bend angle above which a bifurcation is placed. |
-| Bifurcation | Min spacing | `bifurcationSpacing` | 0.01..0.9 | 0.12 |  |  | Minimum distance between bifurcations. |
+| Proportional | Frequency | `proportionalCount` | 0..50 (slider 0..10) /m | 2.5 |  |  | Nodes per metre of parent length: longer parents get more nodes, spread at random along them. |
+| Steps | Steps | `whorlCount` | 1..128 | 5 |  |  | Number of steps (rings of nodes) along the parent. |
+| Steps | Steps | `stepsFrequency` | 0..20 (slider 0..5) /m | 0.5 |  |  | Steps per metre of parent length. |
+| Steps | Per step | `whorlPerStep` | 1..128 (slider 1..24) | 4 |  |  | Nodes in every step. |
+| Steps | Spread | `whorlSpread` | 0..1 | 0.03 |  |  | Lengthwise spacing of the nodes inside one step, as a fraction of the First..Last stretch. |
+| Steps | Roll | `whorlRoll` | -180..180 ° | 15 |  |  | Rotation of every step relative to the previous one. |
+| Steps | Balance | `stepsBalance` | 0..1 | 1 |  |  | How evenly the nodes of a step are spaced around the parent (1 = evenly, 0 = random). |
+| Phyllotaxy | Style | `phyllotaxyStyle` | Opposite (distichous) / Opposite (decussate) / Opposite (random orientation) / Alternating (distichous) / Alternating (random) / Whorled | alternating-distichous- |  |  | How the nodes of a group are arranged and how consecutive groups are turned against each other. |
+| Phyllotaxy | Internode length | `phyllotaxyInternode` | 0..50 (slider 0..2) m | 0.25 |  |  | Distance between groups, measured along the parent from Last towards First. 0 spreads Limit groups evenly instead. |
+| Phyllotaxy | Children per node | `phyllotaxyChildren` | 1..32 | 3 |  |  | Nodes in each whorled group. |
+| Phyllotaxy | Spread | `phyllotaxySpread` | 0..1 | 0 |  |  | Random lengthwise offset of every node inside its group (1 = up to the neighbouring group). |
+| Phyllotaxy | Spiral | `phyllotaxySpiral` | -180..180 ° | 0 |  |  | Extra rotation added for every group. |
+| Phyllotaxy | Limit | `phyllotaxyLimit` | 0..10000 (slider 0..100) | 0 |  |  | Maximum number of groups (0 = no limit). |
+| Phyllotaxy | Align style | `phyllotaxyAlignStyle` | Group / Individual | group |  |  | Group keeps the nodes of a group in their fixed layout; Individual turns every node on its own within its share of the circle. |
+| Interval | Frequency | `intervalStep` | 0.001..50 (slider 0.001..3) m | 0.6 |  | yes | Distance between groups from Last towards First. The curve scales it along the parent: lower values pack groups tighter. |
+| Interval | Count | `perStep` | 1..64 (slider 1..16) | 1 |  |  | Nodes in every group. |
+| Interval | Spread | `intervalSpread` | 0..1 | 0 |  |  | Random lengthwise offset of every node inside its group (1 = up to the neighbouring group). |
+| Interval | Spiral | `intervalSpiral` | -180..180 ° | 0 |  |  | Extra rotation added for every group. |
+| Interval | Limit | `intervalLimit` | 0..10000 (slider 0..100) | 0 |  |  | Maximum number of groups (0 = no limit). |
+| Interval | Align style | `intervalAlignStyle` | Group / Individual | group |  |  | Group keeps the nodes of a group in their fixed layout; Individual turns every node on its own within its share of the circle. |
+| Interval | Balance | `intervalBalance` | 0..1 | 0 |  |  | Turns every other group so its nodes fill the gaps left by the previous group. |
+| Bifurcation | Count | `bifurcationCount` | 0..1000 (slider 0..32) | 4 |  |  | Maximum number of nodes; the strongest bends win. |
+| Bifurcation | Threshold | `bifurcationThreshold` | 0.5..90 ° | 6 |  |  | Smallest bend of the parent that gets a node. |
+| Bifurcation | Spread | `bifurcationSpread` | 0..1 | 0 |  |  | Random shift of every node along the parent (1 = 10 % of its length). |
+| Bifurcation | Min spacing | `bifurcationSpacing` | 0.01..0.9 | 0.12 |  |  | Smallest distance between two bends, as a fraction of the parent. |
+| Alignment | Align | `align` | bool | false |  |  | Rolls the new nodes so they face the sky. |
 | Boundaries | First | `first` | 0..1 | 0.15 |  | yes | Where along the parent the first child may appear (0 = base, 1 = tip). |
 | Boundaries | Last | `last` | 0..1 | 0.95 |  | yes | Where along the parent the last child may appear (0 = base, 1 = tip). |
 | Boundaries | Distribution curve | `distributionCurve` | curve | curve |  |  | Maps normalized spacing [0..1] across [First..Last]. |

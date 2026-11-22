@@ -187,7 +187,7 @@ export function placementsFromSlots(slots: readonly AnchorSlot[], max: number): 
     return {
       branch: slot.branch,
       sample,
-      placement: { slotIndex: slot.index, u: sample.u, azimuthRad: slot.rng.fork('az').next() * Math.PI * 2, isExtension: false, side: 0 },
+      placement: { slotIndex: slot.index, u: sample.u, azimuthRad: slot.rng.fork('az').next() * Math.PI * 2, isExtension: false, side: 0, groupIndex: 0 },
       rng: slot.rng,
       index: i,
       anchor: slot,

@@ -20,79 +20,186 @@ export interface GenerationDefaults {
   placement?: boolean;
 }
 
-/** "Generation" tab - shared by every generator, with full distribution modes on Branch/Root/Spine. */
+/** Mode ids that use the shared Absolute-style layout controls. */
+const COUNT_MODES = ['absolute', 'proportional', 'density', 'classic', 'flood', 'parent'];
+
+const modeIs = (...modes: string[]): Condition => ({ param: 'mode', op: 'in', value: modes });
+
+/** Phyllotaxy styles: label shown in the inspector -> stored value. */
+const PHYLLOTAXY_STYLE_OPTIONS: { value: string; label: string }[] = [
+  { value: 'opposite-distichous', label: 'Opposite (distichous)' },
+  { value: 'opposite-decussate', label: 'Opposite (decussate)' },
+  { value: 'opposite-random', label: 'Opposite (random orientation)' },
+  { value: 'alternating-distichous', label: 'Alternating (distichous)' },
+  { value: 'alternating-random', label: 'Alternating (random)' },
+  { value: 'whorled', label: 'Whorled' },
+];
+
+/** "Generation" tab - shared by every generator. `Mode` selects one of the placement algorithms of `generators/modes`. */
 export function generationParams(d: GenerationDefaults): ParamDef[] {
   const g = section('Generation', 'Generation');
   const a = section('Generation', 'Absolute');
   const dn = section('Generation', 'Density');
   const pr = section('Generation', 'Proportional');
-  const iv = section('Generation', 'Interval');
+  const st = section('Generation', 'Steps');
   const ph = section('Generation', 'Phyllotaxy');
-  const wh = section('Generation', 'Whorled');
+  const iv = section('Generation', 'Interval');
   const bf = section('Generation', 'Bifurcation');
+  const al = section('Generation', 'Alignment');
   const b = section('Generation', 'Boundaries');
   const ex = section('Generation', 'Extend parent');
   const ko = section('Generation', 'Knockout & Limits');
   const c = section('Generation', 'Common');
   const tp = section('Generation', 'Tree placement');
 
-  const countDriven: Condition = {
-    param: 'mode',
-    op: 'in',
-    value: ['absolute', 'phyllotaxy', 'bifurcation', 'flood'],
-  };
-  const densityDriven = { param: 'mode', value: 'density' } as const;
-  const proportionalDriven = { param: 'mode', value: 'proportional' } as const;
-  const intervalDriven = { param: 'mode', value: 'interval' } as const;
-  const phyllotaxyDriven = { param: 'mode', value: 'phyllotaxy' } as const;
-  const whorledDriven = { param: 'mode', value: 'whorled' } as const;
-  const bifurcationDriven = { param: 'mode', value: 'bifurcation' } as const;
   const extendActive = { param: 'extendParent', op: 'ne', value: 'none' } as const;
+  const stepsMode = modeIs('absolute-steps', 'proportional-steps');
+  const whorledStyle: Condition = { all: [{ param: 'mode', value: 'phyllotaxy' }, { param: 'phyllotaxyStyle', value: 'whorled' }] };
 
-  const modes = d.includeBranchExtended
-    ? ['Absolute', 'Density', 'Proportional', 'Interval', 'Phyllotaxy', 'Whorled', 'Bifurcation', 'Flood']
-    : ['Absolute', 'Density'];
+  const mode = g.enumOf(
+    'mode',
+    'Mode',
+    'Absolute',
+    ['Absolute', 'Proportional', 'Absolute steps', 'Proportional steps', 'Phyllotaxy', 'Interval', 'Bifurcation', 'Flood', 'Parent', 'Density', 'Classic'],
+    {
+      tooltip:
+        'How children are placed on the parent: an exact number, proportional to its length, in steps (whorls), by phyllotaxy, at intervals, at bends, flooded along it or all at its origin.',
+    },
+  );
+  if (mode.kind === 'enum') {
+    mode.options = mode.options.map((o) => (o.value === 'classic' ? { ...o, label: 'Classic (legacy)', disabled: true } : o));
+  }
+  const style = ph.enumOf('phyllotaxyStyle', 'Style', 'Alternating (distichous)', [], {
+    tooltip: 'How the nodes of a group are arranged and how consecutive groups are turned against each other.',
+    visibleIf: modeIs('phyllotaxy'),
+  });
+  if (style.kind === 'enum') style.options = PHYLLOTAXY_STYLE_OPTIONS;
+  const groupAlign = (sec: typeof ph, id: string, only: string): ParamDef => {
+    const def = sec.enumOf(id, 'Align style', 'Group', ['Group', 'Individual'], {
+      tooltip: 'Group keeps the nodes of a group in their fixed layout; Individual turns every node on its own within its share of the circle.',
+      visibleIf: modeIs(only),
+    });
+    return def;
+  };
 
   const list: ParamDef[] = [
-    g.enumOf('mode', 'Mode', 'Absolute', modes),
+    mode,
 
     // Absolute / count-driven controls
-    a.int('number', 'Number', d.number, { min: 0, max: 100000, softMax: 100, warnAbove: 1000, variance: 0, curve: true, visibleIf: countDriven }),
-    a.float('jumble', 'Jumble', d.jumble ?? 0, { min: 0, max: 1, curve: true }),
-    a.float('sweep', 'Sweep', 1, { min: 0.01, max: 1, softMax: 1, curve: true }),
-    a.float('roll', 'Roll', 0, { min: -1, max: 1, curve: true }),
-    a.float('favorSplits', 'Favor splits', 0, { min: -1, max: 1, curve: true, visibleIf: countDriven }),
-    a.enumOf('alignStyle', 'Align style', 'Group', ['Group', 'Individual', 'Spiral', 'Alternate', 'Opposite']),
-    a.bool('align', 'Align', false),
+    a.int('number', 'Number', d.number, {
+      min: 0,
+      max: 100000,
+      softMax: 100,
+      warnAbove: 1000,
+      variance: 0,
+      curve: true,
+      visibleIf: modeIs('absolute', 'classic', 'flood', 'parent'),
+      tooltip: 'Exact number of nodes created on each parent.',
+    }),
+    a.float('jumble', 'Jumble', d.jumble ?? 0, { min: 0, max: 1, curve: true, visibleIf: modeIs('absolute', 'proportional', 'density', 'classic') }),
+    a.float('sweep', 'Sweep', 1, { min: 0.01, max: 1, softMax: 1, curve: true, visibleIf: modeIs(...COUNT_MODES) }),
+    a.float('roll', 'Roll', 0, { min: -1, max: 1, curve: true, visibleIf: modeIs(...COUNT_MODES) }),
+    a.float('favorSplits', 'Favor splits', 0, { min: -1, max: 1, curve: true, visibleIf: modeIs('absolute', 'proportional', 'classic', 'flood') }),
+    a.enumOf('alignStyle', 'Align style', 'Group', ['Group', 'Individual', 'Spiral', 'Alternate', 'Opposite'], {
+      visibleIf: modeIs('absolute', 'proportional', 'density', 'classic'),
+    }),
 
-    // Density mode controls
-    dn.float('density', 'Density', 1.5, { min: 0, max: 100, softMax: 10, unit: '/m', curve: true, visibleIf: densityDriven }),
-    dn.float('densityJitter', 'Jitter', 0.2, { min: 0, max: 1, visibleIf: densityDriven }),
+    // Density (existing)
+    dn.float('density', 'Density', 1.5, { min: 0, max: 100, softMax: 10, unit: '/m', curve: true, visibleIf: modeIs('density') }),
+    dn.float('densityJitter', 'Jitter', 0.2, { min: 0, max: 1, visibleIf: modeIs('density') }),
+
+    // Proportional
+    pr.float('proportionalCount', 'Frequency', 2.5, {
+      min: 0,
+      max: 50,
+      softMax: 10,
+      unit: '/m',
+      visibleIf: modeIs('proportional'),
+      tooltip: 'Nodes per metre of parent length: longer parents get more nodes, spread at random along them.',
+    }),
+
+    // Steps (Absolute steps / Proportional steps; ids of the former Whorled mode are kept)
+    st.int('whorlCount', 'Steps', 5, { min: 1, max: 128, visibleIf: modeIs('absolute-steps'), tooltip: 'Number of steps (rings of nodes) along the parent.' }),
+    st.float('stepsFrequency', 'Steps', 0.5, {
+      min: 0,
+      max: 20,
+      softMax: 5,
+      unit: '/m',
+      visibleIf: modeIs('proportional-steps'),
+      tooltip: 'Steps per metre of parent length.',
+    }),
+    st.int('whorlPerStep', 'Per step', 4, { min: 1, max: 128, softMax: 24, visibleIf: stepsMode, tooltip: 'Nodes in every step.' }),
+    st.float('whorlSpread', 'Spread', 0.03, {
+      min: 0,
+      max: 1,
+      visibleIf: stepsMode,
+      tooltip: 'Lengthwise spacing of the nodes inside one step, as a fraction of the First..Last stretch.',
+    }),
+    st.float('whorlRoll', 'Roll', 15, { min: -180, max: 180, unit: '°', visibleIf: stepsMode, tooltip: 'Rotation of every step relative to the previous one.' }),
+    st.float('stepsBalance', 'Balance', 1, {
+      min: 0,
+      max: 1,
+      visibleIf: stepsMode,
+      tooltip: 'How evenly the nodes of a step are spaced around the parent (1 = evenly, 0 = random).',
+    }),
+
+    // Phyllotaxy
+    style,
+    ph.float('phyllotaxyInternode', 'Internode length', 0.25, {
+      min: 0,
+      max: 50,
+      softMax: 2,
+      unit: 'm',
+      visibleIf: modeIs('phyllotaxy'),
+      tooltip: 'Distance between groups, measured along the parent from Last towards First. 0 spreads Limit groups evenly instead.',
+    }),
+    ph.int('phyllotaxyChildren', 'Children per node', 3, { min: 1, max: 32, visibleIf: whorledStyle, tooltip: 'Nodes in each whorled group.' }),
+    ph.float('phyllotaxySpread', 'Spread', 0, {
+      min: 0,
+      max: 1,
+      visibleIf: modeIs('phyllotaxy'),
+      tooltip: 'Random lengthwise offset of every node inside its group (1 = up to the neighbouring group).',
+    }),
+    ph.float('phyllotaxySpiral', 'Spiral', 0, { min: -180, max: 180, unit: '°', visibleIf: modeIs('phyllotaxy'), tooltip: 'Extra rotation added for every group.' }),
+    ph.int('phyllotaxyLimit', 'Limit', 0, { min: 0, max: 10000, softMax: 100, visibleIf: modeIs('phyllotaxy'), tooltip: 'Maximum number of groups (0 = no limit).' }),
+    groupAlign(ph, 'phyllotaxyAlignStyle', 'phyllotaxy'),
+
+    // Interval
+    iv.float('intervalStep', 'Frequency', 0.6, {
+      min: 0.001,
+      max: 50,
+      softMax: 3,
+      unit: 'm',
+      curve: true,
+      visibleIf: modeIs('interval'),
+      tooltip: 'Distance between groups from Last towards First. The curve scales it along the parent: lower values pack groups tighter.',
+    }),
+    iv.int('perStep', 'Count', 1, { min: 1, max: 64, softMax: 16, visibleIf: modeIs('interval'), tooltip: 'Nodes in every group.' }),
+    iv.float('intervalSpread', 'Spread', 0, {
+      min: 0,
+      max: 1,
+      visibleIf: modeIs('interval'),
+      tooltip: 'Random lengthwise offset of every node inside its group (1 = up to the neighbouring group).',
+    }),
+    iv.float('intervalSpiral', 'Spiral', 0, { min: -180, max: 180, unit: '°', visibleIf: modeIs('interval'), tooltip: 'Extra rotation added for every group.' }),
+    iv.int('intervalLimit', 'Limit', 0, { min: 0, max: 10000, softMax: 100, visibleIf: modeIs('interval'), tooltip: 'Maximum number of groups (0 = no limit).' }),
+    groupAlign(iv, 'intervalAlignStyle', 'interval'),
+    iv.float('intervalBalance', 'Balance', 0, {
+      min: 0,
+      max: 1,
+      visibleIf: modeIs('interval'),
+      tooltip: 'Turns every other group so its nodes fill the gaps left by the previous group.',
+    }),
+
+    // Bifurcation
+    bf.int('bifurcationCount', 'Count', 4, { min: 0, max: 1000, softMax: 32, visibleIf: modeIs('bifurcation'), tooltip: 'Maximum number of nodes; the strongest bends win.' }),
+    bf.float('bifurcationThreshold', 'Threshold', 6, { min: 0.5, max: 90, unit: '°', visibleIf: modeIs('bifurcation'), tooltip: 'Smallest bend of the parent that gets a node.' }),
+    bf.float('bifurcationSpread', 'Spread', 0, { min: 0, max: 1, visibleIf: modeIs('bifurcation'), tooltip: 'Random shift of every node along the parent (1 = 10 % of its length).' }),
+    bf.float('bifurcationSpacing', 'Min spacing', 0.12, { min: 0.01, max: 0.9, visibleIf: modeIs('bifurcation'), tooltip: 'Smallest distance between two bends, as a fraction of the parent.' }),
+
+    // Alignment (skyward roll, read by generators that grow their own branches)
+    al.bool('align', 'Align', false, { visibleIf: { param: 'mode', op: 'ne', value: 'parent' }, tooltip: 'Rolls the new nodes so they face the sky.' }),
   ];
-
-  if (d.includeBranchExtended) {
-    list.push(
-      // Proportional mode
-      pr.float('proportionalCount', 'Steps per meter', 2.5, { min: 0, max: 50, softMax: 10, visibleIf: proportionalDriven }),
-
-      // Interval mode
-      iv.float('intervalStep', 'Interval', 0.6, { min: 0.02, max: 20, softMax: 3, unit: 'm', visibleIf: intervalDriven }),
-      iv.int('perStep', 'Per step', 1, { min: 1, max: 16, visibleIf: intervalDriven }),
-
-      // Phyllotaxy (Golden angle) mode
-      ph.float('phyllotaxyAngle', 'Divergence angle', 137.508, { min: 0, max: 360, unit: '°', visibleIf: phyllotaxyDriven }),
-
-      // Whorled (conifer steps) mode
-      wh.int('whorlCount', 'Whorls', 5, { min: 1, max: 128, visibleIf: whorledDriven }),
-      wh.int('whorlPerStep', 'Per whorl', 4, { min: 1, max: 128, softMax: 24, visibleIf: whorledDriven }),
-      wh.float('whorlSpread', 'Whorl spread', 0.03, { min: 0, max: 0.5, visibleIf: whorledDriven }),
-      wh.float('whorlRoll', 'Step roll', 15, { min: -180, max: 180, unit: '°', visibleIf: whorledDriven }),
-
-      // Bifurcation (bend junction) mode
-      bf.float('bifurcationThreshold', 'Bend threshold', 6, { min: 0.5, max: 90, unit: '°', visibleIf: bifurcationDriven }),
-      bf.float('bifurcationSpacing', 'Min spacing', 0.12, { min: 0.01, max: 0.9, visibleIf: bifurcationDriven }),
-    );
-  }
 
   // Boundaries
   list.push(

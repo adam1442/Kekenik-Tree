@@ -398,7 +398,7 @@ describe('Leaf node', () => {
     expect(classic).not.toEqual(sync);
   });
 
-  it('Branch publishes the alternating side of Interval placement as a skeleton attribute', () => {
+  it('Branch publishes the side of its placement (alternating for Interval) as a skeleton attribute', () => {
     const out = run('generator.branch', { mode: 'interval', intervalStep: 0.5, first: 0.1, last: 0.9 });
     const side = skeletonOf(out).attributes.get('side');
     expect(side).toBeDefined();
@@ -406,7 +406,8 @@ describe('Leaf node', () => {
     expect(values.has(1)).toBe(true);
     expect(values.has(-1)).toBe(true);
     const absolute = skeletonOf(run('generator.branch', { mode: 'absolute' })).attributes.get('side');
-    expect(absolute).toBeUndefined();
+    expect(absolute).toBeDefined();
+    expect(Array.from(absolute as Float32Array).every((v) => v === 1 || v === -1 || v === 0)).toBe(true);
   });
 
   it('Unification reads the lineage published by upstream generators', () => {

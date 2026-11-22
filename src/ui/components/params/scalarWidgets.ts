@@ -94,7 +94,7 @@ export function createEnumWidget(
   let curVal = typeof curState.value === 'string' ? curState.value : def.default;
   let isMixed = Boolean(opts.mixed);
 
-  const getOptions = (): { value: string; label: string }[] => {
+  const getOptions = (): { value: string; label: string; disabled?: boolean }[] => {
     const dyn = opts.resolveDynamicOptions?.(def.id);
     if (dyn && dyn.length > 0) return dyn;
     return def.options;
@@ -137,6 +137,7 @@ export function createEnumWidget(
       list.map((o) => ({
         label: o.label,
         checked: !isMixed && o.value === curVal,
+        ...(o.disabled ? { disabled: true } : {}),
         run: () => selectValue(o.value),
       })),
       btn,
@@ -148,13 +149,13 @@ export function createEnumWidget(
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       e.stopPropagation();
-      const list = getOptions();
+      const list = getOptions().filter((o) => !o.disabled || o.value === curVal);
       if (list.length === 0) return;
       const idx = list.findIndex((o) => o.value === curVal);
       const step = e.key === 'ArrowDown' ? 1 : -1;
       const nextIdx = idx < 0 ? 0 : (idx + step + list.length) % list.length;
       const nextOpt = list[nextIdx];
-      if (nextOpt) selectValue(nextOpt.value);
+      if (nextOpt && !nextOpt.disabled) selectValue(nextOpt.value);
     }
   });
 

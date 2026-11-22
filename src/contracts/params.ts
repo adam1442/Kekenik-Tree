@@ -69,7 +69,8 @@ export interface BoolParamDef extends ParamBase {
 export interface EnumParamDef extends ParamBase {
   kind: 'enum';
   default: string;
-  options: { value: string; label: string }[];
+  /** `disabled` options are listed but cannot be chosen (legacy values). */
+  options: { value: string; label: string; disabled?: boolean }[];
 }
 export interface Vec2ParamDef extends ParamBase {
   kind: 'vec2';
