@@ -233,10 +233,12 @@ describe('node registry catalogue', () => {
   it('exposes the inspector tabs', () => {
     const tabs = (type: string): string[] => [...new Set((getNodeDef(type) as NodeDef).params.map((p) => p.group))];
     expect(tabs('generator.trunk')).toEqual(['Generation', 'Spine', 'Forces', 'Shape', 'Skin', 'UV', 'LOD', 'Displacement', 'Material', 'Animation', 'Hand drawn']);
-    expect(tabs('generator.leaf')).toEqual(['Generation', 'Skin', 'Forces', 'Orientation', 'Material', 'Lighting', 'Wind', 'Post']);
+    expect(tabs('generator.leaf')).toEqual(['Generation', 'Skin', 'Leaves', 'Forces', 'Orientation', 'Material', 'Lighting', 'Wind', 'Post']);
     const leaf = getNodeDef('generator.leaf') as NodeDef;
     const subs = [...new Set(leaf.params.filter((p) => p.group === 'Material').map((p) => p.subgroup))];
-    expect(subs).toEqual(['Leaves', 'Season', 'Fallen', 'Vertex Color', 'Lightmap']);
+    expect(subs).toEqual(['Season', 'Fallen', 'Vertex Color', 'Lightmap']);
+    const placement = [...new Set(leaf.params.filter((p) => p.group === 'Leaves').map((p) => p.subgroup))];
+    expect(placement).toEqual(['Leaves', 'Type', 'Local orientation', 'Sensitivity → Parent', 'Final adjustments']);
   });
 
   it('every definition evaluates with its default params and empty inputs', async () => {

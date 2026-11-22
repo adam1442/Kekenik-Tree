@@ -1,4 +1,5 @@
 import { getNumber, getString, type NodeParams } from '@/contracts/params';
+import type { Lineage } from '@/contracts/ports';
 import type { NodeContext, NodeInputs, NodeOutputs } from '@/contracts/nodes';
 import { SkeletonBuilder, type Skeleton } from '@/contracts/skeleton';
 import { deg2rad } from '@/core/math';
@@ -7,6 +8,19 @@ import { bladeBasis, buildLeafMesh, cardAttachments, type LeafCard, type LeafOut
 import { instanceKey } from '@/instances/keys';
 import { anchorWind, orientAtAnchor, placementsFromSlots, planAnchorSlots } from './cutoutPlacement';
 import { cross, dot, norm, rotate, type V3 } from '@/geometry/math3';
+import { chainOf } from '@/geometry/lineage';
+import {
+  AnchorResolver,
+  crossedSide,
+  effectiveSize,
+  isMirrored,
+  orientLeaf,
+  parentBasis,
+  resolveSide,
+  weldToSkin,
+  type AnchorStyle,
+} from '@/geometry/leafPlacement';
+import { readLeafPlacement, type LeafPlacementConfig } from './leafPlacementParams';
 import { resolveUvAreaRect } from '@/materials/materialSource';
 import {
   atlasRect,
@@ -60,14 +74,40 @@ function faceDirection(mode: string, axis: V3, tangent: V3, out: V3, blend: numb
   }
 }
 
-/** Build the card(s) of one leaf. */
-function leafCards(ctx: NodeContext, parent: Skeleton, pl: Placement, k: number, n: number, p: NodeParams): { cards: LeafCard[]; tip: V3; origin: V3 } {
+/** Params of versions before 2: the Skin > Size "Scale" became the Leaves > Size parameter. */
+export function migrateLeafParams(params: NodeParams, fromVersion: number): NodeParams {
+  if (fromVersion >= 2) return params;
+  const old = params.scale;
+  if (old && !params.leafSize) {
+    params.leafSize = old;
+    delete params.scale;
+  }
+  return params;
+}
+
+interface LeafCardsResult {
+  cards: LeafCard[];
+  tip: V3;
+  origin: V3;
+}
+
+/** Per-evaluation helpers shared by all leaves of the node. */
+interface LeafEnv {
+  cfg: LeafPlacementConfig;
+  anchors: AnchorResolver;
+  parentSide: Float32Array | undefined;
+}
+
+/** Build the card(s) of one leaf; null when its weld failed and failed welds are dropped. */
+function leafCards(ctx: NodeContext, parent: Skeleton, pl: Placement, k: number, n: number, p: NodeParams, env: LeafEnv): LeafCardsResult | null {
   const { sample: s } = pl;
+  const { cfg } = env;
   const rng = pl.rng.fork(`leaf:${k}`);
   const u = s.u;
   const post = postTransform(p);
   const az = pl.placement.azimuthRad + (n > 1 ? (k * Math.PI * 2) / n : 0) + deg2rad(varied(rng, p, 'yaw', 0));
-  const out = outwardAt(s, az);
+  const basis = parentBasis(s.tangent, s.normal, s.binormal, cfg.parentStyle);
+  const out = outwardAt({ ...s, normal: basis.normal, binormal: basis.binormal }, az);
   const spread = n > 1 ? deg2rad(getNumber(p, 'clusterAngle', 25)) * (rng.next() * 2 - 1) : 0;
   const angle = deg2rad(varied(rng, p, 'angleToParent', 55) * curveFactor(p, 'angleToParent', u) + varied(rng, p, 'pitch', 0)) + spread;
   const T = s.tangent;
@@ -86,11 +126,33 @@ function leafCards(ctx: NodeContext, parent: Skeleton, pl: Placement, k: number,
     facing = o.useFacing ? o.facing : ownFacing(axis);
   } else facing = ownFacing(axis);
   const roll = deg2rad(varied(rng, p, 'rollAngle', 0)) + post.roll;
-  const { axis: ax, side } = bladeBasis(axis, facing, roll);
+  const blade = bladeBasis(axis, facing, roll);
 
-  const scale = varied(rng, p, 'scale', 1) * curveFactor(p, 'scale', u) * post.scale * anchorScale * (1 + 0.12 * Math.min(ctx.lod, 3));
-  const width = varied(rng, p, 'width', 0.3) * curveFactor(p, 'width', u) * scale;
-  const height = varied(rng, p, 'height', 0.5) * curveFactor(p, 'height', u) * scale;
+  // Weld: base on the skin of the parent tube (anchored cutout placements keep their anchor position).
+  let basePos: V3 = s.position;
+  if (cfg.weld && !pl.anchor) {
+    const welded = weldToSkin(s.position, T, out, s.radius);
+    if (welded) basePos = welded;
+    else if (!cfg.keepFailedWelds) return null;
+  }
+  const attach: V3 = [basePos[0] + post.offset[0], basePos[1] + post.offset[1], basePos[2] + post.offset[2]];
+  const oriented = orientLeaf(
+    blade,
+    { position: attach, parentTangent: T, anchor: (style: AnchorStyle) => env.anchors.computeAnchorPoint(pl.branch.id, style) },
+    cfg.local,
+    cfg.sensitivity,
+    cfg.final,
+  );
+  const ax = oriented.axis;
+  const side = oriented.side;
+
+  const sizeCurve = varied(rng, p, 'leafSize', 1) * curveFactor(p, 'leafSize', u);
+  const lodGrow = 1 + 0.12 * Math.min(ctx.lod, 3);
+  const fixedScale = post.scale * anchorScale * lodGrow;
+  const sizeTerm = cfg.useActualSize ? 1 : effectiveSize(sizeCurve, cfg.sizeParent, pl.branch.length);
+  const scale = sizeTerm * post.scale * anchorScale * lodGrow;
+  let width = varied(rng, p, 'width', 0.3) * curveFactor(p, 'width', u) * scale;
+  let height = varied(rng, p, 'height', 0.5) * curveFactor(p, 'height', u) * scale;
   const seg = bladeSegments(p, ctx.lod);
   const n0 = cross(side, ax);
   const bendSign = dot(n0, [0, 0, -1]) >= 0 ? 1 : -1;
@@ -98,9 +160,16 @@ function leafCards(ctx: NodeContext, parent: Skeleton, pl: Placement, k: number,
   const fold = getNumber(p, 'leafFold', 0) * curveFactor(p, 'leafFold', u) * 0.8;
   const curl = getNumber(p, 'leafCurl', 0) * curveFactor(p, 'leafCurl', u);
   const twist = varied(rng, p, 'leafTwist', 0) * (Math.PI / 2);
-  const origin: V3 = [s.position[0] + post.offset[0], s.position[1] + post.offset[1], s.position[2] + post.offset[2]];
+  const origin = attach;
   const type = pickLeafType(rng, p, 'leaf');
   const cutout = type.meshAsset;
+  if (cfg.useActualSize && cutout) {
+    // Authored real size of the mesh (the Meshes-panel scale is applied by the cutout builder).
+    width = (cutout.boundsMeters?.[0] || 1) * fixedScale;
+    height = (cutout.boundsMeters?.[1] || 1) * fixedScale;
+  }
+  const sideSign = resolveSide(pl.placement.side, env.parentSide ? (env.parentSide[s.parentPoint] ?? 0) : 0, () => pl.rng.fork(`side:${k}`).next());
+  const mirror = isMirrored(cfg.flip, cfg.initial, sideSign, pl.rng.fork(`flip:${k}`).next());
   const uvArea = resolveUvAreaRect(type.materialId, 'leaf', rng);
   const color = leafTint(rng, p);
   const ao = leafAo(p, u, rng);
@@ -112,28 +181,32 @@ function leafCards(ctx: NodeContext, parent: Skeleton, pl: Placement, k: number,
   for (let c = 0; c < count; c++) {
     const cr = (c * Math.PI) / count;
     const sd = c === 0 ? side : rotate(side, ax, cr);
-    cards.push({
-      origin,
-      axis: ax,
-      side: sd,
-      length: height,
-      width,
-      bend,
-      fold,
-      curl,
-      twist,
-      segLength: seg.len,
-      segWidth: seg.wid,
-      outline: seg.outline,
-      color,
-      ao,
-      atlas,
-      materialId: type.materialId,
-      pivot: origin,
-      wind,
-      cutout,
-      lod: ctx.lod,
-    });
+    const sides = cfg.cross ? [sd, crossedSide(sd, ax)] : [sd];
+    for (const cs of sides) {
+      cards.push({
+        origin,
+        axis: ax,
+        side: cs,
+        length: height,
+        width,
+        bend,
+        fold,
+        curl,
+        twist,
+        segLength: seg.len,
+        segWidth: seg.wid,
+        outline: seg.outline,
+        color,
+        ao,
+        atlas,
+        materialId: type.materialId,
+        pivot: origin,
+        wind,
+        cutout,
+        lod: ctx.lod,
+        ...(mirror ? { mirror: true } : {}),
+      });
+    }
   }
   const tip: V3 = [origin[0] + ax[0] * height, origin[1] + ax[1] * height, origin[2] + ax[2] * height];
   return { cards, tip, origin };
@@ -149,6 +222,16 @@ export function evaluateLeaf(ctx: NodeContext, inputs: NodeInputs, p: NodeParams
   const parent = parentOf(inputs);
   if (!isActive(p) || parent.count === 0) return emptyFoliage(parent, ctx.seed);
   const placements = leafPlacements(ctx, inputs, parent, p);
+  const cfg = readLeafPlacement(p);
+  const pv = inputs.parent?.[0];
+  const lineage: Lineage | undefined = pv && pv.kind === 'Structure' ? pv.value.lineage : undefined;
+  const branchIndex = new Map<number, number>();
+  parent.branches.forEach((b, i) => branchIndex.set(b.id, i));
+  const env: LeafEnv = {
+    cfg,
+    anchors: new AnchorResolver((branchId) => chainOf(lineage, parent, branchIndex.get(branchId) ?? -1)),
+    parentSide: parent.attributes.get('side'),
+  };
   const perNode = Math.max(1, Math.round(getNumber(p, 'leavesPerNode', 1)));
   const cards: LeafCard[] = [];
   const sb = new SkeletonBuilder();
@@ -158,7 +241,8 @@ export function evaluateLeaf(ctx: NodeContext, inputs: NodeInputs, p: NodeParams
   for (const pl of placements) {
     const copies = pl.anchor ? 1 : perNode;
     for (let k = 0; k < copies; k++) {
-      const r = leafCards(ctx, parent, pl, k, copies, p);
+      const r = leafCards(ctx, parent, pl, k, copies, p, env);
+      if (!r) continue;
       cards.push(...r.cards);
       sb.beginBranch(pl.branch.id, pl.sample.parentPoint, gen);
       sb.addPoint(r.origin[0], r.origin[1], r.origin[2], 0.001);
@@ -174,5 +258,5 @@ export function evaluateLeaf(ctx: NodeContext, inputs: NodeInputs, p: NodeParams
     }
   }
   const sk = sb.build();
-  return foliageOutput(sk, parent, buildLeafMesh(cards, { defaultMaterial: 'leaf' }), sk.branches.length, ctx.seed, att.build());
+  return foliageOutput(sk, parent, buildLeafMesh(cards, { defaultMaterial: 'leaf', fixWinding: cfg.fixWinding }), sk.branches.length, ctx.seed, att.build());
 }

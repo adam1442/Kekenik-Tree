@@ -40,6 +40,9 @@ import {
   type SpineDefaults,
 } from './params';
 import { anchorPlacementParams } from './cutoutPlacement';
+import { leafPlacementParams } from './leafPlacementParams';
+import { migrateLeafParams } from './foliage';
+import { withLineage } from './lineageHook';
 import { evaluateRoot } from './root';
 import { evaluateTrunk } from './trunk';
 
@@ -107,10 +110,11 @@ const leafTabs = (gen: GenerationDefaults, extra: ParamDef[] = []): ParamDef[] =
   ...generationParams(gen),
   ...anchorPlacementParams(),
   ...leafSkinParams(),
+  ...leafPlacementParams(),
   ...extra,
   ...forcesParams(),
   ...orientationParams(),
-  ...leafMaterialParams(),
+  ...leafMaterialParams().filter((d) => d.id !== 'leafTypes'),
   ...lightingParams(),
   ...leafWindParams(),
   ...postParams(),
@@ -133,7 +137,7 @@ export const nodeDefs: NodeDef[] = [
       0.28,
       0.14,
     ),
-    evaluate: withDisplacementWarning(evaluateTrunk),
+    evaluate: withLineage(withDisplacementWarning(evaluateTrunk)),
     dependencyKey: displacementDeps,
   },
   {
@@ -150,7 +154,7 @@ export const nodeDefs: NodeDef[] = [
       { kind: 'branch', length: 3.2, radius: 0.06, taper: 0.88, segments: 10, spread: 48, gravity: 0.16, upDown: 0.06, noiseAmount: 0.2 },
       8,
     ),
-    evaluate: withDisplacementWarning(evaluateBranch),
+    evaluate: withLineage(withDisplacementWarning(evaluateBranch)),
     dependencyKey: displacementDeps,
   },
   {
@@ -169,7 +173,7 @@ export const nodeDefs: NodeDef[] = [
       0.18,
       0.2,
     ),
-    evaluate: withDisplacementWarning(evaluateRoot),
+    evaluate: withLineage(withDisplacementWarning(evaluateRoot)),
     dependencyKey: displacementDeps,
   },
   {
@@ -182,7 +186,7 @@ export const nodeDefs: NodeDef[] = [
     statsGroup: 'branches',
     ports: withChildren,
     params: splitHelperParams(),
-    evaluate: evaluateSplit,
+    evaluate: withLineage(evaluateSplit),
   },
   {
     type: 'generator.knot',
@@ -194,7 +198,7 @@ export const nodeDefs: NodeDef[] = [
     statsGroup: 'caps',
     ports: withChildren,
     params: knotHelperParams(),
-    evaluate: evaluateKnot,
+    evaluate: withLineage(evaluateKnot),
   },
   {
     type: 'generator.spine',
@@ -213,7 +217,7 @@ export const nodeDefs: NodeDef[] = [
       0.1,
       true,
     ),
-    evaluate: withDisplacementWarning(evaluateSpine),
+    evaluate: withLineage(withDisplacementWarning(evaluateSpine)),
     dependencyKey: displacementDeps,
   },
   {
@@ -225,8 +229,10 @@ export const nodeDefs: NodeDef[] = [
     description: 'Leaf cards or meshes.',
     statsGroup: 'leaf meshes',
     ports: withChildren,
+    version: 2,
+    migrate: migrateLeafParams,
     params: leafTabs({ number: 6, first: 0.1, last: 1 }),
-    evaluate: evaluateLeaf,
+    evaluate: withLineage(evaluateLeaf),
   },
   {
     type: 'generator.frond',

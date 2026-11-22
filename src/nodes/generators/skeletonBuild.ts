@@ -25,6 +25,8 @@ export class StructureSkeletonBuilder {
   private bid: Uint32Array;
   private tArr: Float32Array;
   private ageArr: Float32Array;
+  /** Left / right side (+1 / -1) per point; null until a branch with a side is added. */
+  private sideArr: Float32Array | null = null;
   private readonly branches: Branch[] = [];
 
   constructor(initialPointCapacity = 1024) {
@@ -105,6 +107,8 @@ export class StructureSkeletonBuilder {
     ages?: ArrayLike<number>;
     twists?: ArrayLike<number>;
     initialNormalHint?: Vec3;
+    /** Left / right side (+1 / -1) of the branch on its parent; stored as the `side` skeleton attribute. */
+    side?: number;
   }): { branchId: number; start: number; end: number; length: number } {
     const n = opts.count;
     if (n < 2) {
@@ -189,6 +193,15 @@ export class StructureSkeletonBuilder {
       this.nrmZ[gi] = outN[2];
     }
 
+    if (opts.side !== undefined && opts.side !== 0) {
+      if (!this.sideArr || this.sideArr.length < this.cap) {
+        const grown = new Float32Array(this.cap);
+        if (this.sideArr) grown.set(this.sideArr);
+        this.sideArr = grown;
+      }
+      this.sideArr.fill(opts.side > 0 ? 1 : -1, start, start + n);
+    }
+
     this.len += n;
     const branch: Branch = {
       id: branchId,
@@ -211,6 +224,7 @@ export class StructureSkeletonBuilder {
       attributes.set('rmfNormalY', this.nrmY.slice(0, n));
       attributes.set('rmfNormalZ', this.nrmZ.slice(0, n));
       attributes.set('twist', this.tws.slice(0, n));
+      if (this.sideArr) attributes.set('side', this.sideArr.slice(0, n));
     }
     return {
       count: n,

@@ -81,6 +81,61 @@ export class MeshAccumulator {
     this.idx[this.ni++] = c;
   }
 
+  /**
+   * Mirror the vertices `[from, vertexCount)` across the plane through `origin` with unit `normal`. Normals and tangents
+   * are reflected, the tangent handedness flips. The triangle order is NOT changed, so mirrored geometry has the
+   * opposite winding until `fixWinding()` runs.
+   */
+  mirrorFrom(from: number, origin: readonly [number, number, number], normal: readonly [number, number, number]): void {
+    const d = this.data;
+    const [nx, ny, nz] = normal;
+    for (let i = from; i < this.nv; i++) {
+      const o = i * STRIDE;
+      const k = ((d[o] as number) - origin[0]) * nx + ((d[o + 1] as number) - origin[1]) * ny + ((d[o + 2] as number) - origin[2]) * nz;
+      d[o] = (d[o] as number) - 2 * k * nx;
+      d[o + 1] = (d[o + 1] as number) - 2 * k * ny;
+      d[o + 2] = (d[o + 2] as number) - 2 * k * nz;
+      for (const c of [3, 6]) {
+        const m = (d[o + c] as number) * nx + (d[o + c + 1] as number) * ny + (d[o + c + 2] as number) * nz;
+        d[o + c] = (d[o + c] as number) - 2 * m * nx;
+        d[o + c + 1] = (d[o + c + 1] as number) - 2 * m * ny;
+        d[o + c + 2] = (d[o + c + 2] as number) - 2 * m * nz;
+      }
+      d[o + 9] = -(d[o + 9] as number);
+    }
+  }
+
+  /** Flip every triangle whose winding disagrees with its (summed) vertex normals. Returns the number of flipped triangles. */
+  fixWinding(): number {
+    const d = this.data;
+    const idx = this.idx;
+    let flipped = 0;
+    for (let t = 0; t + 2 < this.ni; t += 3) {
+      const a = (idx[t] as number) * STRIDE;
+      const b = (idx[t + 1] as number) * STRIDE;
+      const c = (idx[t + 2] as number) * STRIDE;
+      const e1x = (d[b] as number) - (d[a] as number);
+      const e1y = (d[b + 1] as number) - (d[a + 1] as number);
+      const e1z = (d[b + 2] as number) - (d[a + 2] as number);
+      const e2x = (d[c] as number) - (d[a] as number);
+      const e2y = (d[c + 1] as number) - (d[a + 1] as number);
+      const e2z = (d[c + 2] as number) - (d[a + 2] as number);
+      const gx = e1y * e2z - e1z * e2y;
+      const gy = e1z * e2x - e1x * e2z;
+      const gz = e1x * e2y - e1y * e2x;
+      const sx = (d[a + 3] as number) + (d[b + 3] as number) + (d[c + 3] as number);
+      const sy = (d[a + 4] as number) + (d[b + 4] as number) + (d[c + 4] as number);
+      const sz = (d[a + 5] as number) + (d[b + 5] as number) + (d[c + 5] as number);
+      if (gx * sx + gy * sy + gz * sz < 0) {
+        const tmp = idx[t + 1] as number;
+        idx[t + 1] = idx[t + 2] as number;
+        idx[t + 2] = tmp;
+        flipped += 1;
+      }
+    }
+    return flipped;
+  }
+
   build(defaultMaterial: string, withWind: boolean): MeshData {
     this.closeSlot();
     const n = this.nv;

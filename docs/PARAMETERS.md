@@ -718,3 +718,45 @@ Lightweight spine-only structural guides for attaching foliage or child branches
 | Hand drawn | Enabled | `handDrawn` | bool | false |  |  | Enables hand-drawn control of the spine shape. |
 | Hand drawn | Strength | `handStrength` | 0..1 | 1 |  |  | Strength of the hand-drawn influence. |
 | Hand drawn | Smoothing | `handSmoothing` | 0..1 | 0.5 |  |  | Smoothing of the hand-drawn spine. |
+
+## Leaf (`generator.leaf`) - Leaves tab
+
+| Section | Parameter | id | Range | Default | Var | Curve | Meaning |
+|---|---|---|---|---|---|---|---|
+| Leaves | Use actual size | `leafUseActualSize` | bool | false |  |  | Ignore Size and use the mesh at the real size it was authored at (cards keep Width × Height). |
+| Leaves | Size | `leafSize` | 0.001..20 (slider 0.001..3) | 1 | yes | yes | Scale of the leaf (the mesh is treated as a unit mesh of Width × Height). A curve varies it along the parent. |
+| Leaves | +% of parent | `leafSizeParent` | 0..500 (slider 0..100) % | 0 |  |  | Adds this percentage of the parent branch length to Size, so leaves grow with their parent. |
+| Leaves | Weld | `leafWeld` | bool | false |  |  | Place leaves on the skin of the parent tube instead of on its centre line. |
+| Leaves | Keep failed welds | `leafKeepFailedWelds` | bool | true |  |  | If a weld fails (the parent has no skin), still place the leaf on the centre line. Off drops the leaf. |
+| Leaves | Cross | `leafCross` | bool | false |  |  | Adds a second copy of every leaf turned 90° about its growth axis (crossed planes). |
+| Leaves | Fix winding | `leafFixWinding` | bool | true |  |  | After all deformation and mirroring, flips triangles whose order disagrees with the normals. |
+| Leaves | Flip | `leafFlip` | bool | false |  |  | Mirrors a random half of the leaves across their local Y axis. |
+| Leaves | Initial orientation | `leafInitialOrientation` | Classic / Synchronized | synchronized |  |  | Classic mirrors leaves on the left / right side of the parent (needs Interval or Phyllotaxy placement, else sides are random). Synchronized keeps one orientation. |
+| Type | Type | `leafTypes` | rows of Material / Mesh / Weight | one row |  |  | Materials (and meshes) the instances are picked from. A row is chosen with probability Weight / sum of Weights. |
+| Local orientation | 3D anchor style | `orientAnchorStyle` | Legacy / Match parent | match-parent |  |  | Match parent follows the parent’s orientation and twist. Legacy ignores them: use it when the parent is also a leaf. |
+| Local orientation | Unification | `orientUnification` | Global / Deep / Intermediate / Local / None | none |  |  | Turns the leaf to point “out”: away from an anchor through the attachment point (Global = tree base, Deep = base near the root, Intermediate = middle of the ancestors, Local = base of the parent). |
+| Local orientation | Sky influence | `orientSky` | 0..1 | 0 |  |  | Turns the leaf’s face (local Z) toward the sky. 1 = straight up. |
+| Local orientation | Fold | `orientFold` | -180..180 ° | 0 |  |  | Rotates the leaf up or down around the parent’s growth direction. |
+| Local orientation | Align | `orientAlign` | -180..180 ° | 0 |  |  | Rotates the leaf tip toward (+) or away from (−) the parent’s growth direction. |
+| Local orientation | Face | `orientFace` | 0..1 | 0 |  |  | Spins the leaf around its stem so its up vector points along the parent’s growth (leaves face outward). 1 = fully. |
+| Sensitivity → Parent | Amount | `parentAmount` | 0..1 | 0 |  |  | Turns the underside of the leaf toward the anchor. |
+| Sensitivity → Parent | Anchor | `parentAnchor` | Global / Deep / Intermediate / Local / None | none |  |  | Anchor the leaf bottom turns toward. |
+| Sensitivity → Parent | Sky | `parentSky` | 0..1 | 0 |  |  | Spins the leaf around its central axis so its face is as close to up as possible. |
+| Final adjustments | Up | `finalUp` | -180..180 ° | 0 |  |  | Rotation around the leaf’s local X axis. Applied last, together with Right and Out. |
+| Final adjustments | Right | `finalRight` | -180..180 ° | 0 |  |  | Rotation around the leaf’s local Y axis. |
+| Final adjustments | Out | `finalOut` | -180..180 ° | 0 |  |  | Rotation around the leaf’s local Z axis. |
+
+### Leaves tab - how the pieces fit together
+
+Existing Leaf tabs (Generation, Skin, Forces, Orientation, Material, Lighting, Wind, Post) are unchanged. The *Leaves* tab adds placement and orientation:
+
+* **Frame.** A leaf has local X = across the blade, Y = growth (base to tip), Z = face (`X × Y`). Angles are shown in degrees; the 0..1 values are blend amounts.
+* **Order.** The Orientation tab builds the starting pose (angle to parent, facing, droop, roll). Then, in this order: 3D anchor style, Unification, Sky influence, Fold, Align, Face, Sensitivity → Parent (Amount, then Sky), and last the Final adjustments (Up, Right, Out as one group, rotating about the original local axes).
+* **3D anchor style.** *Match parent* uses the parent's own frame (incl. twist) for the outward direction; *Legacy* uses a world-up based frame (use it for leaves on leaves).
+* **Anchors** (Unification, Sensitivity → Parent). Chain = base positions of the ancestors, highest first, ending with the parent: *Global* = first entry (where the highest ancestor meets the ground), *Deep* = second entry, *Intermediate* = middle entry, *Local* = the parent's base, *None* = off. Chains travel with the structure (`StructureData.lineage`, published by Trunk / Branch / Root / Spine / Split / Knot / Leaf); without it the chain only holds the parent.
+* **Unification** turns the leaf axis fully to the direction anchor → attachment point, replacing the Orientation-tab angle; Fold, Align and the rest then adjust it.
+* **Size.** The card / mesh is a unit mesh of Width × Height; Size scales it, *+% of parent* adds that share of the parent branch length to Size. *Use actual size* ignores both and uses the cutout mesh at its authored size (cards keep Width × Height).
+* **Weld** moves the base from the parent's spine onto its skin (radius at the attachment, in the leaf's outward direction). Parents thinner than 1.5 mm (leaves, fronds) have no skin: the weld fails and *Keep failed welds* decides whether the leaf stays on the spine or is dropped.
+* **Cross** adds a copy of every card turned 90° about the leaf axis at the same position.
+* **Flip / Initial orientation.** Flip mirrors a random half of the leaves across local Y. With Flip off, *Classic* mirrors leaves on the left side of the parent; *Synchronized* (default, identical to older projects) never mirrors. The side (±1) comes from this node's Interval / Phyllotaxy placement (alternating per slot), else from the parent's `side` skeleton attribute (written by Branch placed with Interval / Phyllotaxy), else it is random per leaf. Mirrored leaves get reversed winding; *Fix winding* flips triangles that disagree with their normals after all deformation.
+* **Back-compat.** The former Skin › Size *Scale* is now Leaves › *Size* (`leafSize`, migrated on load); the *Type* list (`leafTypes`) moved from Material › Leaves to Leaves › Type. Every new parameter defaults to a neutral value.

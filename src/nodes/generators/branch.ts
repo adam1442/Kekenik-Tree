@@ -126,6 +126,7 @@ function growOneLevel(
           isExtension: pl.isExtension,
           lengthScale: inst.lengthScale,
           radiusScale: inst.radiusScale,
+          side: pl.side,
         },
         childRng,
         builder,
@@ -156,6 +157,7 @@ function mergeSkeletons(levels: readonly Skeleton[]): Skeleton {
     const ny = sk.attributes.get('rmfNormalY');
     const nz = sk.attributes.get('rmfNormalZ');
     const tw = sk.attributes.get('twist');
+    const sd = sk.attributes.get('side');
     const curPointOffset = builder.pointCount;
     const curBranchOffset = builder.branchCount;
 
@@ -181,6 +183,7 @@ function mergeSkeletons(levels: readonly Skeleton[]): Skeleton {
         ages,
         twists,
         initialNormalHint: hint,
+        ...(sd && (sd[b.start] as number) !== 0 ? { side: sd[b.start] as number } : {}),
       });
     }
 

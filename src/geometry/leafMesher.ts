@@ -38,6 +38,8 @@ export interface LeafCard {
   cutout?: CutoutMesh | null;
   /** LOD level 0..3 for cutout LOD selection. */
   lod?: number;
+  /** Mirror the finished card across its local Y axis (the plane through `origin` with normal `side`). */
+  mirror?: boolean;
 }
 
 export const FULL_ATLAS: [number, number, number, number] = [0, 0, 1, 1];
@@ -58,6 +60,8 @@ export function widthProfile(outline: LeafOutline, a: number): number {
 
 export interface LeafMeshOptions {
   defaultMaterial: string;
+  /** Flip triangles whose winding disagrees with the vertex normals (after every deformation and mirroring). */
+  fixWinding?: boolean;
 }
 
 /** Build one mesh from many cards. Cards are grouped per material so the result has one slot per material. */
@@ -77,8 +81,14 @@ export function buildLeafMesh(cards: readonly LeafCard[], opts: LeafMeshOptions)
   const cells = Math.max(1, Math.ceil(Math.sqrt(cards.length)));
   for (const mat of order) {
     acc.beginSlot(mat);
-    for (const i of byMat.get(mat) as number[]) emitCard(acc, cards[i] as LeafCard, i, cells);
+    for (const i of byMat.get(mat) as number[]) {
+      const card = cards[i] as LeafCard;
+      const first = acc.vertexCount;
+      emitCard(acc, card, i, cells);
+      if (card.mirror) acc.mirrorFrom(first, card.origin, norm(card.side));
+    }
   }
+  if (opts.fixWinding) acc.fixWinding();
   return acc.build(opts.defaultMaterial, true);
 }
 
@@ -255,11 +265,22 @@ export function cardAttachments(c: LeafCard): CardAttachments | null {
   if (!c.cutout) return null;
   const frame = buildCutoutFrame(c.cutout, placedMetric(c.cutout, c.width, c.length));
   const pose = cardPoseFor(frame, { origin: c.origin, axis: c.axis, side: c.side }, { bend: c.bend, twist: c.twist, fold: c.fold, curl: c.curl });
+  const place = (f: Frame): Frame => (c.mirror ? mirrorFrame(f, c.origin, norm(c.side)) : f);
   return {
-    base: baseFrameInPose(pose),
+    base: place(baseFrameInPose(pose)),
     anchors: frame.anchors.map((a) => {
       const f = anchorFrameInPose(pose, a);
-      return { frame: { position: f.position, direction: f.direction, up: f.up }, scale: f.scale, anchor: a };
+      return { frame: place({ position: f.position, direction: f.direction, up: f.up }), scale: f.scale, anchor: a };
     }),
   };
+}
+
+/** Reflect a frame across the plane through `origin` with unit `normal`. */
+function mirrorFrame(f: Frame, origin: V3, normal: V3): Frame {
+  const vec = (v: V3): V3 => {
+    const k = 2 * dot(v, normal);
+    return [v[0] - k * normal[0], v[1] - k * normal[1], v[2] - k * normal[2]];
+  };
+  const p = vec(sub(f.position, origin));
+  return { position: [origin[0] + p[0], origin[1] + p[1], origin[2] + p[2]], direction: vec(f.direction), up: vec(f.up) };
 }

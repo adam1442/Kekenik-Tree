@@ -19,7 +19,15 @@ export interface ChildPlacement {
   azimuthRad: number;
   /** True when spawned by `extendParent` at the parent tip. */
   isExtension: boolean;
+  /**
+   * Left / right side (+1 / -1) of the child on its parent. Interval and Phyllotaxy alternate it per slot;
+   * 0 = unknown (other modes, extensions).
+   */
+  side: number;
 }
+
+/** Modes whose slots alternate between the two sides of the parent. */
+const SIDE_MODES: ReadonlySet<string> = new Set(['interval', 'phyllotaxy']);
 
 function evalParamCurve(params: NodeParams, id: string, x: number, fallback = 1): number {
   const c = params[id]?.curve;
@@ -318,6 +326,7 @@ export function generateChildPlacements(
       u,
       azimuthRad: cand.azimuthRad,
       isExtension: false,
+      side: SIDE_MODES.has(mode) ? (cand.slotIndex % 2 === 0 ? 1 : -1) : 0,
     });
   }
 
@@ -333,6 +342,7 @@ export function generateChildPlacements(
         u: 1,
         azimuthRad: az,
         isExtension: true,
+        side: 0,
       });
     }
   }

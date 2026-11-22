@@ -49,8 +49,19 @@ export interface TreePlacement {
   unify: boolean;
 }
 
+/**
+ * Ancestor chains of the branches of one skeleton, flat. Branch `i` (index in `skeleton.branches`) owns the chain
+ * entries `[offset[i], offset[i + 1])`: base positions (xyz) of its ancestors, highest first, ending with its own base.
+ */
+export interface Lineage {
+  offset: Int32Array;
+  points: Float32Array;
+}
+
 export interface StructureData {
   skeleton: Skeleton;
+  /** Ancestor chains (Leaf anchors: Global / Deep / Intermediate / Local). Absent = unknown, chains start at the parent. */
+  lineage?: Lineage;
   /** Present on the Tree node's output: the placement disc for first-generation children. */
   placement?: TreePlacement;
   /** Per-instance table of the generator that produced `skeleton` (Node mode picking / overrides). */

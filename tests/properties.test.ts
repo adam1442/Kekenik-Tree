@@ -599,18 +599,20 @@ describe('Properties Inspector & Global Settings panels (DOM integration)', () =
       expect(numberRow.hidden).toBe(true);
       expect(densityRow.hidden).toBe(false);
 
-      // Select 'leaf' and click 'Material' tab -> shows Leaves > Type cards and Season/Fallen parameters
+      // Select 'leaf': the 'Leaves' tab holds the Type list, the 'Material' tab the Season/Fallen parameters
       app.graph.setSelection(['leaf']);
       expect(host.querySelector('.kt-prop-title')?.textContent).toBe('Leaf');
-      const matTab = [...host.querySelectorAll<HTMLButtonElement>('.kt-prop-tab')].find((b) => b.textContent === 'Material')!;
-      matTab.click();
+      const tabButton = (label: string): HTMLButtonElement => [...host.querySelectorAll<HTMLButtonElement>('.kt-prop-tab')].find((b) => b.textContent === label)!;
+      tabButton('Leaves').click();
       expect(host.querySelectorAll('.kt-type-card').length).toBeGreaterThanOrEqual(1);
+      expect(host.querySelector('[data-param-id="leafWeld"]')).not.toBeNull();
+      tabButton('Material').click();
       expect(host.querySelector('[data-param-id="seasonDropTime"]')).not.toBeNull();
       expect(host.querySelector('[data-param-id="fallenJumble"]')).not.toBeNull();
 
       // Test pipe-separated search filter
       const searchInput = host.querySelector<HTMLInputElement>('.kt-prop-search-input')!;
-      searchInput.value = 'Season|Leaves:Type|Vertex Color:|Lightmap';
+      searchInput.value = 'Season|Vertex Color:|Lightmap';
       searchInput.dispatchEvent(new Event('input', { bubbles: true }));
       expect(host.querySelector('[data-param-id="seasonDropTime"]')).not.toBeNull();
 

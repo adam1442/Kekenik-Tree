@@ -292,6 +292,8 @@ export interface SpineSpawnSpec {
   lengthScale?: number;
   /** Per-instance multiplier of the computed base radius (Node mode override). */
   radiusScale?: number;
+  /** Left / right side (+1 / -1) of the spine on its parent (Interval / Phyllotaxy), stored as the `side` attribute. */
+  side?: number;
 }
 
 /**
@@ -695,6 +697,7 @@ export function growSpineIntoBuilder(
     ages: outAges,
     twists: outTwists,
     initialNormalHint: spec.initialFrame.normal,
+    ...(spec.side ? { side: spec.side } : {}),
   });
 
   if (added.branchId < 0) return 0;

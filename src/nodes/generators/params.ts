@@ -552,7 +552,6 @@ export function leafSkinParams(): ParamDef[] {
     g.bool('twoSided', 'Two-sided', true),
     s.float('width', 'Width', 0.3, { min: 0.001, max: 20, softMax: 2, unit: 'm', variance: 0.1, curve: true }),
     s.float('height', 'Height', 0.5, { min: 0.001, max: 20, softMax: 2, unit: 'm', variance: 0.1, curve: true }),
-    s.float('scale', 'Scale', 1, { min: 0.001, max: 20, softMax: 3, variance: 0.1, curve: true }),
     c.enumOf('cardType', 'Type', 'Curved', ['Quad', 'Curved', 'Bent']),
     c.enumOf('outline', 'Outline', 'Rect', ['Rect', 'Oval', 'Pointed', 'Heart'], { tooltip: 'Blade outline of Mesh geometry (cards use the texture opacity).' }),
     c.int('cardCount', 'Cards per leaf', 1, { min: 1, max: 6, tooltip: '2 = crossed cards.' }),
