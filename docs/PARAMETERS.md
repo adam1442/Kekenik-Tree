@@ -303,28 +303,46 @@ Main stem with crown height, buttress flare, lean, gnarliness, and profile curve
 
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
-| Displacement | Displacement | `displacement` | None |  |  |  | Height map from the Displacements panel. A warning badge shows on the node when the map is missing or not loaded. |
-| Displacement | Enabled | `displaceEnabled` | bool | true |  |  | Enables displacement from a height image. |
-| Displacement | Amount | `displaceAmount` | -5..5 (slider 0..0.2) m | 0 |  | yes | Displacement in metres at full height. The curve scales it along the branch length. |
-| Displacement | + % of radius | `displaceRadiusAmount` | -1..2 | 0 |  |  | Extra amount relative to the local radius (thick trunks get deeper bark). |
-| Displacement | Offset | `displaceOffset` | -1..1 | 0 |  |  | Bias added to the height before scaling. |
-| Displacement | Mid-grey is neutral | `displaceMidGrey` | bool | true |  |  | On: 50% grey does not move the surface (both directions). Off: black = no displacement, white = full amount outward. |
-| Displacement | Direction | `displaceDirection` | Normal / Radial | normal |  |  | Displace along the surface normal or radially from the axis. |
-| Mapping | Tiling | `displaceTiling` | World / Normalized | world |  |  | World: one image tile covers "Tile size" metres, no stretching on long or thick branches. |
-| Mapping | Tile size | `displaceTileSize` | 0.005..50 (slider 0.005..4) m | 0.5 |  |  | World size of one displacement tile. |
-| Mapping | Scale | `displaceScale` | 0.01..50 | 1 |  |  | Height of the displacement. |
-| Mapping | Scale U | `displaceScaleU` | 0.01..50 | 1 |  |  | Displacement tiling around the stem. |
-| Mapping | Scale V | `displaceScaleV` | 0.01..50 | 1 |  |  | Displacement tiling along the stem. |
-| Mapping | Rotation | `displaceRotation` | -360..360 ° | 0 |  |  | Snapped to 90° steps while seams are locked. |
-| Mapping | Lock seams | `displaceLockSeams` | bool | true |  |  | Round the tiling around the trunk to a whole number so the U seam is continuous. |
-| Fade | Fade at junctions | `displaceFadeBase` | 0..10 | 1.5 |  |  | Fade-in length (in radii) where a branch leaves its parent: prevents cracks at junctions. |
+| Main | Source | `displaceSource` | Noise / Material / Displacement | noise |  |  | Where the height values come from: built-in noise, the Height map of the assigned material, or a named asset from the Displacements panel. |
+| Main | Displacement | `displacement` | None |  |  |  | Height map from the Displacements panel. A warning badge shows on the node when the map is missing or not loaded. |
+| Main | Radial amount | `displaceRadial` | -5..5 (slider -0.3..0.3) m | 0 |  |  | Largest move away from (positive) or toward (negative) the spine, in metres. |
+| Main | Length amount | `displaceLength` | -5..5 (slider -0.3..0.3) m | 0 |  |  | Largest move along the spine, in metres. Vertices that share a V coordinate no longer sit in one plane. |
+| Main | Sharpness | `displaceSharpness` | curve | curve |  |  | Remaps the displacement values. A straight line leaves them unchanged; a curve that stays low and rises late keeps only the highest values. |
+| Main | Mapping | `displaceMapping` | Use UVs / Fit to geometry | use-uvs |  |  | Use UVs follows the branch UV tiling; Fit to geometry wraps the pattern once around and once along the branch. |
+| Main | U scale | `displaceUScale` | 0.05..50 (slider 0.05..10) | 1 |  |  | Pattern size around the branch (larger = more repeats). |
+| Main | V scale | `displaceVScale` | 0.05..50 (slider 0.05..10) | 1 |  |  | Pattern size along the branch (larger = more repeats). |
+| Main | Seed | `displaceMainSeed` | 0..99999 | 0 |  |  | Random seed of the noise source. |
+| Fine | Amount | `displaceFineAmount` | -2..2 (slider -0.1..0.1) m | 0 |  |  | Second, always-noise displacement along the surface normal, added on top of the main one. |
+| Fine | Sharpness | `displaceFineSharpness` | curve | curve |  |  | Remaps the fine noise values (straight line = unchanged). |
+| Fine | Scale | `displaceFineScale` | 0.1..8 (slider 0.1..3) | 1 |  |  | Size of the fine noise. Above 1 the surface is pushed out on average, below 1 it is pulled in toward the center. |
+| Shape | Amount | `displaceShapeAmount` | -1..1 | 0 |  |  | Depth of the creases that run along the spine, as a fraction of the local radius. |
+| Shape | Twist | `displaceShapeTwist` | -720..720 (slider -90..90) °/m | 0 |  |  | Rotates the crease pattern around the spine while it climbs from the base (degrees per metre). |
+| Shape | Scale | `displaceShapeScale` | 0.1..10 (slider 0.1..4) | 1 |  |  | Number of creases around the branch (larger = more, thinner creases). |
+| Shape | Seed | `displaceShapeSeed` | seed | 0 |  |  | Displacement setting (height-map driven surface detail). “Seed” in Displacement › Shape. |
+| Flares | Radius | `displaceFlareRadius` | 0..8 (slider 0..2) | 0 |  |  | Largest flare, as a multiple of the branch radius at its base. 0 turns the flares off. |
+| Flares | Noise scale | `displaceFlareNoise` | 1..32 | 5 |  |  | Number of flare lobes around the branch. |
+| Flares | Height | `displaceFlareHeight` | 0.01..50 (slider 0.01..5) m | 1 |  |  | How far up the spine the flares reach. |
+| Flares | Pinch | `displaceFlarePinch` | 0..1 | 0 |  |  | Pulls the flares toward the center spine. At 1 the lobes are thin ridges and nothing spreads at the base. |
+| Flares | Angle | `displaceFlareAngle` | -180..180 ° | 0 |  |  | Rotates the flares around the spine. |
+| Flares | Seed | `displaceFlareSeed` | seed | 0 |  |  | Displacement setting (height-map driven surface detail). “Seed” in Displacement › Flares. |
+| Fade | Fade at junctions | `displaceFadeBase` | 0..10 | 1.5 |  |  | Fade-in length (in radii) past the weld / junction rings: prevents cracks where a branch leaves its parent. |
 | Fade | Fade at tips | `displaceFadeTip` | 0..10 | 1 |  |  | Fade-out length (in radii) toward the tip / cap. |
-| Fade | LOD fade | `displaceLodFade` | bool | true |  |  | Fade the amount out between LOD 1 and 3. |
-| Subdivision | Auto-subdivide | `displaceAutoSubdivide` | bool | true |  |  | Add rings and sides so the mesh has enough vertices to carry the height detail. |
+| Fade | LOD fade | `displaceLodFade` | bool | true |  |  | Fade the displacement out between LOD 1 and 3. |
+| Subdivision | Auto-subdivide | `displaceAutoSubdivide` | bool | true |  |  | Add rings and sides so the mesh has enough vertices to carry the displacement. |
 | Subdivision | Detail size | `displaceDetail` | 0.002..1 (slider 0.002..0.2) m | 0.03 |  |  | Target quad size when auto-subdividing (smaller = more detail, more triangles). |
-| Subdivision | Min sides | `displaceMinSides` | 3..128 | 16 |  |  | Minimum number of sides while displacement is active. |
-| Noise | Noise | `displaceNoise` | 0..1 | 0.5 |  |  | Adds noise to the displacement. |
-| Noise | Seed | `displaceSeed` | seed | 0 |  |  | Random seed of the displacement noise. |
+| Subdivision | Min sides | `displaceMinSides` | 3..128 | 16 |  |  | Fewest sides around a displaced branch. |
+| Asset amount (legacy) | Amount | `displaceAmount` | -5..5 (slider 0..0.2) m | 0 |  | yes | Older asset displacement in metres at full height. The curve scales it along the branch length. |
+| Asset amount (legacy) | + % of radius | `displaceRadiusAmount` | -1..2 | 0 |  |  | Extra amount relative to the local radius. |
+| Asset amount (legacy) | Offset | `displaceOffset` | -1..1 | 0 |  |  | Bias added to the height before scaling. |
+| Asset amount (legacy) | Mid-grey is neutral | `displaceMidGrey` | bool | true |  |  | On: 50% grey does not move the surface. Off: black = none, white = full amount outward. |
+| Asset amount (legacy) | Direction | `displaceDirection` | Normal / Radial | normal |  |  | Displace along the surface normal or radially from the axis. |
+| Asset mapping (legacy) | Tiling | `displaceTiling` | World / Normalized | world |  |  | World: one image tile covers "Tile size" metres. |
+| Asset mapping (legacy) | Tile size | `displaceTileSize` | 0.005..50 (slider 0.005..4) m | 0.5 |  |  | World size of one displacement tile. |
+| Asset mapping (legacy) | Scale | `displaceScale` | 0.01..50 | 1 |  |  | Height of the displacement. |
+| Asset mapping (legacy) | Scale U | `displaceScaleU` | 0.01..50 | 1 |  |  | Displacement tiling around the stem. |
+| Asset mapping (legacy) | Scale V | `displaceScaleV` | 0.01..50 | 1 |  |  | Displacement tiling along the stem. |
+| Asset mapping (legacy) | Rotation | `displaceRotation` | -360..360 ° | 0 |  |  | Snapped to 90° steps while seams are locked. |
+| Asset mapping (legacy) | Lock seams | `displaceLockSeams` | bool | true |  |  | Round the tiling around the trunk to a whole number so the U seam is continuous. |
 
 ### Tab: Material
 
@@ -628,28 +646,46 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
-| Displacement | Displacement | `displacement` | None |  |  |  | Height map from the Displacements panel. A warning badge shows on the node when the map is missing or not loaded. |
-| Displacement | Enabled | `displaceEnabled` | bool | true |  |  | Enables displacement from a height image. |
-| Displacement | Amount | `displaceAmount` | -5..5 (slider 0..0.2) m | 0 |  | yes | Displacement in metres at full height. The curve scales it along the branch length. |
-| Displacement | + % of radius | `displaceRadiusAmount` | -1..2 | 0 |  |  | Extra amount relative to the local radius (thick trunks get deeper bark). |
-| Displacement | Offset | `displaceOffset` | -1..1 | 0 |  |  | Bias added to the height before scaling. |
-| Displacement | Mid-grey is neutral | `displaceMidGrey` | bool | true |  |  | On: 50% grey does not move the surface (both directions). Off: black = no displacement, white = full amount outward. |
-| Displacement | Direction | `displaceDirection` | Normal / Radial | normal |  |  | Displace along the surface normal or radially from the axis. |
-| Mapping | Tiling | `displaceTiling` | World / Normalized | world |  |  | World: one image tile covers "Tile size" metres, no stretching on long or thick branches. |
-| Mapping | Tile size | `displaceTileSize` | 0.005..50 (slider 0.005..4) m | 0.5 |  |  | World size of one displacement tile. |
-| Mapping | Scale | `displaceScale` | 0.01..50 | 1 |  |  | Height of the displacement. |
-| Mapping | Scale U | `displaceScaleU` | 0.01..50 | 1 |  |  | Displacement tiling around the stem. |
-| Mapping | Scale V | `displaceScaleV` | 0.01..50 | 1 |  |  | Displacement tiling along the stem. |
-| Mapping | Rotation | `displaceRotation` | -360..360 ° | 0 |  |  | Snapped to 90° steps while seams are locked. |
-| Mapping | Lock seams | `displaceLockSeams` | bool | true |  |  | Round the tiling around the trunk to a whole number so the U seam is continuous. |
-| Fade | Fade at junctions | `displaceFadeBase` | 0..10 | 1.5 |  |  | Fade-in length (in radii) where a branch leaves its parent: prevents cracks at junctions. |
+| Main | Source | `displaceSource` | Noise / Material / Displacement | noise |  |  | Where the height values come from: built-in noise, the Height map of the assigned material, or a named asset from the Displacements panel. |
+| Main | Displacement | `displacement` | None |  |  |  | Height map from the Displacements panel. A warning badge shows on the node when the map is missing or not loaded. |
+| Main | Radial amount | `displaceRadial` | -5..5 (slider -0.3..0.3) m | 0 |  |  | Largest move away from (positive) or toward (negative) the spine, in metres. |
+| Main | Length amount | `displaceLength` | -5..5 (slider -0.3..0.3) m | 0 |  |  | Largest move along the spine, in metres. Vertices that share a V coordinate no longer sit in one plane. |
+| Main | Sharpness | `displaceSharpness` | curve | curve |  |  | Remaps the displacement values. A straight line leaves them unchanged; a curve that stays low and rises late keeps only the highest values. |
+| Main | Mapping | `displaceMapping` | Use UVs / Fit to geometry | use-uvs |  |  | Use UVs follows the branch UV tiling; Fit to geometry wraps the pattern once around and once along the branch. |
+| Main | U scale | `displaceUScale` | 0.05..50 (slider 0.05..10) | 1 |  |  | Pattern size around the branch (larger = more repeats). |
+| Main | V scale | `displaceVScale` | 0.05..50 (slider 0.05..10) | 1 |  |  | Pattern size along the branch (larger = more repeats). |
+| Main | Seed | `displaceMainSeed` | 0..99999 | 0 |  |  | Random seed of the noise source. |
+| Fine | Amount | `displaceFineAmount` | -2..2 (slider -0.1..0.1) m | 0 |  |  | Second, always-noise displacement along the surface normal, added on top of the main one. |
+| Fine | Sharpness | `displaceFineSharpness` | curve | curve |  |  | Remaps the fine noise values (straight line = unchanged). |
+| Fine | Scale | `displaceFineScale` | 0.1..8 (slider 0.1..3) | 1 |  |  | Size of the fine noise. Above 1 the surface is pushed out on average, below 1 it is pulled in toward the center. |
+| Shape | Amount | `displaceShapeAmount` | -1..1 | 0 |  |  | Depth of the creases that run along the spine, as a fraction of the local radius. |
+| Shape | Twist | `displaceShapeTwist` | -720..720 (slider -90..90) °/m | 0 |  |  | Rotates the crease pattern around the spine while it climbs from the base (degrees per metre). |
+| Shape | Scale | `displaceShapeScale` | 0.1..10 (slider 0.1..4) | 1 |  |  | Number of creases around the branch (larger = more, thinner creases). |
+| Shape | Seed | `displaceShapeSeed` | seed | 0 |  |  | Displacement setting (height-map driven surface detail). “Seed” in Displacement › Shape. |
+| Flares | Radius | `displaceFlareRadius` | 0..8 (slider 0..2) | 0 |  |  | Largest flare, as a multiple of the branch radius at its base. 0 turns the flares off. |
+| Flares | Noise scale | `displaceFlareNoise` | 1..32 | 5 |  |  | Number of flare lobes around the branch. |
+| Flares | Height | `displaceFlareHeight` | 0.01..50 (slider 0.01..5) m | 1 |  |  | How far up the spine the flares reach. |
+| Flares | Pinch | `displaceFlarePinch` | 0..1 | 0 |  |  | Pulls the flares toward the center spine. At 1 the lobes are thin ridges and nothing spreads at the base. |
+| Flares | Angle | `displaceFlareAngle` | -180..180 ° | 0 |  |  | Rotates the flares around the spine. |
+| Flares | Seed | `displaceFlareSeed` | seed | 0 |  |  | Displacement setting (height-map driven surface detail). “Seed” in Displacement › Flares. |
+| Fade | Fade at junctions | `displaceFadeBase` | 0..10 | 1.5 |  |  | Fade-in length (in radii) past the weld / junction rings: prevents cracks where a branch leaves its parent. |
 | Fade | Fade at tips | `displaceFadeTip` | 0..10 | 1 |  |  | Fade-out length (in radii) toward the tip / cap. |
-| Fade | LOD fade | `displaceLodFade` | bool | true |  |  | Fade the amount out between LOD 1 and 3. |
-| Subdivision | Auto-subdivide | `displaceAutoSubdivide` | bool | true |  |  | Add rings and sides so the mesh has enough vertices to carry the height detail. |
+| Fade | LOD fade | `displaceLodFade` | bool | true |  |  | Fade the displacement out between LOD 1 and 3. |
+| Subdivision | Auto-subdivide | `displaceAutoSubdivide` | bool | true |  |  | Add rings and sides so the mesh has enough vertices to carry the displacement. |
 | Subdivision | Detail size | `displaceDetail` | 0.002..1 (slider 0.002..0.2) m | 0.03 |  |  | Target quad size when auto-subdividing (smaller = more detail, more triangles). |
-| Subdivision | Min sides | `displaceMinSides` | 3..128 | 16 |  |  | Minimum number of sides while displacement is active. |
-| Noise | Noise | `displaceNoise` | 0..1 | 0.5 |  |  | Adds noise to the displacement. |
-| Noise | Seed | `displaceSeed` | seed | 0 |  |  | Random seed of the displacement noise. |
+| Subdivision | Min sides | `displaceMinSides` | 3..128 | 16 |  |  | Fewest sides around a displaced branch. |
+| Asset amount (legacy) | Amount | `displaceAmount` | -5..5 (slider 0..0.2) m | 0 |  | yes | Older asset displacement in metres at full height. The curve scales it along the branch length. |
+| Asset amount (legacy) | + % of radius | `displaceRadiusAmount` | -1..2 | 0 |  |  | Extra amount relative to the local radius. |
+| Asset amount (legacy) | Offset | `displaceOffset` | -1..1 | 0 |  |  | Bias added to the height before scaling. |
+| Asset amount (legacy) | Mid-grey is neutral | `displaceMidGrey` | bool | true |  |  | On: 50% grey does not move the surface. Off: black = none, white = full amount outward. |
+| Asset amount (legacy) | Direction | `displaceDirection` | Normal / Radial | normal |  |  | Displace along the surface normal or radially from the axis. |
+| Asset mapping (legacy) | Tiling | `displaceTiling` | World / Normalized | world |  |  | World: one image tile covers "Tile size" metres. |
+| Asset mapping (legacy) | Tile size | `displaceTileSize` | 0.005..50 (slider 0.005..4) m | 0.5 |  |  | World size of one displacement tile. |
+| Asset mapping (legacy) | Scale | `displaceScale` | 0.01..50 | 1 |  |  | Height of the displacement. |
+| Asset mapping (legacy) | Scale U | `displaceScaleU` | 0.01..50 | 1 |  |  | Displacement tiling around the stem. |
+| Asset mapping (legacy) | Scale V | `displaceScaleV` | 0.01..50 | 1 |  |  | Displacement tiling along the stem. |
+| Asset mapping (legacy) | Rotation | `displaceRotation` | -360..360 ° | 0 |  |  | Snapped to 90° steps while seams are locked. |
+| Asset mapping (legacy) | Lock seams | `displaceLockSeams` | bool | true |  |  | Round the tiling around the trunk to a whole number so the U seam is continuous. |
 
 ### Tab: Material
 
@@ -931,28 +967,46 @@ Lightweight spine-only structural guides for attaching foliage or child branches
 
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
-| Displacement | Displacement | `displacement` | None |  |  |  | Height map from the Displacements panel. A warning badge shows on the node when the map is missing or not loaded. |
-| Displacement | Enabled | `displaceEnabled` | bool | true |  |  | Enables displacement from a height image. |
-| Displacement | Amount | `displaceAmount` | -5..5 (slider 0..0.2) m | 0 |  | yes | Displacement in metres at full height. The curve scales it along the branch length. |
-| Displacement | + % of radius | `displaceRadiusAmount` | -1..2 | 0 |  |  | Extra amount relative to the local radius (thick trunks get deeper bark). |
-| Displacement | Offset | `displaceOffset` | -1..1 | 0 |  |  | Bias added to the height before scaling. |
-| Displacement | Mid-grey is neutral | `displaceMidGrey` | bool | true |  |  | On: 50% grey does not move the surface (both directions). Off: black = no displacement, white = full amount outward. |
-| Displacement | Direction | `displaceDirection` | Normal / Radial | normal |  |  | Displace along the surface normal or radially from the axis. |
-| Mapping | Tiling | `displaceTiling` | World / Normalized | world |  |  | World: one image tile covers "Tile size" metres, no stretching on long or thick branches. |
-| Mapping | Tile size | `displaceTileSize` | 0.005..50 (slider 0.005..4) m | 0.5 |  |  | World size of one displacement tile. |
-| Mapping | Scale | `displaceScale` | 0.01..50 | 1 |  |  | Height of the displacement. |
-| Mapping | Scale U | `displaceScaleU` | 0.01..50 | 1 |  |  | Displacement tiling around the stem. |
-| Mapping | Scale V | `displaceScaleV` | 0.01..50 | 1 |  |  | Displacement tiling along the stem. |
-| Mapping | Rotation | `displaceRotation` | -360..360 ° | 0 |  |  | Snapped to 90° steps while seams are locked. |
-| Mapping | Lock seams | `displaceLockSeams` | bool | true |  |  | Round the tiling around the trunk to a whole number so the U seam is continuous. |
-| Fade | Fade at junctions | `displaceFadeBase` | 0..10 | 1.5 |  |  | Fade-in length (in radii) where a branch leaves its parent: prevents cracks at junctions. |
+| Main | Source | `displaceSource` | Noise / Material / Displacement | noise |  |  | Where the height values come from: built-in noise, the Height map of the assigned material, or a named asset from the Displacements panel. |
+| Main | Displacement | `displacement` | None |  |  |  | Height map from the Displacements panel. A warning badge shows on the node when the map is missing or not loaded. |
+| Main | Radial amount | `displaceRadial` | -5..5 (slider -0.3..0.3) m | 0 |  |  | Largest move away from (positive) or toward (negative) the spine, in metres. |
+| Main | Length amount | `displaceLength` | -5..5 (slider -0.3..0.3) m | 0 |  |  | Largest move along the spine, in metres. Vertices that share a V coordinate no longer sit in one plane. |
+| Main | Sharpness | `displaceSharpness` | curve | curve |  |  | Remaps the displacement values. A straight line leaves them unchanged; a curve that stays low and rises late keeps only the highest values. |
+| Main | Mapping | `displaceMapping` | Use UVs / Fit to geometry | use-uvs |  |  | Use UVs follows the branch UV tiling; Fit to geometry wraps the pattern once around and once along the branch. |
+| Main | U scale | `displaceUScale` | 0.05..50 (slider 0.05..10) | 1 |  |  | Pattern size around the branch (larger = more repeats). |
+| Main | V scale | `displaceVScale` | 0.05..50 (slider 0.05..10) | 1 |  |  | Pattern size along the branch (larger = more repeats). |
+| Main | Seed | `displaceMainSeed` | 0..99999 | 0 |  |  | Random seed of the noise source. |
+| Fine | Amount | `displaceFineAmount` | -2..2 (slider -0.1..0.1) m | 0 |  |  | Second, always-noise displacement along the surface normal, added on top of the main one. |
+| Fine | Sharpness | `displaceFineSharpness` | curve | curve |  |  | Remaps the fine noise values (straight line = unchanged). |
+| Fine | Scale | `displaceFineScale` | 0.1..8 (slider 0.1..3) | 1 |  |  | Size of the fine noise. Above 1 the surface is pushed out on average, below 1 it is pulled in toward the center. |
+| Shape | Amount | `displaceShapeAmount` | -1..1 | 0 |  |  | Depth of the creases that run along the spine, as a fraction of the local radius. |
+| Shape | Twist | `displaceShapeTwist` | -720..720 (slider -90..90) °/m | 0 |  |  | Rotates the crease pattern around the spine while it climbs from the base (degrees per metre). |
+| Shape | Scale | `displaceShapeScale` | 0.1..10 (slider 0.1..4) | 1 |  |  | Number of creases around the branch (larger = more, thinner creases). |
+| Shape | Seed | `displaceShapeSeed` | seed | 0 |  |  | Displacement setting (height-map driven surface detail). “Seed” in Displacement › Shape. |
+| Flares | Radius | `displaceFlareRadius` | 0..8 (slider 0..2) | 0 |  |  | Largest flare, as a multiple of the branch radius at its base. 0 turns the flares off. |
+| Flares | Noise scale | `displaceFlareNoise` | 1..32 | 5 |  |  | Number of flare lobes around the branch. |
+| Flares | Height | `displaceFlareHeight` | 0.01..50 (slider 0.01..5) m | 1 |  |  | How far up the spine the flares reach. |
+| Flares | Pinch | `displaceFlarePinch` | 0..1 | 0 |  |  | Pulls the flares toward the center spine. At 1 the lobes are thin ridges and nothing spreads at the base. |
+| Flares | Angle | `displaceFlareAngle` | -180..180 ° | 0 |  |  | Rotates the flares around the spine. |
+| Flares | Seed | `displaceFlareSeed` | seed | 0 |  |  | Displacement setting (height-map driven surface detail). “Seed” in Displacement › Flares. |
+| Fade | Fade at junctions | `displaceFadeBase` | 0..10 | 1.5 |  |  | Fade-in length (in radii) past the weld / junction rings: prevents cracks where a branch leaves its parent. |
 | Fade | Fade at tips | `displaceFadeTip` | 0..10 | 1 |  |  | Fade-out length (in radii) toward the tip / cap. |
-| Fade | LOD fade | `displaceLodFade` | bool | true |  |  | Fade the amount out between LOD 1 and 3. |
-| Subdivision | Auto-subdivide | `displaceAutoSubdivide` | bool | true |  |  | Add rings and sides so the mesh has enough vertices to carry the height detail. |
+| Fade | LOD fade | `displaceLodFade` | bool | true |  |  | Fade the displacement out between LOD 1 and 3. |
+| Subdivision | Auto-subdivide | `displaceAutoSubdivide` | bool | true |  |  | Add rings and sides so the mesh has enough vertices to carry the displacement. |
 | Subdivision | Detail size | `displaceDetail` | 0.002..1 (slider 0.002..0.2) m | 0.03 |  |  | Target quad size when auto-subdividing (smaller = more detail, more triangles). |
-| Subdivision | Min sides | `displaceMinSides` | 3..128 | 16 |  |  | Minimum number of sides while displacement is active. |
-| Noise | Noise | `displaceNoise` | 0..1 | 0.5 |  |  | Adds noise to the displacement. |
-| Noise | Seed | `displaceSeed` | seed | 0 |  |  | Random seed of the displacement noise. |
+| Subdivision | Min sides | `displaceMinSides` | 3..128 | 16 |  |  | Fewest sides around a displaced branch. |
+| Asset amount (legacy) | Amount | `displaceAmount` | -5..5 (slider 0..0.2) m | 0 |  | yes | Older asset displacement in metres at full height. The curve scales it along the branch length. |
+| Asset amount (legacy) | + % of radius | `displaceRadiusAmount` | -1..2 | 0 |  |  | Extra amount relative to the local radius. |
+| Asset amount (legacy) | Offset | `displaceOffset` | -1..1 | 0 |  |  | Bias added to the height before scaling. |
+| Asset amount (legacy) | Mid-grey is neutral | `displaceMidGrey` | bool | true |  |  | On: 50% grey does not move the surface. Off: black = none, white = full amount outward. |
+| Asset amount (legacy) | Direction | `displaceDirection` | Normal / Radial | normal |  |  | Displace along the surface normal or radially from the axis. |
+| Asset mapping (legacy) | Tiling | `displaceTiling` | World / Normalized | world |  |  | World: one image tile covers "Tile size" metres. |
+| Asset mapping (legacy) | Tile size | `displaceTileSize` | 0.005..50 (slider 0.005..4) m | 0.5 |  |  | World size of one displacement tile. |
+| Asset mapping (legacy) | Scale | `displaceScale` | 0.01..50 | 1 |  |  | Height of the displacement. |
+| Asset mapping (legacy) | Scale U | `displaceScaleU` | 0.01..50 | 1 |  |  | Displacement tiling around the stem. |
+| Asset mapping (legacy) | Scale V | `displaceScaleV` | 0.01..50 | 1 |  |  | Displacement tiling along the stem. |
+| Asset mapping (legacy) | Rotation | `displaceRotation` | -360..360 ° | 0 |  |  | Snapped to 90° steps while seams are locked. |
+| Asset mapping (legacy) | Lock seams | `displaceLockSeams` | bool | true |  |  | Round the tiling around the trunk to a whole number so the U seam is continuous. |
 
 ### Tab: Material
 

@@ -1,6 +1,6 @@
 import type { MeshData } from '@/contracts/mesh';
 import type { Branch, Skeleton } from '@/contracts/skeleton';
-import type { DisplaceDirection, TubeDisplacer, TubeDisplaceVertex } from './displaceMesh';
+import type { DisplaceDirection, TubeDisplacer } from './displaceMesh';
 import { createSectionEvaluator, ROUND_SECTION, type SectionShape } from './crossSection';
 import { cross, dot, hash01, len, mul, norm, orthogonalize, perpendicular, rotate, sub, type V3 } from './math3';
 import { MeshAccumulator, newVertex, type VertexAttrs } from './meshAccumulator';
@@ -8,6 +8,7 @@ import { computeSkeletonWind, WIND_ATTRIBUTES } from './windAttributes';
 import { ChildPathEvaluator, frameNormalFor, lightingNormal, lightingValue, parentSurfaceFor, solveWeld, squashSurface, weldBlendValue, weldRingCount, type ChildPath, type ParentSurface, type WeldMeshOptions, type WeldResult } from '@/generators/weld';
 import { bendPushFactor, leanNormal, seamWeight, squashRadius } from '@/generators/skin';
 import { EXTENSION_ATTR, EXTENSION_DISPLACE_ATTR, EXTENSION_SMOOTH_ATTR } from '@/generators/split';
+import type { BranchDisplacer, BranchDisplaceVertex, DisplaceOut } from '@/generators/displace';
 
 export interface TubeUv {
   /** false = metric (V = metres / uvMetres, tiles by world length), true = V runs 0..1 per branch. */
@@ -59,6 +60,11 @@ export interface TubeOptions {
   /** Displacement evaluated per ring vertex (metres along `displaceDirection`); normals are built from the displaced rings. */
   displace?: TubeDisplacer;
   displaceDirection?: DisplaceDirection;
+  /**
+   * Displacement tab of Trunk / Branch / Root: radial, along-spine and normal offsets per ring vertex. Applied after welding
+   * (weld rings stay put, the fade starts where they end); normals are built from the displaced rings.
+   */
+  displaceField?: BranchDisplacer;
   /** > 0: rings are at most this far apart (adaptive subdivision for displacement), capped at 600 rings per branch. */
   maxSegmentLength?: number;
   /** Fuse branches whose skeleton `weld` attribute is 1 into their parent's surface (see `generators/weld`). */
@@ -518,7 +524,15 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
     const cy = Math.floor(bi / cells);
 
     // --- ring positions
-    const dv: TubeDisplaceVertex = { u: 0, s: 0, t: 0, sEnd: 0, radius: 0, circumference: 2 * Math.PI * rMax, sides, junction };
+    const dv: BranchDisplaceVertex = {
+      u: 0, s: 0, t: 0, sEnd: 0, radius: 0, circumference: 2 * Math.PI * rMax, sides, junction,
+      uvU: 0, uvV: 0, uTiles, length: Math.max(1e-6, (sm.s[R - 1] as number) - (sm.s[sm.first] as number)), baseRadius: r0, sFree: 0, branch: b.id,
+    };
+    const dOut: DisplaceOut = { radial: 0, along: 0, normal: 0 };
+    const displaced = opts.displace !== undefined || opts.displaceField !== undefined;
+    const ringTotalS = Math.max(1e-9, sm.s[R - 1] as number);
+    const ringV = (sv: number): number => (uvo.normalized ? (sv / ringTotalS) * uvo.scaleV : (sv / Math.max(1e-4, opts.uvMetres)) * uvo.scaleV) + uvo.offsetV;
+    const weldEndS = weld ? weld.sEnd : 0;
     const gp = new Float32Array(R * V * 3);
     const dirs = new Float32Array(R * V * 3);
     for (let i = 0; i < R; i++) {
@@ -542,17 +556,19 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
       const collar = 1 + collarAmount * Math.exp(-Math.max(0, s) / (collarLength * r0));
       const radius = (i === 0 && junction ? (sm.rad[0] as number) : (sm.rad[i] as number) * collar);
       let slope = 0;
-      if (opts.displace && opts.displaceDirection !== 'radial') {
+      if (displaced && opts.displaceDirection !== 'radial') {
         const a = Math.max(0, i - 1);
         const c = Math.min(R - 1, i + 1);
         const ds = (sm.s[c] as number) - (sm.s[a] as number);
         slope = ds > 1e-9 ? ((sm.rad[c] as number) - (sm.rad[a] as number)) / ds : 0;
       }
-      if (opts.displace) {
+      if (displaced) {
         dv.s = s;
         dv.t = sm.t[i] as number;
         dv.sEnd = (sm.s[R - 1] as number) - s;
         dv.radius = radius;
+        dv.sFree = s - weldEndS;
+        dv.uvV = ringV(s);
       }
       // Smooth: on a bend the ring plane cuts the tube obliquely, so the section stretches by 1 / cos(half the turn) in the bend plane.
       let bendK = 0;
@@ -587,18 +603,27 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
         if (squash) m *= squashRadius(a, squash.amount, squash.rotate);
         const o = (i * V + j) * 3;
         let dd = 0;
-        if (opts.displace) {
+        let radialD = 0;
+        let alongD = 0;
+        if (displaced) {
           dv.u = (j % sides) / sides;
-          dd = opts.displace(dv) * displaceScale;
+          if (opts.displace) dd = opts.displace(dv) * displaceScale;
+          if (opts.displaceField) {
+            dv.uvU = dv.u * uTiles + uvo.offsetU;
+            opts.displaceField(dv, dOut);
+            dd += dOut.normal * displaceScale;
+            radialD = dOut.radial * displaceScale;
+            alongD = dOut.along * displaceScale;
+          }
         }
         const dl = Math.hypot(ox, oy, oz) || 1;
         if (bendK > 0) {
           const inPlane = (ox * ex + oy * ey + oz * ez) / dl;
           m *= 1 + bendK * inPlane * inPlane;
         }
-        gp[o] = (sm.pos[i * 3] as number) + ox * m + (ox / dl - Tn[0] * slope) * dd;
-        gp[o + 1] = (sm.pos[i * 3 + 1] as number) + oy * m + (oy / dl - Tn[1] * slope) * dd;
-        gp[o + 2] = (sm.pos[i * 3 + 2] as number) + oz * m + (oz / dl - Tn[2] * slope) * dd;
+        gp[o] = (sm.pos[i * 3] as number) + ox * m + (ox / dl - Tn[0] * slope) * dd + (ox / dl) * radialD + Tn[0] * alongD;
+        gp[o + 1] = (sm.pos[i * 3 + 1] as number) + oy * m + (oy / dl - Tn[1] * slope) * dd + (oy / dl) * radialD + Tn[1] * alongD;
+        gp[o + 2] = (sm.pos[i * 3 + 2] as number) + oz * m + (oz / dl - Tn[2] * slope) * dd + (oz / dl) * radialD + Tn[2] * alongD;
         dirs[o] = ox / dl;
         dirs[o + 1] = oy / dl;
         dirs[o + 2] = oz / dl;

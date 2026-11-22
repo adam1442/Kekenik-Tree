@@ -891,6 +891,113 @@ export function lodParams(): ParamDef[] {
   ];
 }
 
+/**
+ * Displacement tab of Trunk / Branch / Root: Main (Radial amount, Length amount, Sharpness, Source, Mapping, U / V scale, Seed),
+ * Fine, Shape (creases), Flares (trunk bases / roots). Fade and Subdivision are shared with the legacy asset displacement, whose
+ * own controls (`displaceAmount`, `+ % of radius`, ...) stay stored for old projects and are listed only while they are used.
+ */
+export function structureDisplacementParams(): ParamDef[] {
+  const m = section('Displacement', 'Main');
+  const fi = section('Displacement', 'Fine');
+  const sh = section('Displacement', 'Shape');
+  const fl = section('Displacement', 'Flares');
+  const f = section('Displacement', 'Fade');
+  const sd = section('Displacement', 'Subdivision');
+  const la = section('Displacement', 'Asset amount (legacy)');
+  const lm = section('Displacement', 'Asset mapping (legacy)');
+  const isNoise = { param: 'displaceSource', value: 'noise' } as const;
+  const usesAsset = { param: 'displaceSource', value: 'displacement' } as const;
+  const legacy: Condition = { any: [{ param: 'displaceAmount', op: 'ne', value: 0 }, { param: 'displaceRadiusAmount', op: 'ne', value: 0 }] };
+  const assetVisible: Condition = { any: [usesAsset, ...(legacy as { any: Condition[] }).any] };
+  const lin = getCurvePreset('linear');
+  return [
+    m.enumOf('displaceSource', 'Source', 'Noise', ['Noise', 'Material', 'Displacement'], {
+      tooltip: 'Where the height values come from: built-in noise, the Height map of the assigned material, or a named asset from the Displacements panel.',
+    }),
+    {
+      kind: 'enum',
+      id: 'displacement',
+      label: 'Displacement',
+      group: 'Displacement',
+      subgroup: 'Main',
+      default: '',
+      options: [{ value: '', label: 'None' }],
+      visibleIf: assetVisible,
+      tooltip: 'Height map from the Displacements panel. A warning badge shows on the node when the map is missing or not loaded.',
+    },
+    m.float('displaceRadial', 'Radial amount', 0, {
+      min: -5, max: 5, softMin: -0.3, softMax: 0.3, step: 0.001, unit: 'm',
+      tooltip: 'Largest move away from (positive) or toward (negative) the spine, in metres.',
+    }),
+    m.float('displaceLength', 'Length amount', 0, {
+      min: -5, max: 5, softMin: -0.3, softMax: 0.3, step: 0.001, unit: 'm',
+      tooltip: 'Largest move along the spine, in metres. Vertices that share a V coordinate no longer sit in one plane.',
+    }),
+    m.curve('displaceSharpness', 'Sharpness', lin, {
+      tooltip: 'Remaps the displacement values. A straight line leaves them unchanged; a curve that stays low and rises late keeps only the highest values.',
+    }),
+    m.enumOf('displaceMapping', 'Mapping', 'Use UVs', ['Use UVs', 'Fit to geometry'], {
+      tooltip: 'Use UVs follows the branch UV tiling; Fit to geometry wraps the pattern once around and once along the branch.',
+    }),
+    m.float('displaceUScale', 'U scale', 1, { min: 0.05, max: 50, softMax: 10, tooltip: 'Pattern size around the branch (larger = more repeats).' }),
+    m.float('displaceVScale', 'V scale', 1, { min: 0.05, max: 50, softMax: 10, tooltip: 'Pattern size along the branch (larger = more repeats).' }),
+    m.float('displaceMainSeed', 'Seed', 0, { min: 0, max: 99999, step: 1, visibleIf: isNoise, tooltip: 'Random seed of the noise source.' }),
+
+    fi.float('displaceFineAmount', 'Amount', 0, {
+      min: -2, max: 2, softMin: -0.1, softMax: 0.1, step: 0.0005, unit: 'm',
+      tooltip: 'Second, always-noise displacement along the surface normal, added on top of the main one.',
+    }),
+    fi.curve('displaceFineSharpness', 'Sharpness', lin, { tooltip: 'Remaps the fine noise values (straight line = unchanged).' }),
+    fi.float('displaceFineScale', 'Scale', 1, {
+      min: 0.1, max: 8, softMax: 3,
+      tooltip: 'Size of the fine noise. Above 1 the surface is pushed out on average, below 1 it is pulled in toward the center.',
+    }),
+
+    sh.float('displaceShapeAmount', 'Amount', 0, {
+      min: -1, max: 1, tooltip: 'Depth of the creases that run along the spine, as a fraction of the local radius.',
+    }),
+    sh.float('displaceShapeTwist', 'Twist', 0, {
+      min: -720, max: 720, softMin: -90, softMax: 90, unit: '°/m',
+      tooltip: 'Rotates the crease pattern around the spine while it climbs from the base (degrees per metre).',
+    }),
+    sh.float('displaceShapeScale', 'Scale', 1, { min: 0.1, max: 10, softMax: 4, tooltip: 'Number of creases around the branch (larger = more, thinner creases).' }),
+    sh.seed('displaceShapeSeed', 'Seed'),
+
+    fl.float('displaceFlareRadius', 'Radius', 0, {
+      min: 0, max: 8, softMax: 2, step: 0.01,
+      tooltip: 'Largest flare, as a multiple of the branch radius at its base. 0 turns the flares off.',
+    }),
+    fl.float('displaceFlareNoise', 'Noise scale', 5, { min: 1, max: 32, step: 1, tooltip: 'Number of flare lobes around the branch.' }),
+    fl.float('displaceFlareHeight', 'Height', 1, { min: 0.01, max: 50, softMax: 5, unit: 'm', tooltip: 'How far up the spine the flares reach.' }),
+    fl.float('displaceFlarePinch', 'Pinch', 0, {
+      min: 0, max: 1,
+      tooltip: 'Pulls the flares toward the center spine. At 1 the lobes are thin ridges and nothing spreads at the base.',
+    }),
+    fl.float('displaceFlareAngle', 'Angle', 0, { min: -180, max: 180, unit: '°', tooltip: 'Rotates the flares around the spine.' }),
+    fl.seed('displaceFlareSeed', 'Seed'),
+
+    f.float('displaceFadeBase', 'Fade at junctions', 1.5, { min: 0, max: 10, tooltip: 'Fade-in length (in radii) past the weld / junction rings: prevents cracks where a branch leaves its parent.' }),
+    f.float('displaceFadeTip', 'Fade at tips', 1, { min: 0, max: 10, tooltip: 'Fade-out length (in radii) toward the tip / cap.' }),
+    f.bool('displaceLodFade', 'LOD fade', true, { tooltip: 'Fade the displacement out between LOD 1 and 3.' }),
+    sd.bool('displaceAutoSubdivide', 'Auto-subdivide', true, { tooltip: 'Add rings and sides so the mesh has enough vertices to carry the displacement.' }),
+    sd.float('displaceDetail', 'Detail size', 0.03, { min: 0.002, max: 1, softMax: 0.2, unit: 'm', tooltip: 'Target quad size when auto-subdividing (smaller = more detail, more triangles).' }),
+    sd.int('displaceMinSides', 'Min sides', 16, { min: 3, max: 128, tooltip: 'Fewest sides around a displaced branch.' }),
+
+    la.float('displaceAmount', 'Amount', 0, { min: -5, max: 5, softMin: 0, softMax: 0.2, unit: 'm', curve: true, visibleIf: legacy, tooltip: 'Older asset displacement in metres at full height. The curve scales it along the branch length.' }),
+    la.float('displaceRadiusAmount', '+ % of radius', 0, { min: -1, max: 2, visibleIf: legacy, tooltip: 'Extra amount relative to the local radius.' }),
+    la.float('displaceOffset', 'Offset', 0, { min: -1, max: 1, visibleIf: legacy, tooltip: 'Bias added to the height before scaling.' }),
+    la.bool('displaceMidGrey', 'Mid-grey is neutral', true, { visibleIf: legacy, tooltip: 'On: 50% grey does not move the surface. Off: black = none, white = full amount outward.' }),
+    la.enumOf('displaceDirection', 'Direction', 'Normal', ['Normal', 'Radial'], { visibleIf: legacy }),
+    lm.enumOf('displaceTiling', 'Tiling', 'World', ['World', 'Normalized'], { visibleIf: legacy, tooltip: 'World: one image tile covers "Tile size" metres.' }),
+    lm.float('displaceTileSize', 'Tile size', 0.5, { min: 0.005, max: 50, softMax: 4, unit: 'm', visibleIf: legacy }),
+    lm.float('displaceScale', 'Scale', 1, { min: 0.01, max: 50, visibleIf: legacy }),
+    lm.float('displaceScaleU', 'Scale U', 1, { min: 0.01, max: 50, visibleIf: legacy }),
+    lm.float('displaceScaleV', 'Scale V', 1, { min: 0.01, max: 50, visibleIf: legacy }),
+    lm.float('displaceRotation', 'Rotation', 0, { min: -360, max: 360, unit: '°', visibleIf: legacy, tooltip: 'Snapped to 90° steps while seams are locked.' }),
+    lm.bool('displaceLockSeams', 'Lock seams', true, { visibleIf: legacy, tooltip: 'Round the tiling around the trunk to a whole number so the U seam is continuous.' }),
+  ];
+}
+
 export function displacementParams(): ParamDef[] {
   const d = section('Displacement', 'Displacement');
   const m = section('Displacement', 'Mapping');

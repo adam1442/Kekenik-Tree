@@ -77,8 +77,8 @@ export function tubeOptionsFromParams(
   seed: number,
   skeleton?: Skeleton,
 ): TubeOptions {
-  const displacement = tubeDisplacementOptions(params, lod, parent);
-  const displaced = displacement.displace !== undefined;
+  const displacement = tubeDisplacementOptions(params, lod, skeleton ?? parent, materialId);
+  const displaced = displacement.displace !== undefined || displacement.displaceField !== undefined;
   const radialAbsolute = getNumber(params, 'sides', 8);
   const radialRelative = getNumber(params, 'radialRelative', 0);
   const radialBasis = getString(params, 'radialBasis', RADIAL_BASIS.radius);
