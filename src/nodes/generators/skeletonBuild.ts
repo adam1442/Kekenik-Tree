@@ -38,6 +38,8 @@ export class StructureSkeletonBuilder {
   /** Radial segments of the branch per point; null until a branch with a stored count is added. */
   private sidesArr: Float32Array | null = null;
   private openArr: Float32Array | null = null;
+  /** Further per-branch scalar attributes (e.g. `weld`), one value per point; created by `setBranchExtra`. */
+  private readonly extras = new Map<string, Float32Array>();
   private readonly branches: Branch[] = [];
 
   constructor(initialPointCapacity = 1024) {
@@ -249,6 +251,43 @@ export class StructureSkeletonBuilder {
     return { branchId, start, end: this.len - 1, length: totalLen };
   }
 
+  /** Positions and radii of an already added branch (views into the builder: use them before adding more branches). */
+  branchView(branchId: number): { positions: Float32Array; radii: Float32Array; count: number; start: number } | null {
+    const b = this.branches[branchId];
+    if (!b) return null;
+    return {
+      positions: this.pos.subarray(b.start * 3, (b.start + b.count) * 3),
+      radii: this.rad.subarray(b.start, b.start + b.count),
+      count: b.count,
+      start: b.start,
+    };
+  }
+
+  /** Stores `value` for every point of a branch in the skeleton attribute `name`. */
+  setBranchExtra(branchId: number, name: string, value: number): void {
+    const b = this.branches[branchId];
+    if (!b) return;
+    let arr = this.extras.get(name);
+    if (!arr || arr.length < this.cap) {
+      const grown = new Float32Array(this.cap);
+      if (arr) grown.set(arr);
+      arr = grown;
+      this.extras.set(name, arr);
+    }
+    arr.fill(value, b.start, b.start + b.count);
+  }
+
+  /** Removes every branch from index `branchCount` on (used to drop a branch whose weld failed). */
+  truncate(branchCount: number): void {
+    if (branchCount >= this.branches.length) return;
+    const first = this.branches[Math.max(0, branchCount)] as Branch;
+    const from = first.start;
+    const to = this.len;
+    for (const arr of [this.sideArr, this.sidesArr, this.openArr, ...this.extras.values()]) arr?.fill(0, from, Math.min(to, arr.length));
+    this.branches.length = Math.max(0, branchCount);
+    this.len = from;
+  }
+
   build(): Skeleton {
     const n = this.len;
     const attributes = new Map<string, Float32Array>();
@@ -260,6 +299,7 @@ export class StructureSkeletonBuilder {
       if (this.sideArr) attributes.set('side', fitLength(this.sideArr, n));
       if (this.sidesArr) attributes.set('radialSides', fitLength(this.sidesArr, n));
       if (this.openArr) attributes.set('openEnd', fitLength(this.openArr, n));
+      for (const [name, arr] of this.extras) attributes.set(name, fitLength(arr, n));
     }
     return {
       count: n,

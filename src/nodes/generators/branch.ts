@@ -25,6 +25,7 @@ import {
 import { evaluateRootLevel, extractPlacement, type RootLevelKind } from './rootLevel';
 import { StructureSkeletonBuilder } from './skeletonBuild';
 import { compileSpineConfig, growSpineIntoBuilder, type CompiledSpineConfig } from './spine';
+import { createWeldLevel, readWeldConfig, WELD_ATTR, WELD_SELF_ATTR, weldChild } from './weldApply';
 
 function evalParentCurve(params: NodeParams, id: string, u: number, fallback = 1): number {
   const c = params[id]?.curve;
@@ -53,6 +54,7 @@ function growOneLevel(
 
   const builder = new StructureSkeletonBuilder(Math.min(65536, Math.max(512, parentSk.branches.length * 32)));
   const env = createGenerationEnv(ctx, params, parentSk);
+  const weldLevel = createWeldLevel(readWeldConfig(params), parentSk, levelIndex > 0);
   let written = 0;
 
   for (let bi = 0; bi < parentSk.branches.length && written < maxTotalRemaining; bi++) {
@@ -121,7 +123,8 @@ function growOneLevel(
       }
 
       const levelCfg = subScale === 1 ? icfg : { ...icfg, lengthBase: Math.max(0.02, icfg.lengthBase * subScale) };
-      written += growSpineIntoBuilder(
+      const firstBranch = builder.branchCount;
+      const grown = growSpineIntoBuilder(
         levelCfg,
         {
           parentBranch: pb.id,
@@ -145,6 +148,10 @@ function growOneLevel(
         builder,
         ctx.cancel,
       );
+      written += grown;
+      if (weldLevel && grown > 0 && !pl.isExtension) {
+        written -= weldChild(weldLevel, builder, { firstBranch, prep, position: sample.position, parentPoint: sample.parentPoint });
+      }
       scope.finish(inst, builder);
     }
   }
@@ -173,6 +180,8 @@ function mergeSkeletons(levels: readonly Skeleton[]): Skeleton {
     const sd = sk.attributes.get('side');
     const rs = sk.attributes.get('radialSides');
     const oe = sk.attributes.get('openEnd');
+    const wl = sk.attributes.get(WELD_ATTR);
+    const ws = sk.attributes.get(WELD_SELF_ATTR);
     const curPointOffset = builder.pointCount;
     const curBranchOffset = builder.branchCount;
 
@@ -188,7 +197,7 @@ function mergeSkeletons(levels: readonly Skeleton[]): Skeleton {
       const parentBranch = li === 0 ? b.parentBranch : b.parentBranch >= 0 ? prevBranchOffset + b.parentBranch : -1;
       const parentPoint = li === 0 ? b.parentPoint : b.parentPoint >= 0 ? prevPointOffset + b.parentPoint : -1;
 
-      builder.addPolylineBranch({
+      const added = builder.addPolylineBranch({
         parentBranch,
         parentPoint,
         generation: b.generation,
@@ -202,6 +211,10 @@ function mergeSkeletons(levels: readonly Skeleton[]): Skeleton {
         ...(rs && (rs[b.start] as number) > 0 ? { radialSides: rs[b.start] as number } : {}),
         ...(oe ? { openEnd: (oe[b.start] as number) > 0 } : {}),
       });
+      if (added.branchId >= 0 && wl && (wl[b.start] as number) > 0) {
+        builder.setBranchExtra(added.branchId, WELD_ATTR, wl[b.start] as number);
+        if (ws && (ws[b.start] as number) > 0) builder.setBranchExtra(added.branchId, WELD_SELF_ATTR, 1);
+      }
     }
 
     prevPointOffset = curPointOffset;

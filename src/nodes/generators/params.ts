@@ -632,8 +632,63 @@ export function segmentParams(kind: SpineDefaults['kind'], segments: number, sid
   ];
 }
 
-/** Skin tab. `sides` adds the `Sides` row for nodes without a Segments tab (Cap). */
-export function skinParams(defaultSpineOnly = false, sides?: number): ParamDef[] {
+/**
+ * Skin > Welding (Branch, Root): fuses the base of a child into the surface of its parent. Weld scalar (the number of rings
+ * of the fused part) lives in Segments > Length.
+ */
+export function weldingParams(): ParamDef[] {
+  const w = section('Skin', 'Welding');
+  const sp = section('Skin', 'Spread');
+  const on = { param: 'weldEnabled', value: true } as const;
+  return [
+    w.bool('weldEnabled', 'Enabled', false, {
+      tooltip: 'Pushes the base of the branch out of its parent and fuses it to the parent surface, for a seamless union without a visible seam.',
+    }),
+    w.curve('weldKeep', 'Keep', flatCurve(1), {
+      visibleIf: on,
+      tooltip: 'Runs over the height of the model (left = bottom, right = top). Welds are dropped where the curve is below 0.5: the branch then starts on the parent spine without fusing.',
+    }),
+    w.bool('weldKeepFailed', 'Keep failed', false, {
+      visibleIf: on,
+      tooltip: 'Keeps branches whose weld failed (they are drawn without fusing) instead of removing them. Useful to find the failures.',
+    }),
+    w.bool('weldForceRays', 'Force ray casts', false, {
+      visibleIf: on,
+      tooltip: 'Casts rays against the real parent tube (curved and tapered along its whole spine) instead of the procedural cone at the attachment: better on strongly bent parents, but more welds fail.',
+    }),
+    w.float('weldOffset', 'Offset', 1.5, {
+      min: 0,
+      max: 10,
+      softMax: 4,
+      visibleIf: on,
+      tooltip: 'How far (in branch radii) the branch is pushed out of the parent surface before it is welded back: the length of the weld part.',
+    }),
+    sp.float('weldSpreadAmount', 'Amount', 0.3, {
+      min: 0,
+      max: 2,
+      softMax: 1,
+      visibleIf: on,
+      tooltip: 'How much the base of the branch widens at the weld site (fraction of its radius).',
+    }),
+    sp.float('weldSpreadUpper', 'Upper scale', 0.2, {
+      min: 0,
+      max: 2,
+      softMax: 1,
+      visibleIf: on,
+      tooltip: 'Extra widening on the side of the base facing the tip of the parent, which forms a web where the branches meet.',
+    }),
+    sp.float('weldSpreadLower', 'Lower scale', 0.1, {
+      min: 0,
+      max: 2,
+      softMax: 1,
+      visibleIf: on,
+      tooltip: 'Extra widening on the side of the base facing the base of the parent.',
+    }),
+  ];
+}
+
+/** Skin tab. `sides` adds the `Sides` row for nodes without a Segments tab (Cap); `welding` adds the Welding section. */
+export function skinParams(defaultSpineOnly = false, sides?: number, welding = false): ParamDef[] {
   const g = section('Skin', 'Geometry');
   const n = section('Skin', 'Normals');
   const c = section('Skin', 'Vertex color');
@@ -649,6 +704,7 @@ export function skinParams(defaultSpineOnly = false, sides?: number): ParamDef[]
     g.float('skinTwist', 'Twist', 0, { min: -720, max: 720, unit: '°/m' }),
     j.float('collarAmount', 'Collar', 0.3, { min: 0, max: 2, tooltip: 'Radius flare where a branch leaves its parent.' }),
     j.float('collarLength', 'Collar length', 1.5, { min: 0.1, max: 10, tooltip: 'Length of the flare in branch radii.' }),
+    ...(welding ? weldingParams() : []),
     n.float('smoothing', 'Smoothing', 1, { min: 0, max: 1, tooltip: 'Below 0.5 the tube is faceted (unwelded quads).' }),
     n.float('flatten', 'Flatten', 0, { min: 0, max: 1 }),
     c.color('tint', 'Tint', [0.36, 0.26, 0.18, 1]),

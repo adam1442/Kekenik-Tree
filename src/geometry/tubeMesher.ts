@@ -5,6 +5,7 @@ import { createSectionEvaluator, ROUND_SECTION, type SectionShape } from './cros
 import { cross, dot, hash01, len, mul, norm, orthogonalize, perpendicular, rotate, sub, type V3 } from './math3';
 import { MeshAccumulator, newVertex, type VertexAttrs } from './meshAccumulator';
 import { computeSkeletonWind, WIND_ATTRIBUTES } from './windAttributes';
+import { ChildPathEvaluator, parentSurfaceFor, solveWeld, weldRingCount, type ChildPath, type WeldMeshOptions, type WeldResult } from '@/generators/weld';
 
 export interface TubeUv {
   /** false = metric (V = metres / uvMetres, tiles by world length), true = V runs 0..1 per branch. */
@@ -58,6 +59,8 @@ export interface TubeOptions {
   displaceDirection?: DisplaceDirection;
   /** > 0: rings are at most this far apart (adaptive subdivision for displacement), capped at 600 rings per branch. */
   maxSegmentLength?: number;
+  /** Fuse branches whose skeleton `weld` attribute is 1 into their parent's surface (see `generators/weld`). */
+  weld?: WeldMeshOptions;
 }
 
 interface Samples {
@@ -231,6 +234,114 @@ const lerpAttr = (arr: Float32Array | undefined, b: Branch, f: number, fallback:
   return (arr[i0] as number) * (1 - fr) + (arr[i1] as number) * fr;
 };
 
+/** Skeleton attributes written by the weld pass of the generators (`nodes/generators/weldApply.ts`). */
+const WELD_ATTR = 'weld';
+const WELD_SELF_ATTR = 'weldSelf';
+
+/** Parent branch of `b`: inside the same skeleton for sub-levels of one node, else in the generator's parent skeleton. */
+function parentBranchOf(sk: Skeleton, b: Branch, parent: Skeleton | undefined): { sk: Skeleton; branch: Branch } | null {
+  const own = (sk.attributes.get(WELD_SELF_ATTR)?.[b.start] ?? 0) > 0;
+  const psk = own ? sk : parent;
+  if (!psk || b.parentBranch < 0) return null;
+  const direct = psk.branches[b.parentBranch];
+  const pb = direct && direct.id === b.parentBranch ? direct : psk.branches.find((c) => c.id === b.parentBranch);
+  return pb && pb.count >= 2 ? { sk: psk, branch: pb } : null;
+}
+
+/** Solves the weld of branch `b` on its rings; null when the parent is missing or the solver fails (the junction then stays unwelded). */
+function solveBranchWeld(
+  sk: Skeleton,
+  b: Branch,
+  sm: Samples,
+  frames: V3[],
+  sides: number,
+  o: TubeOptions,
+  section: ReturnType<typeof createSectionEvaluator>,
+  sqrtA: number,
+): WeldResult | null {
+  const w = o.weld;
+  const pr = parentBranchOf(sk, b, o.parent);
+  if (!w || !pr) return null;
+  const start = pr.branch.start;
+  const positions = pr.sk.position.subarray(start * 3, (start + pr.branch.count) * 3);
+  const radii = pr.sk.radius.subarray(start, start + pr.branch.count);
+  const base: [number, number, number] = [sm.pos[0] as number, sm.pos[1] as number, sm.pos[2] as number];
+  const hint = Math.min(pr.branch.count - 1, Math.max(0, b.parentPoint - start));
+  const parentSides = pr.sk.attributes.get('radialSides')?.[start] ?? 0;
+  const surface = parentSurfaceFor(positions, radii, pr.branch.count, base, hint, parentSides, w.forceRays);
+  if (!surface) return null;
+  const nrm = new Float32Array(sm.n * 3);
+  for (let i = 0; i < sm.n; i++) {
+    const f = frames[i] as V3;
+    nrm[i * 3] = f[0];
+    nrm[i * 3 + 1] = f[1];
+    nrm[i * 3 + 2] = f[2];
+  }
+  const path: ChildPath = { count: sm.n, pos: sm.pos, rad: sm.rad, nrm, tan: sm.tan, s: sm.s };
+  const res = solveWeld(path, surface, {
+    sides,
+    segments: weldRingCount(w.scalar) - 1,
+    offset: w.offset * (sm.rad[0] as number),
+    spread: w.spread,
+    upper: w.upper,
+    lower: w.lower,
+    aspect: sqrtA,
+    section: (a, s) => section.radius(a, s),
+  });
+  return res.ok ? res : null;
+}
+
+/**
+ * Replaces the rings of the weld part (everything up to the end of the weld) by the weld rings. The weld ring centres
+ * are evaluated on the child path at the mean arc length of each ring; their vertices are overridden by the solver.
+ */
+function spliceWeld(sm: Samples, frames: V3[], w: WeldResult): { sm: Samples; frames: V3[] } {
+  let k0 = 1;
+  while (k0 < sm.n - 1 && (sm.s[k0] as number) < w.sEnd + 0.25 * ((sm.s[k0] as number) - (sm.s[k0 - 1] as number))) k0++;
+  const keep = sm.n - k0;
+  const count = w.rings + keep;
+  const pos = new Float32Array(count * 3);
+  const rad = new Float32Array(count);
+  const sfo = new Float32Array(count);
+  const tan = new Float32Array(count * 3);
+  const s = new Float32Array(count);
+  const t = new Float32Array(count);
+  const outFrames: V3[] = [];
+  const nrm = new Float32Array(sm.n * 3);
+  for (let i = 0; i < sm.n; i++) {
+    const f = frames[i] as V3;
+    nrm.set(f, i * 3);
+  }
+  const ev = new ChildPathEvaluator({ count: sm.n, pos: sm.pos, rad: sm.rad, nrm, tan: sm.tan, s: sm.s });
+  for (let i = 0; i < w.rings; i++) {
+    const si = w.ringS[i] as number;
+    ev.at(si);
+    pos.set([ev.px, ev.py, ev.pz], i * 3);
+    rad[i] = Math.max(1e-4, ev.r);
+    tan.set([ev.tx, ev.ty, ev.tz], i * 3);
+    s[i] = si;
+    let k = 0;
+    while (k < sm.n - 2 && (sm.s[k + 1] as number) <= si) k++;
+    const span = (sm.s[k + 1] as number) - (sm.s[k] as number);
+    const fr = span > 1e-12 ? Math.min(1, Math.max(0, (si - (sm.s[k] as number)) / span)) : 0;
+    sfo[i] = (sm.sf[k] as number) + ((sm.sf[k + 1] as number) - (sm.sf[k] as number)) * fr;
+    outFrames.push([ev.nx, ev.ny, ev.nz]);
+  }
+  for (let q = 0; q < keep; q++) {
+    const d = w.rings + q;
+    const k = k0 + q;
+    pos.set(sm.pos.subarray(k * 3, k * 3 + 3), d * 3);
+    tan.set(sm.tan.subarray(k * 3, k * 3 + 3), d * 3);
+    rad[d] = sm.rad[k] as number;
+    sfo[d] = sm.sf[k] as number;
+    s[d] = sm.s[k] as number;
+    outFrames.push(frames[k] as V3);
+  }
+  const total = Math.max(1e-9, s[count - 1] as number);
+  for (let i = 0; i < count; i++) t[i] = Math.min(1, Math.max(0, (s[i] as number) / total));
+  return { sm: { n: count, pos, rad, sf: sfo, s, t, tan, first: 0 }, frames: outFrames };
+}
+
 /**
  * Skeleton -> tube mesh. Rotation-minimising frames (continuous twist), analytic smooth normals + tangents,
  * metric UV0 (tiling by world length), unique UV1 cells, baked AO / colour, wind attributes, closed tips and bases,
@@ -263,11 +374,31 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
     const sides = Math.max(3, Math.round(opts.radialSegments(b.generation, maxR, bi)));
     const V = sides + 1;
     const junction = b.parentPoint >= 0;
-    const collarAmount = junction ? collarAmountOpt : 0;
-    const sm = sampleBranch(sk, b, opts, junction, collarAmount);
+    let collarAmount = junction ? collarAmountOpt : 0;
+    let sm: Samples | null = null;
+    let frames: V3[] = [];
+    // Welded junction: the weld rings replace the buried ring and the collar (Spread takes the collar's role).
+    let weld: WeldResult | null = null;
+    if (junction && opts.weld && (sk.attributes.get(WELD_ATTR)?.[b.start] ?? 0) === 1) {
+      const plain = sampleBranch(sk, b, opts, false, 0);
+      if (plain.n >= 2) {
+        const plainFrames = buildNormals(sk, b, plain, opts);
+        weld = solveBranchWeld(sk, b, plain, plainFrames, sides, opts, section, sqrtA);
+        if (weld) {
+          const spliced = spliceWeld(plain, plainFrames, weld);
+          sm = spliced.sm;
+          frames = spliced.frames;
+          collarAmount = 0;
+        }
+      }
+    }
+    if (!sm) {
+      sm = sampleBranch(sk, b, opts, junction, collarAmount);
+      if (sm.n >= 2) frames = buildNormals(sk, b, sm, opts);
+    }
     const R = sm.n;
     if (R < 2) continue;
-    const frames = buildNormals(sk, b, sm, opts);
+    const weldRings = weld ? weld.rings : 0;
     const r0 = sm.rad[sm.first] as number;
     let rMax = 0;
     for (let i = 0; i < R; i++) rMax = Math.max(rMax, sm.rad[i] as number);
@@ -283,6 +414,19 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
     const gp = new Float32Array(R * V * 3);
     const dirs = new Float32Array(R * V * 3);
     for (let i = 0; i < R; i++) {
+      if (weld && i < weldRings) {
+        for (let j = 0; j < V; j++) {
+          const src = (i * sides + (j % sides)) * 3;
+          const o = (i * V + j) * 3;
+          gp[o] = weld.positions[src] as number;
+          gp[o + 1] = weld.positions[src + 1] as number;
+          gp[o + 2] = weld.positions[src + 2] as number;
+          dirs[o] = weld.dirs[src] as number;
+          dirs[o + 1] = weld.dirs[src + 1] as number;
+          dirs[o + 2] = weld.dirs[src + 2] as number;
+        }
+        continue;
+      }
       const N = frames[i] as V3;
       const Tn: V3 = [sm.tan[i * 3] as number, sm.tan[i * 3 + 1] as number, sm.tan[i * 3 + 2] as number];
       const B = cross(Tn, N);
@@ -352,7 +496,9 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
       const w1 = lerpAttr(wind[1], b, f, 0);
       const w2 = lerpAttr(wind[2], b, f, 0);
       const w3 = lerpAttr(wind[3], b, f, 0);
-      const vBase = uvo.normalized ? t * uvo.scaleV : (s / Math.max(1e-4, opts.uvMetres)) * uvo.scaleV;
+      const totalS = Math.max(1e-9, sm.s[R - 1] as number);
+      const vAt = (sv: number): number => (uvo.normalized ? (sv / totalS) * uvo.scaleV : (sv / Math.max(1e-4, opts.uvMetres)) * uvo.scaleV);
+      const vBase = vAt(s);
       for (let j = 0; j < V; j++) {
         const jm = j % sides;
         const jp = (jm + 1) % sides;
@@ -368,10 +514,21 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
         n = norm(n, d);
         if (dot(n, d) < 0) n = mul(n, -1);
         if (flatten > 0) n = norm([n[0] + (d[0] - n[0]) * flatten, n[1] + (d[1] - n[1]) * flatten, n[2] + (d[2] - n[2]) * flatten], d);
+        const onWeld = weld !== null && i < weldRings;
+        if (weld && onWeld) {
+          // Normals fade from the parent's skin normal (ring 0) to the child's own normal over the weld rings.
+          const bw = weld.blend[i] as number;
+          const pi = (i * sides + jm) * 3;
+          n = norm([
+            n[0] + ((weld.parentNormals[pi] as number) - n[0]) * bw,
+            n[1] + ((weld.parentNormals[pi + 1] as number) - n[1]) * bw,
+            n[2] + ((weld.parentNormals[pi + 2] as number) - n[2]) * bw,
+          ], d);
+        }
         const tg = norm(dPu, perpendicular(n));
         const bit = cross(n, tg);
         const u = (j / sides) * uTiles + uvo.offsetU;
-        const v = vBase + uvo.offsetV;
+        const v = (onWeld && weld ? vAt(weld.vs[i * sides + jm] as number) : vBase) + uvo.offsetV;
         const vx = newVertex();
         vx.px = gp[o] as number; vx.py = gp[o + 1] as number; vx.pz = gp[o + 2] as number;
         vx.nx = n[0]; vx.ny = n[1]; vx.nz = n[2];

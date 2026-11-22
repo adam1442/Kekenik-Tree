@@ -14,6 +14,7 @@ import { Rng } from '@/core/rng';
 import type { SectionKind, SectionShape } from '@/geometry/crossSection';
 import { buildTubeMesh, type TubeOptions } from '@/geometry/tubeMesher';
 import { attachSkeletonWind } from '@/geometry/windAttributes';
+import { readWeldConfig } from './weldApply';
 import { fillTableBounds } from '@/instances/scope';
 import { FLAG_HIDDEN, type InstanceTable } from '@/instances/types';
 
@@ -142,8 +143,16 @@ export function tubeOptionsFromParams(
     twist: getNumber(params, 'skinTwist', 0),
     tintVariance: getNumber(params, 'tintVariance', 0.1),
     aoStrength: getNumber(params, 'aoStrength', 0.6),
+    ...weldMeshOptions(params),
     seed,
   };
+}
+
+/** Mesher options of Skin > Welding (empty when welding is off). */
+function weldMeshOptions(params: NodeParams): Pick<TubeOptions, 'weld'> {
+  const w = readWeldConfig(params);
+  if (!w.enabled) return {};
+  return { weld: { offset: w.offset, spread: w.spreadAmount, upper: w.upperScale, lower: w.lowerScale, scalar: w.scalar, forceRays: w.forceRays } };
 }
 
 /**

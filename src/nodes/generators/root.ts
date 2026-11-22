@@ -22,6 +22,7 @@ import {
 } from './frames';
 import { StructureSkeletonBuilder } from './skeletonBuild';
 import { compileSpineConfig, growSpineIntoBuilder } from './spine';
+import { createWeldLevel, readWeldConfig, weldChild } from './weldApply';
 
 function evalParentCurve(params: NodeParams, id: string, u: number, fallback = 1): number {
   const c = params[id]?.curve;
@@ -115,6 +116,7 @@ export function evaluateRoot(ctx: NodeContext, inputs: NodeInputs, params: NodeP
   const builder = new StructureSkeletonBuilder(Math.min(32768, Math.max(256, parent.branches.length * 24)));
   let written = 0;
   const env = createGenerationEnv(ctx, params, parent);
+  const weldLevel = createWeldLevel(readWeldConfig(params), parent, false);
 
   for (let bi = 0; bi < parent.branches.length && written < MAX_BRANCHES_PER_NODE; bi++) {
     if ((bi & 31) === 0) ctx.cancel.throwIfCancelled();
@@ -188,7 +190,8 @@ export function evaluateRoot(ctx: NodeContext, inputs: NodeInputs, params: NodeP
         }
       }
 
-      written += growSpineIntoBuilder(
+      const firstBranch = builder.branchCount;
+      const grown = growSpineIntoBuilder(
         cfg,
         {
           parentBranch: pb.id,
@@ -207,6 +210,10 @@ export function evaluateRoot(ctx: NodeContext, inputs: NodeInputs, params: NodeP
         builder,
         ctx.cancel,
       );
+      written += grown;
+      if (weldLevel && grown > 0 && !pl.isExtension) {
+        written -= weldChild(weldLevel, builder, { firstBranch, prep, position: sample.position, parentPoint: sample.parentPoint });
+      }
     }
   }
 

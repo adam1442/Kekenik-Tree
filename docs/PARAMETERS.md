@@ -533,6 +533,14 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 | Geometry | Twist | `skinTwist` | -720..720 °/m | 0 |  |  | Twists the surface texture and geometry around the axis. |
 | Junction | Collar | `collarAmount` | 0..2 | 0.3 |  |  | Radius flare where a branch leaves its parent. |
 | Junction | Collar length | `collarLength` | 0.1..10 | 1.5 |  |  | Length of the flare in branch radii. |
+| Welding | Enabled | `weldEnabled` | bool | false |  |  | Pushes the base of the branch out of its parent and fuses it to the parent surface, for a seamless union without a visible seam. |
+| Welding | Keep | `weldKeep` | curve | curve |  |  | Runs over the height of the model (left = bottom, right = top). Welds are dropped where the curve is below 0.5: the branch then starts on the parent spine without fusing. |
+| Welding | Keep failed | `weldKeepFailed` | bool | false |  |  | Keeps branches whose weld failed (they are drawn without fusing) instead of removing them. Useful to find the failures. |
+| Welding | Force ray casts | `weldForceRays` | bool | false |  |  | Casts rays against the real parent tube (curved and tapered along its whole spine) instead of the procedural cone at the attachment: better on strongly bent parents, but more welds fail. |
+| Welding | Offset | `weldOffset` | 0..10 (slider 0..4) | 1.5 |  |  | How far (in branch radii) the branch is pushed out of the parent surface before it is welded back: the length of the weld part. |
+| Spread | Amount | `weldSpreadAmount` | 0..2 (slider 0..1) | 0.3 |  |  | How much the base of the branch widens at the weld site (fraction of its radius). |
+| Spread | Upper scale | `weldSpreadUpper` | 0..2 (slider 0..1) | 0.2 |  |  | Extra widening on the side of the base facing the tip of the parent, which forms a web where the branches meet. |
+| Spread | Lower scale | `weldSpreadLower` | 0..2 (slider 0..1) | 0.1 |  |  | Extra widening on the side of the base facing the base of the parent. |
 | Normals | Smoothing | `smoothing` | 0..1 | 1 |  |  | Below 0.5 the tube is faceted (unwelded quads). |
 | Normals | Flatten | `flatten` | 0..1 | 0 |  |  | Flattens normals towards the axis to soften the shading. |
 | Vertex color | Tint | `tint` | color | [0.36, 0.26, 0.18, 1] |  |  | Vertex colour multiplied onto the material. |

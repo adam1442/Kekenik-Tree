@@ -106,7 +106,7 @@ const structureParams = (
   ...segmentParams(spine.kind, spine.segments, sides),
   ...forcesParams(),
   ...shapeParams(flareRadius, flareHeight),
-  ...skinParams(spineOnly),
+  ...skinParams(spineOnly, undefined, spine.kind === 'branch' || spine.kind === 'root'),
   ...uvParams(),
   ...lodParams(),
   ...displacementParams(),
