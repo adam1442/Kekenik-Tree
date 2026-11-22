@@ -35,6 +35,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Verify built CSS (style contract)
+        run: npm run check:css
+
       - name: Package the web build
         run: |
           cd dist

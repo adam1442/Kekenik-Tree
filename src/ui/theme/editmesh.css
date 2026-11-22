@@ -1,0 +1,369 @@
+/* ===== Edit Mesh (cutout editor) dialog + shared dialog buttons/footers. Tokens only. ===== */
+
+/* ---- shared dialog buttons / footer (Edit Mesh, Export, LOD editor, info/prompt/choice dialogs) ---- */
+.kt-em-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--kt-space-3);
+  min-width: 64px;
+  height: 24px;
+  padding: 0 var(--kt-space-5);
+  background: var(--kt-bg-active);
+  border: 1px solid var(--kt-border-soft);
+  border-radius: var(--kt-radius-sm);
+  font-size: var(--kt-fs-md);
+  color: var(--kt-text);
+  cursor: default;
+}
+.kt-em-btn:hover:not(:disabled) {
+  background: var(--kt-bg-hover);
+  color: var(--kt-text-strong);
+}
+.kt-em-btn.primary {
+  background: var(--kt-accent);
+  border-color: var(--kt-accent-soft);
+  color: var(--kt-text-strong);
+}
+.kt-em-btn.primary:hover:not(:disabled) {
+  background: var(--kt-accent-strong);
+}
+.kt-em-btn:disabled {
+  color: var(--kt-text-disabled);
+}
+.kt-em-footer {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--kt-space-4);
+  min-height: 36px;
+  padding: var(--kt-space-3) var(--kt-space-5);
+  background: var(--kt-bg-header);
+  border-top: 1px solid var(--kt-border-strong);
+  font-size: var(--kt-fs-sm);
+  color: var(--kt-text-dim);
+}
+.kt-em-spacer {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* ---- window shell ---- */
+.kt-editmesh .kt-fw-body {
+  display: flex;
+  flex-direction: column;
+  background: var(--kt-bg-dialog);
+  font-size: var(--kt-fs-md);
+  color: var(--kt-text);
+}
+
+/* ---- top toolbar ---- */
+.kt-em-toolbar {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  gap: var(--kt-space-4);
+  padding: var(--kt-space-3) var(--kt-space-4);
+  background: var(--kt-bg-toolbar);
+  border-bottom: 1px solid var(--kt-border-strong);
+  overflow-x: auto;
+}
+.kt-em-group {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--kt-space-1);
+  padding-right: var(--kt-space-4);
+  border-right: 1px solid var(--kt-divider);
+}
+.kt-em-group-title {
+  text-align: center;
+  font-size: var(--kt-fs-xs);
+  color: var(--kt-text-dim);
+}
+.kt-em-tools {
+  display: flex;
+  gap: var(--kt-space-1);
+}
+.kt-em-tool {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--kt-space-1);
+  min-width: 52px;
+  height: 46px;
+  padding: var(--kt-space-2) var(--kt-space-3);
+  background: none;
+  border: 0;
+  border-radius: var(--kt-radius-md);
+  font-size: var(--kt-fs-xs);
+  color: var(--kt-text);
+  cursor: default;
+}
+.kt-em-tool > span {
+  max-width: 76px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.kt-em-tool:hover:not(.disabled) {
+  background: var(--kt-bg-hover);
+  color: var(--kt-text-strong);
+}
+.kt-em-tool.active {
+  background: var(--kt-accent);
+  color: var(--kt-text-strong);
+}
+.kt-em-tool.disabled {
+  color: var(--kt-text-disabled);
+}
+.kt-em-shrink {
+  align-self: center;
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+}
+
+/* ---- main area ---- */
+.kt-em-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  gap: var(--kt-space-4);
+  padding: var(--kt-space-4);
+}
+.kt-em-left,
+.kt-em-right {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--kt-space-4);
+  min-height: 0;
+  overflow-y: auto;
+}
+.kt-em-left {
+  width: 232px;
+}
+.kt-em-right {
+  width: 150px;
+}
+.kt-em-left[hidden],
+.kt-em-right[hidden],
+.kt-em-attach[hidden] {
+  display: none;
+}
+.kt-em-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kt-space-2);
+  padding: var(--kt-space-4);
+  background: var(--kt-bg-panel);
+  border: 1px solid var(--kt-bg-card-border);
+  border-radius: var(--kt-radius-panel);
+}
+.kt-em-card.dim {
+  opacity: 0.55;
+}
+.kt-em-card-title {
+  font-weight: var(--kt-fw-semibold);
+  color: var(--kt-text-strong);
+}
+.kt-em-row {
+  display: flex;
+  align-items: center;
+  gap: var(--kt-space-3);
+  min-height: var(--kt-row-h);
+}
+.kt-em-row > label {
+  flex: none;
+  width: 84px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--kt-text-dim);
+}
+.kt-em-row > :not(label) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.kt-em-row > .kt-check {
+  flex: none;
+}
+.kt-em-angle,
+.kt-em-margin-ctrl {
+  display: flex;
+  align-items: center;
+  gap: var(--kt-space-2);
+}
+.kt-em-seg {
+  display: flex;
+  gap: 1px;
+}
+.kt-em-seg > button {
+  flex: 1;
+  height: 22px;
+  background: var(--kt-bg-input);
+  border: 0;
+  color: var(--kt-text);
+}
+.kt-em-seg > button:first-child {
+  border-radius: var(--kt-radius-sm) 0 0 var(--kt-radius-sm);
+}
+.kt-em-seg > button:last-child {
+  border-radius: 0 var(--kt-radius-sm) var(--kt-radius-sm) 0;
+}
+.kt-em-seg > button:hover {
+  background: var(--kt-bg-input-hover);
+}
+.kt-em-seg > button.active {
+  background: var(--kt-accent);
+  color: var(--kt-text-strong);
+}
+
+/* ---- center canvas ---- */
+.kt-em-center {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--kt-border-strong);
+  border-radius: var(--kt-radius-sm);
+}
+.kt-em-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
+.kt-em-vf,
+.kt-em-lod-vf {
+  font-size: var(--kt-fs-xs);
+  color: var(--kt-text-dim);
+  white-space: nowrap;
+}
+
+/* ---- LOD previews ---- */
+.kt-em-lod {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kt-space-2);
+  padding: var(--kt-space-3);
+  background: var(--kt-bg-panel);
+  border: 1px solid var(--kt-bg-card-border);
+  border-radius: var(--kt-radius-panel);
+}
+.kt-em-lod-title {
+  font-size: var(--kt-fs-sm);
+  font-weight: var(--kt-fw-semibold);
+  color: var(--kt-text-strong);
+}
+.kt-em-lod-body {
+  display: flex;
+  gap: var(--kt-space-2);
+  align-items: stretch;
+}
+.kt-em-lod-arrows {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--kt-space-2);
+}
+.kt-em-lod-arrow {
+  width: 20px;
+  height: 24px;
+}
+.kt-em-lod-thumb {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 84px;
+  overflow: hidden;
+  border: 1px solid var(--kt-border-strong);
+  border-radius: var(--kt-radius-sm);
+}
+.kt-em-lod-canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+  cursor: grab;
+}
+
+/* ---- attachment tools ---- */
+.kt-em-anchor-row {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--kt-space-3);
+  min-height: 28px;
+  padding: var(--kt-space-2) var(--kt-space-5);
+  background: var(--kt-bg-panel-alt);
+  border-top: 1px solid var(--kt-border-strong);
+}
+.kt-em-anchor-label {
+  font-size: var(--kt-fs-sm);
+  color: var(--kt-text-dim);
+}
+.kt-em-num {
+  width: 64px;
+  height: var(--kt-input-h);
+  padding: 0 var(--kt-space-3);
+  background: var(--kt-bg-input);
+  border: 0;
+  border-radius: var(--kt-radius-sm);
+  outline: none;
+  font-size: var(--kt-fs-md);
+  color: var(--kt-text);
+  user-select: text;
+}
+.kt-em-num:focus {
+  box-shadow: 0 0 0 1px var(--kt-accent);
+}
+.kt-em-attach {
+  position: absolute;
+  right: var(--kt-space-4);
+  bottom: var(--kt-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--kt-space-2);
+  padding: var(--kt-space-3);
+  background: var(--kt-bg-dialog);
+  border: 1px solid var(--kt-border-strong);
+  border-radius: var(--kt-radius-md);
+  box-shadow: var(--kt-shadow-ghost);
+  pointer-events: none;
+}
+.kt-em-attach-title {
+  font-size: var(--kt-fs-xs);
+  color: var(--kt-text-dim);
+}
+.kt-em-attach-canvas {
+  display: block;
+  width: 220px;
+  height: 180px;
+  border-radius: var(--kt-radius-sm);
+}
+.kt-em-attach-status {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--kt-fs-sm);
+  color: var(--kt-text-dim);
+}
+.kt-em-attach-status.warn {
+  color: var(--kt-graph-warn);
+}
+.kt-em-attach-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--kt-space-2);
+  white-space: nowrap;
+  color: var(--kt-text);
+}

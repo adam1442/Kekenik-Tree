@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "licenses": "node scripts/generate-licenses.mjs"
+    "licenses": "node scripts/generate-licenses.mjs",
+    "check:css": "node scripts/check-built-css.mjs",
+    "build:check": "npm run build && node scripts/check-built-css.mjs"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",

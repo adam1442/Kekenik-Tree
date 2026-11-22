@@ -932,6 +932,11 @@
   overflow: hidden;
   color: var(--kt-text-dim);
 }
+.kt-asset-badge {
+  font-size: var(--kt-fs-sm);
+  font-weight: var(--kt-fw-semibold);
+  color: var(--kt-text-dim);
+}
 .kt-asset-img {
   width: 100%;
   height: 100%;
@@ -993,6 +998,19 @@
   display: inline-flex;
   align-items: center;
   gap: var(--kt-space-2);
+}
+.kt-param-list,
+.kt-param-list-block {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.kt-list-head {
+  align-items: center;
+}
+.kt-list-cards {
+  display: flex;
+  flex-direction: column;
 }
 .kt-type-card {
   position: relative;

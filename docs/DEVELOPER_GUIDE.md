@@ -28,5 +28,8 @@ Extend `Preferences` + `sanitizePreferences` (`app/preferences.ts`), apply it in
 ## i18n
 `t('English text')` (`src/i18n`). Other languages add key → text in `src/i18n/<lang>.ts` and register it in `TABLES`.
 
+## Styles & the built-CSS guard
+Every UI class is a `kt-*` name styled in `src/ui/theme/*.css` (all imported by `src/index.css`; a new theme file MUST be added there). The production build is a single `dist/index.html` with the CSS inlined, so a class without a rule ships silently unstyled. `npm run build:check` (build + `scripts/check-built-css.mjs`, also run in CI/deploy/release after the build) scans the built CSS against `scripts/css-contract.json`: every class listed under `components` must have a rule, every `kt-*` token used in `src/**/*.ts` must be styled or listed under `hooks` (pure DOM hooks / storage keys), and modern syntax (`:has()`, `conic-gradient()`), required design tokens and sub-path-safe `url()`s are verified. When you add a component, give its classes CSS and add them to `components`; `tests/cssContract.test.ts` runs the same check on the sources during `npm test`.
+
 ## Testing & profiling
 `npm test` (vitest, jsdom for DOM tests). `Alt+P` toggles the evaluation profiler overlay. Long-run leak check: load every preset repeatedly (`Library`), watch `renderer.info` in the viewport stats.

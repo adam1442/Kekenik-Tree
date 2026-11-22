@@ -46,6 +46,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Verify built CSS (style contract)
+        run: npm run check:css
+
       - name: Add README screenshot and SPA fallback
         run: |
           if [ -f ScreenShot.jpg ]; then cp ScreenShot.jpg dist/ScreenShot.jpg; fi

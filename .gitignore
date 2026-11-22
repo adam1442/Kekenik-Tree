@@ -64,3 +64,6 @@ temp/
 
 # Release artifacts
 *.zip
+
+# Agent memory (not published)
+AgentProgress/
