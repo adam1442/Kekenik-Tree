@@ -233,12 +233,19 @@ describe('node registry catalogue', () => {
   it('exposes the inspector tabs', () => {
     const tabs = (type: string): string[] => [...new Set((getNodeDef(type) as NodeDef).params.map((p) => p.group))];
     expect(tabs('generator.trunk')).toEqual(['Generation', 'Spine', 'Forces', 'Shape', 'Skin', 'UV', 'LOD', 'Displacement', 'Material', 'Animation', 'Hand drawn']);
-    expect(tabs('generator.leaf')).toEqual(['Generation', 'Skin', 'Leaves', 'Forces', 'Orientation', 'Material', 'Lighting', 'Wind', 'Post']);
+    expect(tabs('generator.leaf')).toEqual(['Generation', 'Skin', 'Leaves', 'Deformation', 'Resolution', 'Forces', 'Orientation', 'Material', 'Lighting', 'Wind', 'Post']);
     const leaf = getNodeDef('generator.leaf') as NodeDef;
     const subs = [...new Set(leaf.params.filter((p) => p.group === 'Material').map((p) => p.subgroup))];
     expect(subs).toEqual(['Season', 'Fallen', 'Vertex Color', 'Lightmap']);
     const placement = [...new Set(leaf.params.filter((p) => p.group === 'Leaves').map((p) => p.subgroup))];
     expect(placement).toEqual(['Leaves', 'Type', 'Local orientation', 'Sensitivity → Parent', 'Final adjustments']);
+    const deformation = [...new Set(leaf.params.filter((p) => p.group === 'Deformation').map((p) => p.subgroup))];
+    expect(deformation).toEqual(['Deformation', 'Vertex', 'Scale']);
+    const labels = (group: string, sub: string): string[] => leaf.params.filter((p) => p.group === group && p.subgroup === sub).map((p) => p.label);
+    expect(labels('Deformation', 'Deformation')).toEqual(['Height', 'Fold', 'Curl', 'Twist']);
+    expect(labels('Deformation', 'Vertex')).toEqual(['Amount', 'Noise', 'Seed']);
+    expect(labels('Deformation', 'Scale')).toEqual(['X', 'Y', 'Z']);
+    expect(labels('Resolution', 'Resolution')).toEqual(['Size increase %', 'Mesh LOD', 'Mesh LOD offset']);
   });
 
   it('every definition evaluates with its default params and empty inputs', async () => {

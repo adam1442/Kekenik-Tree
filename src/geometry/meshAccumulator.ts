@@ -105,6 +105,137 @@ export class MeshAccumulator {
     }
   }
 
+  get indexCount(): number {
+    return this.ni;
+  }
+
+  /** Calls `fn` for every vertex `[from, vertexCount)` with a reused attribute record; its changes are written back. */
+  transformFrom(from: number, fn: (v: VertexAttrs, index: number) => void): void {
+    const d = this.data;
+    const v = newVertex();
+    for (let i = from; i < this.nv; i++) {
+      let o = i * STRIDE;
+      v.px = d[o++] as number; v.py = d[o++] as number; v.pz = d[o++] as number;
+      v.nx = d[o++] as number; v.ny = d[o++] as number; v.nz = d[o++] as number;
+      v.tx = d[o++] as number; v.ty = d[o++] as number; v.tz = d[o++] as number; v.tw = d[o++] as number;
+      v.u = d[o++] as number; v.v = d[o++] as number; v.u1 = d[o++] as number; v.v1 = d[o++] as number;
+      v.r = d[o++] as number; v.g = d[o++] as number; v.b = d[o++] as number; v.ao = d[o++] as number;
+      v.pvx = d[o++] as number; v.pvy = d[o++] as number; v.pvz = d[o++] as number;
+      v.w0 = d[o++] as number; v.w1 = d[o++] as number; v.w2 = d[o++] as number; v.w3 = d[o] as number;
+      fn(v, i);
+      o = i * STRIDE;
+      d[o++] = v.px; d[o++] = v.py; d[o++] = v.pz;
+      d[o++] = v.nx; d[o++] = v.ny; d[o++] = v.nz;
+      d[o++] = v.tx; d[o++] = v.ty; d[o++] = v.tz; d[o++] = v.tw;
+      d[o++] = v.u; d[o++] = v.v; d[o++] = v.u1; d[o++] = v.v1;
+      d[o++] = v.r; d[o++] = v.g; d[o++] = v.b; d[o++] = v.ao;
+      d[o++] = v.pvx; d[o++] = v.pvy; d[o++] = v.pvz;
+      d[o++] = v.w0; d[o++] = v.w1; d[o++] = v.w2; d[o] = v.w3;
+    }
+  }
+
+  /**
+   * Splits every triangle of the index range `[fromIndex, indexCount)` into four (edge midpoints are shared, every
+   * channel is interpolated linearly). Vertices created are appended; the original triangles are replaced.
+   */
+  subdivideFrom(fromIndex: number): void {
+    const tris: number[] = [];
+    for (let i = fromIndex; i < this.ni; i++) tris.push(this.idx[i] as number);
+    this.ni = fromIndex;
+    const mids = new Map<number, number>();
+    const mid = (a: number, b: number): number => {
+      const lo = Math.min(a, b);
+      const hi = Math.max(a, b);
+      const key = lo * 4_294_967_296 + hi;
+      const known = mids.get(key);
+      if (known !== undefined) return known;
+      const v = newVertex();
+      const make = (i: number): number[] => Array.from(this.data.subarray(i * STRIDE, (i + 1) * STRIDE));
+      const A = make(a);
+      const B = make(b);
+      const m = A.map((x, k) => (x + (B[k] as number)) / 2);
+      let o = 0;
+      v.px = m[o++] as number; v.py = m[o++] as number; v.pz = m[o++] as number;
+      v.nx = m[o++] as number; v.ny = m[o++] as number; v.nz = m[o++] as number;
+      v.tx = m[o++] as number; v.ty = m[o++] as number; v.tz = m[o++] as number; v.tw = A[o++] as number;
+      v.u = m[o++] as number; v.v = m[o++] as number; v.u1 = m[o++] as number; v.v1 = m[o++] as number;
+      v.r = m[o++] as number; v.g = m[o++] as number; v.b = m[o++] as number; v.ao = m[o++] as number;
+      v.pvx = m[o++] as number; v.pvy = m[o++] as number; v.pvz = m[o++] as number;
+      v.w0 = m[o++] as number; v.w1 = m[o++] as number; v.w2 = m[o++] as number; v.w3 = m[o] as number;
+      const index = this.addVertex(v);
+      mids.set(key, index);
+      return index;
+    };
+    for (let t = 0; t + 2 < tris.length; t += 3) {
+      const a = tris[t] as number;
+      const b = tris[t + 1] as number;
+      const c = tris[t + 2] as number;
+      const ab = mid(a, b);
+      const bc = mid(b, c);
+      const ca = mid(c, a);
+      this.addTriangle(a, ab, ca);
+      this.addTriangle(ab, b, bc);
+      this.addTriangle(ca, bc, c);
+      this.addTriangle(ab, bc, ca);
+    }
+  }
+
+  /**
+   * Recomputes smooth normals of the vertices `[fromVertex, vertexCount)` from the triangles of `[fromIndex, indexCount)`
+   * (area weighted). A new normal keeps the side of the old one; tangents are re-orthogonalised to it.
+   */
+  recomputeNormalsFrom(fromVertex: number, fromIndex: number): void {
+    const d = this.data;
+    const n = this.nv - fromVertex;
+    if (n <= 0) return;
+    const acc = new Float64Array(n * 3);
+    for (let t = fromIndex; t + 2 < this.ni; t += 3) {
+      const a = (this.idx[t] as number) * STRIDE;
+      const b = (this.idx[t + 1] as number) * STRIDE;
+      const c = (this.idx[t + 2] as number) * STRIDE;
+      const e1x = (d[b] as number) - (d[a] as number);
+      const e1y = (d[b + 1] as number) - (d[a + 1] as number);
+      const e1z = (d[b + 2] as number) - (d[a + 2] as number);
+      const e2x = (d[c] as number) - (d[a] as number);
+      const e2y = (d[c + 1] as number) - (d[a + 1] as number);
+      const e2z = (d[c + 2] as number) - (d[a + 2] as number);
+      const gx = e1y * e2z - e1z * e2y;
+      const gy = e1z * e2x - e1x * e2z;
+      const gz = e1x * e2y - e1y * e2x;
+      for (let k = 0; k < 3; k++) {
+        const vi = (this.idx[t + k] as number) - fromVertex;
+        if (vi < 0 || vi >= n) continue;
+        acc[vi * 3] = (acc[vi * 3] as number) + gx;
+        acc[vi * 3 + 1] = (acc[vi * 3 + 1] as number) + gy;
+        acc[vi * 3 + 2] = (acc[vi * 3 + 2] as number) + gz;
+      }
+    }
+    for (let i = 0; i < n; i++) {
+      const o = (fromVertex + i) * STRIDE;
+      let nx = acc[i * 3] as number;
+      let ny = acc[i * 3 + 1] as number;
+      let nz = acc[i * 3 + 2] as number;
+      const l = Math.hypot(nx, ny, nz);
+      if (l < 1e-18) continue;
+      nx /= l; ny /= l; nz /= l;
+      if (nx * (d[o + 3] as number) + ny * (d[o + 4] as number) + nz * (d[o + 5] as number) < 0) {
+        nx = -nx; ny = -ny; nz = -nz;
+      }
+      d[o + 3] = nx; d[o + 4] = ny; d[o + 5] = nz;
+      const tx = d[o + 6] as number;
+      const ty = d[o + 7] as number;
+      const tz = d[o + 8] as number;
+      const k = tx * nx + ty * ny + tz * nz;
+      const ox = tx - nx * k;
+      const oy = ty - ny * k;
+      const oz = tz - nz * k;
+      const ol = Math.hypot(ox, oy, oz);
+      if (ol > 1e-9) {
+        d[o + 6] = ox / ol; d[o + 7] = oy / ol; d[o + 8] = oz / ol;
+      }
+    }
+  }
+
   /** Flip every triangle whose winding disagrees with its (summed) vertex normals. Returns the number of flipped triangles. */
   fixWinding(): number {
     const d = this.data;

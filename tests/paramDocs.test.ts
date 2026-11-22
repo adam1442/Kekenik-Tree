@@ -68,17 +68,36 @@ const LEAF_NOTES = [
   '',
 ].join('\n');
 
+const DEFORM_NOTES = [
+  '### Deformation and Resolution tabs - how the pieces fit together',
+  '',
+  '* **Frame.** Deformation works on the vertices of the chosen mesh (or card) in the leaf\'s local frame: X across the blade, Y along the growth axis, Z the face. Every step maps the pivot (attachment point) to itself, so welds, anchors and children stay attached. Order: Height, Scale, Fold, Twist, Curl, Vertex noise.',
+  '* **Height** pushes vertices along their normals by (map − 0.5) × amount metres, sampled at the vertex UV from the **Height** texture of the leaf\'s material (Materials panel). Without a Height texture it does nothing and the node shows a warning. It fades in over the first 10 % of the leaf so the pivot stays put.',
+  '* **Fold** rotates both halves about Y (+ up toward the face, − down). **Curl** bends the blade around X into a circular arc whose total angle is the value. **Twist** rotates about Y by an angle that grows linearly with the distance from the X axis (value = angle at the tip).',
+  '* **Vertex** adds a 3D simplex-noise offset to every vertex in local space. *Amount* is in metres, *Noise* is the tightness (cycles per leaf length, higher = more localized), *Seed* picks the pattern. Each leaf samples its own place in the noise field (deterministic).',
+  '* **Scale** X / Y / Z scale each leaf along its local axes.',
+  '* **Variance / curves.** Each value gets its optional ± variance and is multiplied by its curve along the parent. Variance of a value that is 0 uses a fixed span (Height 0.05 m, Fold 45°, Curl 90°, Twist 180°, Vertex 0.05 m, Scale 0.5) so it still has an effect.',
+  '* **Sparse meshes.** At the high LODs (0 and 1) meshes with fewer than ~24 vertices are subdivided (midpoints, up to three passes) before deforming, so folds and curls are visible on a plain quad. Normals are recomputed from the deformed surface (lighting options follow in a later step).',
+  '* **Anchors.** Attachment frames of cutout meshes go through the same deformation (without Height): position by the deformation, direction / up by its local derivative.',
+  '* **Resolution.** The *LOD* axis of both curves is the active LOD (viewport LOD selector, export LODs, 0 = highest … 3 = lowest) divided by 3. *Size increase %* multiplies the leaf size by 1 + y/100 (default curve 0 % → 36 %, the growth older projects had). *Mesh LOD* picks the mesh slot (0 High, 1 Medium, 2 Low, rounded; default curve = High at LOD 0, Medium at 1, Low from 2). *Mesh LOD offset* shifts it and is clamped to High..Low; it needs two or more filled mesh LOD slots (otherwise it is ignored with a warning). An empty slot falls back to the nearest filled one. Plain cards (no mesh) only follow the existing segment reduction.',
+  '',
+].join('\n');
+
 function leafTab(): string {
   const def = getNodeDef('generator.leaf');
   if (!def) throw new Error('generator.leaf');
-  const lines: string[] = [`## ${def.label} (\`generator.leaf\`) - Leaves tab`, '', '| Section | Parameter | id | Range | Default | Var | Curve | Meaning |', '|---|---|---|---|---|---|---|---|'];
-  for (const p of def.params.filter((d) => d.group === 'Leaves')) {
-    const meaning = (p.tooltip ?? '').replace(/\|/g, '/');
-    const shown = p.kind === 'list' ? 'rows of Material / Mesh / Weight' : range(p);
-    lines.push(`| ${p.subgroup ?? ''} | ${p.label} | \`${p.id}\` | ${shown} | ${p.kind === 'list' ? 'one row' : fmt(p.default)} | ${p.variance ? 'yes' : ''} | ${p.curveAllowed ? 'yes' : ''} | ${meaning} |`);
+  const lines: string[] = [];
+  for (const group of ['Leaves', 'Deformation', 'Resolution']) {
+    lines.push(`## ${def.label} (\`generator.leaf\`) - ${group} tab`, '', '| Section | Parameter | id | Range | Default | Var | Curve | Meaning |', '|---|---|---|---|---|---|---|---|');
+    for (const p of def.params.filter((d) => d.group === group)) {
+      const meaning = (p.tooltip ?? '').replace(/\|/g, '/');
+      const shown = p.kind === 'list' ? 'rows of Material / Mesh / Weight' : range(p);
+      lines.push(`| ${p.subgroup ?? ''} | ${p.label} | \`${p.id}\` | ${shown} | ${p.kind === 'list' ? 'one row' : fmt(p.default)} | ${p.variance ? 'yes' : ''} | ${p.curveAllowed ? 'yes' : ''} | ${meaning} |`);
+    }
+    lines.push('');
+    if (group === 'Leaves') lines.push(LEAF_NOTES);
   }
-  lines.push('');
-  return lines.join('\n') + '\n' + LEAF_NOTES;
+  return lines.join('\n') + '\n' + DEFORM_NOTES;
 }
 
 describe('PARAMETERS.md', () => {

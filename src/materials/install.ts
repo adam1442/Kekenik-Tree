@@ -31,11 +31,16 @@ export function installMaterialSystem(app: AppContext): () => void {
   };
   const decodeDisplacements = (): void => {
     for (const d of lib.displacements()) if (d.assetId && !hasDisplacementSource(d.assetId)) void tm.loadPixels(d.assetId);
+    // Leaf > Deformation > Height reads the Height texture of a material on the CPU.
+    for (const m of lib.materials()) {
+      const id = m.slots.height?.texture?.assetId;
+      if (id && !hasDisplacementSource(id)) void tm.loadPixels(id);
+    }
   };
 
   const unsubs = [
     lib.onChange((c) => {
-      if (c.kind === 'all') decodeDisplacements();
+      if (c.kind === 'all' || c.kind === 'materials') decodeDisplacements();
       if (c.kind === 'displacements' || c.kind === 'masks') {
         decodeDisplacements();
         refresh();

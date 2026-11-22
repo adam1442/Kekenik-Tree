@@ -2,6 +2,7 @@ import { getNumber, getString, type NodeParams } from '@/contracts/params';
 import type { Lineage } from '@/contracts/ports';
 import type { NodeContext, NodeInputs, NodeOutputs } from '@/contracts/nodes';
 import { SkeletonBuilder, type Skeleton } from '@/contracts/skeleton';
+import type { LodLevel } from '@/contracts/material';
 import { deg2rad } from '@/core/math';
 import { AttachmentBuilder } from '@/geometry/attachments';
 import { bladeBasis, buildLeafMesh, cardAttachments, type LeafCard, type LeafOutline } from '@/geometry/leafMesher';
@@ -21,6 +22,8 @@ import {
   type AnchorStyle,
 } from '@/geometry/leafPlacement';
 import { readLeafPlacement, type LeafPlacementConfig } from './leafPlacementParams';
+import { leafDeformFor, materialHasHeight, materialHeightSampler, readLeafDeform, readLeafResolution, type LeafDeformConfig, type LeafResolution } from './leafDeformParams';
+import { chooseMeshLod, filledMeshLods, sizeIncreaseFactor } from '@/geometry/leafLod';
 import { resolveUvAreaRect } from '@/materials/materialSource';
 import {
   atlasRect,
@@ -96,6 +99,12 @@ interface LeafEnv {
   cfg: LeafPlacementConfig;
   anchors: AnchorResolver;
   parentSide: Float32Array | undefined;
+  deform: LeafDeformConfig;
+  resolution: LeafResolution;
+  /** Height-map samplers by material id (null = none / not decoded). */
+  heights: Map<string, ((u: number, v: number) => number) | null>;
+  /** One-time warnings already shown. */
+  warned: Set<string>;
 }
 
 /** Build the card(s) of one leaf; null when its weld failed and failed welds are dropped. */
@@ -147,7 +156,7 @@ function leafCards(ctx: NodeContext, parent: Skeleton, pl: Placement, k: number,
   const side = oriented.side;
 
   const sizeCurve = varied(rng, p, 'leafSize', 1) * curveFactor(p, 'leafSize', u);
-  const lodGrow = 1 + 0.12 * Math.min(ctx.lod, 3);
+  const lodGrow = sizeIncreaseFactor(env.resolution.sizeIncrease, ctx.lod);
   const fixedScale = post.scale * anchorScale * lodGrow;
   const sizeTerm = cfg.useActualSize ? 1 : effectiveSize(sizeCurve, cfg.sizeParent, pl.branch.length);
   const scale = sizeTerm * post.scale * anchorScale * lodGrow;
@@ -168,6 +177,27 @@ function leafCards(ctx: NodeContext, parent: Skeleton, pl: Placement, k: number,
     width = (cutout.boundsMeters?.[0] || 1) * fixedScale;
     height = (cutout.boundsMeters?.[1] || 1) * fixedScale;
   }
+  // Resolution: mesh version for the active LOD (curve + offset, needs two filled slots for the offset).
+  let meshLod: LodLevel | number = ctx.lod;
+  if (cutout) {
+    const choice = chooseMeshLod({ lod: ctx.lod, curve: env.resolution.meshLod, offset: env.resolution.meshLodOffset, filled: filledMeshLods(cutout) });
+    meshLod = choice.level;
+    if (choice.offsetIgnored && !env.warned.has('lodOffset')) {
+      env.warned.add('lodOffset');
+      ctx.logger.warn('Mesh LOD offset is ignored: the mesh needs at least two filled LOD slots.');
+    }
+  }
+  // Deformation: Height uses the Height map of the leaf's material.
+  let heightSample: ((u: number, v: number) => number) | null = null;
+  if (env.deform.hasHeight) {
+    if (!env.heights.has(type.materialId)) env.heights.set(type.materialId, materialHeightSampler(type.materialId));
+    heightSample = env.heights.get(type.materialId) ?? null;
+    if (!heightSample && !env.warned.has(`height:${type.materialId}`)) {
+      env.warned.add(`height:${type.materialId}`);
+      ctx.logger.warn(materialHasHeight(type.materialId) ? 'Deformation > Height: the material Height image is not loaded yet.' : 'Deformation > Height needs a Height texture in the leaf material.');
+    }
+  }
+  const deform = leafDeformFor(env.deform, p, rng, u, height, heightSample, ctx.lod);
   const sideSign = resolveSide(pl.placement.side, env.parentSide ? (env.parentSide[s.parentPoint] ?? 0) : 0, () => pl.rng.fork(`side:${k}`).next());
   const mirror = isMirrored(cfg.flip, cfg.initial, sideSign, pl.rng.fork(`flip:${k}`).next());
   const uvArea = resolveUvAreaRect(type.materialId, 'leaf', rng);
@@ -203,7 +233,8 @@ function leafCards(ctx: NodeContext, parent: Skeleton, pl: Placement, k: number,
         pivot: origin,
         wind,
         cutout,
-        lod: ctx.lod,
+        lod: meshLod,
+        ...(deform ? { deform } : {}),
         ...(mirror ? { mirror: true } : {}),
       });
     }
@@ -231,6 +262,10 @@ export function evaluateLeaf(ctx: NodeContext, inputs: NodeInputs, p: NodeParams
     cfg,
     anchors: new AnchorResolver((branchId) => chainOf(lineage, parent, branchIndex.get(branchId) ?? -1)),
     parentSide: parent.attributes.get('side'),
+    deform: readLeafDeform(p),
+    resolution: readLeafResolution(p),
+    heights: new Map(),
+    warned: new Set(),
   };
   const perNode = Math.max(1, Math.round(getNumber(p, 'leavesPerNode', 1)));
   const cards: LeafCard[] = [];

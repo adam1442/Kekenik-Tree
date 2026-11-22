@@ -41,6 +41,7 @@ import {
 } from './params';
 import { anchorPlacementParams } from './cutoutPlacement';
 import { leafPlacementParams } from './leafPlacementParams';
+import { leafDeformParams, leafDependencyKey } from './leafDeformParams';
 import { migrateLeafParams } from './foliage';
 import { withLineage } from './lineageHook';
 import { evaluateRoot } from './root';
@@ -111,6 +112,7 @@ const leafTabs = (gen: GenerationDefaults, extra: ParamDef[] = []): ParamDef[] =
   ...anchorPlacementParams(),
   ...leafSkinParams(),
   ...leafPlacementParams(),
+  ...leafDeformParams(),
   ...extra,
   ...forcesParams(),
   ...orientationParams(),
@@ -233,6 +235,7 @@ export const nodeDefs: NodeDef[] = [
     migrate: migrateLeafParams,
     params: leafTabs({ number: 6, first: 0.1, last: 1 }),
     evaluate: withLineage(evaluateLeaf),
+    dependencyKey: leafDependencyKey,
   },
   {
     type: 'generator.frond',

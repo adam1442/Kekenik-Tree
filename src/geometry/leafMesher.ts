@@ -1,9 +1,10 @@
-import type { CutoutMesh } from '@/contracts/material';
+import type { CutoutMesh, LodLevel } from '@/contracts/material';
 import type { MeshData } from '@/contracts/mesh';
 import { buildCutoutGeometry } from '@/materials/cutouts/buildCutoutGeometry';
 import { anchorFrameInPose, baseFrameInPose, buildCutoutFrame, cardPoseFor, placedMetric, type ResolvedAnchor } from '@/materials/cutouts/frame';
 import type { Frame } from './rigid';
 import { cross, dot, len, mul, norm, perpendicular, rotate, sub, type V3 } from './math3';
+import { deformFrame, deformWorldVertex, isDeformActive, leafLocalFrame, subdivisionPasses, type LeafDeform } from './leafDeform';
 import { MeshAccumulator, newVertex, type VertexAttrs } from './meshAccumulator';
 
 export type LeafOutline = 'rect' | 'oval' | 'pointed' | 'heart';
@@ -36,10 +37,12 @@ export interface LeafCard {
   wind: [number, number, number, number];
   /** Optional authored CutoutMesh. When present, emits tight cutout geometry instead of a quad grid. */
   cutout?: CutoutMesh | null;
-  /** LOD level 0..3 for cutout LOD selection. */
-  lod?: number;
+  /** LOD level 0..3 or an explicit mesh LOD slot for cutout LOD selection. */
+  lod?: number | LodLevel;
   /** Mirror the finished card across its local Y axis (the plane through `origin` with normal `side`). */
   mirror?: boolean;
+  /** Leaf > Deformation applied to the finished card (vertices and attachment frames). */
+  deform?: LeafDeform;
 }
 
 export const FULL_ATLAS: [number, number, number, number] = [0, 0, 1, 1];
@@ -84,12 +87,29 @@ export function buildLeafMesh(cards: readonly LeafCard[], opts: LeafMeshOptions)
     for (const i of byMat.get(mat) as number[]) {
       const card = cards[i] as LeafCard;
       const first = acc.vertexCount;
+      const firstIndex = acc.indexCount;
       emitCard(acc, card, i, cells);
+      if (card.deform && isDeformActive(card.deform)) deformCard(acc, card, first, firstIndex);
       if (card.mirror) acc.mirrorFrom(first, card.origin, norm(card.side));
     }
   }
   if (opts.fixWinding) acc.fixWinding();
   return acc.build(opts.defaultMaterial, true);
+}
+
+/** Applies the card's Deformation to the vertices emitted since `first` (subdividing sparse cards first). */
+function deformCard(acc: MeshAccumulator, card: LeafCard, first: number, firstIndex: number): void {
+  const d = card.deform as LeafDeform;
+  const passes = subdivisionPasses(acc.vertexCount - first, (acc.indexCount - firstIndex) / 3, d.minVertices);
+  for (let i = 0; i < passes; i++) acc.subdivideFrom(firstIndex);
+  const frame = leafLocalFrame(card.origin, card.axis, card.side);
+  acc.transformFrom(first, (v) => {
+    const p = deformWorldVertex(d, frame, [v.px, v.py, v.pz], [v.nx, v.ny, v.nz], v.u, v.v);
+    v.px = p[0];
+    v.py = p[1];
+    v.pz = p[2];
+  });
+  acc.recomputeNormalsFrom(first, firstIndex);
 }
 
 function emitCard(acc: MeshAccumulator, c: LeafCard, index: number, cells: number): void {
@@ -263,9 +283,14 @@ export interface CardAttachments {
 /** Attachment frames of a placed cutout card (null for plain cards). Uses exactly the pose of `emitCard`. */
 export function cardAttachments(c: LeafCard): CardAttachments | null {
   if (!c.cutout) return null;
+  const local = c.deform && isDeformActive(c.deform) ? leafLocalFrame(c.origin, c.axis, c.side) : null;
   const frame = buildCutoutFrame(c.cutout, placedMetric(c.cutout, c.width, c.length));
   const pose = cardPoseFor(frame, { origin: c.origin, axis: c.axis, side: c.side }, { bend: c.bend, twist: c.twist, fold: c.fold, curl: c.curl });
-  const place = (f: Frame): Frame => (c.mirror ? mirrorFrame(f, c.origin, norm(c.side)) : f);
+  const deformed = (f: Frame): Frame => (local && c.deform ? deformFrame(c.deform, local, f) : f);
+  const place = (f: Frame): Frame => {
+    const g = deformed(f);
+    return c.mirror ? mirrorFrame(g, c.origin, norm(c.side)) : g;
+  };
   return {
     base: place(baseFrameInPose(pose)),
     anchors: frame.anchors.map((a) => {

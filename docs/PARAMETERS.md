@@ -760,3 +760,38 @@ Existing Leaf tabs (Generation, Skin, Forces, Orientation, Material, Lighting, W
 * **Cross** adds a copy of every card turned 90° about the leaf axis at the same position.
 * **Flip / Initial orientation.** Flip mirrors a random half of the leaves across local Y. With Flip off, *Classic* mirrors leaves on the left side of the parent; *Synchronized* (default, identical to older projects) never mirrors. The side (±1) comes from this node's Interval / Phyllotaxy placement (alternating per slot), else from the parent's `side` skeleton attribute (written by Branch placed with Interval / Phyllotaxy), else it is random per leaf. Mirrored leaves get reversed winding; *Fix winding* flips triangles that disagree with their normals after all deformation.
 * **Back-compat.** The former Skin › Size *Scale* is now Leaves › *Size* (`leafSize`, migrated on load); the *Type* list (`leafTypes`) moved from Material › Leaves to Leaves › Type. Every new parameter defaults to a neutral value.
+
+## Leaf (`generator.leaf`) - Deformation tab
+
+| Section | Parameter | id | Range | Default | Var | Curve | Meaning |
+|---|---|---|---|---|---|---|---|
+| Deformation | Height | `deformHeight` | -1..1 (slider -0.1..0.1) m | 0 | yes | yes | Pushes vertices along their normals by the Height map of the leaf’s material (mid grey = no change). Needs a Height texture in the material. |
+| Deformation | Fold | `deformFold` | -90..90 ° | 0 | yes | yes | Folds both halves of the leaf lengthwise about its Y axis. Negative folds down, positive folds up. |
+| Deformation | Curl | `deformCurl` | -180..180 ° | 0 | yes | yes | Curls the leaf around its X axis: the total angle between base and tip. |
+| Deformation | Twist | `deformTwist` | -360..360 ° | 0 | yes | yes | Twists the leaf about its Y axis. The farther a vertex is from the X axis, the larger its rotation. |
+| Vertex | Amount | `vertexAmount` | 0..1 (slider 0..0.1) m | 0 | yes | yes | Strength of the random per-vertex offset (noise in the leaf’s local space). |
+| Vertex | Noise | `vertexNoise` | 0.1..50 (slider 0.1..10) | 2 |  |  | Tightness of the vertex noise: higher values make smaller, more localized bumps. |
+| Vertex | Seed | `vertexSeed` | seed | 0 |  |  | “Seed” in Deformation › Vertex. |
+| Scale | X | `deformScaleX` | 0.01..10 (slider 0.01..3) | 1 | yes | yes | Scales each leaf along its local X axis. The attachment point stays fixed. |
+| Scale | Y | `deformScaleY` | 0.01..10 (slider 0.01..3) | 1 | yes | yes | Scales each leaf along its local Y axis. The attachment point stays fixed. |
+| Scale | Z | `deformScaleZ` | 0.01..10 (slider 0.01..3) | 1 | yes | yes | Scales each leaf along its local Z axis. The attachment point stays fixed. |
+
+## Leaf (`generator.leaf`) - Resolution tab
+
+| Section | Parameter | id | Range | Default | Var | Curve | Meaning |
+|---|---|---|---|---|---|---|---|
+| Resolution | Size increase % | `resSizeIncrease` | curve | curve |  |  | Enlarges leaves at lower detail to make up for fewer leaves. X: LOD (0 = highest detail … 3 = lowest), Y: percent. |
+| Resolution | Mesh LOD | `resMeshLod` | curve | curve |  |  | Which mesh version to use at each LOD. X: LOD (0 … 3), Y: 0 = High, 1 = Medium, 2 = Low. |
+| Resolution | Mesh LOD offset | `resMeshLodOffset` | -2..2 | 0 |  |  | Shifts the chosen mesh LOD toward lower (+) or higher (−) detail. Needs at least two mesh LOD slots filled: with one, it is ignored. |
+
+### Deformation and Resolution tabs - how the pieces fit together
+
+* **Frame.** Deformation works on the vertices of the chosen mesh (or card) in the leaf's local frame: X across the blade, Y along the growth axis, Z the face. Every step maps the pivot (attachment point) to itself, so welds, anchors and children stay attached. Order: Height, Scale, Fold, Twist, Curl, Vertex noise.
+* **Height** pushes vertices along their normals by (map − 0.5) × amount metres, sampled at the vertex UV from the **Height** texture of the leaf's material (Materials panel). Without a Height texture it does nothing and the node shows a warning. It fades in over the first 10 % of the leaf so the pivot stays put.
+* **Fold** rotates both halves about Y (+ up toward the face, − down). **Curl** bends the blade around X into a circular arc whose total angle is the value. **Twist** rotates about Y by an angle that grows linearly with the distance from the X axis (value = angle at the tip).
+* **Vertex** adds a 3D simplex-noise offset to every vertex in local space. *Amount* is in metres, *Noise* is the tightness (cycles per leaf length, higher = more localized), *Seed* picks the pattern. Each leaf samples its own place in the noise field (deterministic).
+* **Scale** X / Y / Z scale each leaf along its local axes.
+* **Variance / curves.** Each value gets its optional ± variance and is multiplied by its curve along the parent. Variance of a value that is 0 uses a fixed span (Height 0.05 m, Fold 45°, Curl 90°, Twist 180°, Vertex 0.05 m, Scale 0.5) so it still has an effect.
+* **Sparse meshes.** At the high LODs (0 and 1) meshes with fewer than ~24 vertices are subdivided (midpoints, up to three passes) before deforming, so folds and curls are visible on a plain quad. Normals are recomputed from the deformed surface (lighting options follow in a later step).
+* **Anchors.** Attachment frames of cutout meshes go through the same deformation (without Height): position by the deformation, direction / up by its local derivative.
+* **Resolution.** The *LOD* axis of both curves is the active LOD (viewport LOD selector, export LODs, 0 = highest … 3 = lowest) divided by 3. *Size increase %* multiplies the leaf size by 1 + y/100 (default curve 0 % → 36 %, the growth older projects had). *Mesh LOD* picks the mesh slot (0 High, 1 Medium, 2 Low, rounded; default curve = High at LOD 0, Medium at 1, Low from 2). *Mesh LOD offset* shifts it and is clamped to High..Low; it needs two or more filled mesh LOD slots (otherwise it is ignored with a warning). An empty slot falls back to the nearest filled one. Plain cards (no mesh) only follow the existing segment reduction.
