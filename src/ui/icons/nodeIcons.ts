@@ -14,6 +14,7 @@ const NODE_ICONS: Record<string, string> = {
   nodeKnot: '<path d="M9 19V5" stroke-width="2.400"/><circle cx="13.800" cy="12" r="3.600" stroke-width="2.100"/><circle cx="14.200" cy="12" r="1.200" fill="currentColor" stroke="none"/>',
   nodeSpine: '<path d="M10 19c0-4.500 4-5.500 4-9.500 0-2-1.200-3.500-2-4.500" stroke-width="2.200" stroke-dasharray="2.5 2"/><circle cx="10" cy="19" r="1.600" fill="currentColor" stroke="none"/><circle cx="12" cy="5" r="1.600" fill="currentColor" stroke="none"/>',
   nodeLeaf: `<path d="M6.500 17C6.500 9.500 11 5.500 18 5.500c0 7.500-3.500 12-11.500 11.500z" ${FILL}/>`,
+  nodeBatchedLeaf: `<path d="M4.500 14C4.500 9 7.500 6.500 12 6.500c0 5-2.300 8-7.500 7.500z" ${FILL}/><path d="M10.500 19C10.500 13.500 14 10.500 19.500 10.500c0 5.500-2.800 8.800-9 8.500z" ${FILL}/>`,
   nodeFrond: '<path d="M12 19V5M12 9l-4-2.500M12 9l4-2.500M12 13l-5-2.500M12 13l5-2.500M12 17l-4.500-2M12 17l4.500-2" stroke-width="1.900"/>',
   nodeDecoration: `<path d="M5 17.500c1.500-4 4.500-6 7-6s5.500 2 7 6z" ${FILL}/><path d="M9 8.500h6M12 8.500V6" stroke-width="1.800"/><circle cx="7.500" cy="8" r="1.200" ${FILL}/><circle cx="16.800" cy="7" r="1.200" ${FILL}/>`,
   nodeCap: '<circle cx="12" cy="12" r="6.500" stroke-width="1.800"/><circle cx="12" cy="12" r="3" stroke-width="1.600"/>',

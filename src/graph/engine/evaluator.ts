@@ -226,7 +226,7 @@ export class GraphEvaluator {
         const parentAttach = parentIn && parentIn.kind === 'Structure' ? parentIn.value.attachments : undefined;
         const raw = await def.evaluate({ nodeId: id, name: node.name, rng: new Rng(nodeSeed), seed: nodeSeed, cancel: opts.token, lod: opts.lod, logger, getParentAttachments: (key) => getParentAttachments(parentAttach, key) }, inputs, node.params);
         opts.token.throwIfCancelled();
-        const outputs = validateOutputs(raw);
+        const outputs = validateOutputs(inheritLighting(raw, parentIn));
         const ms = now() - started;
         const triangles = countTriangles(outputs);
         const instances = countInstances(outputs);
@@ -258,6 +258,13 @@ export class GraphEvaluator {
     }
     return { run, lod: opts.lod, preview: opts.preview ?? false, totalMs: now() - t0, evaluated, cached, skipped, errors, diagnostics, edgeLabels, scene };
   }
+}
+
+/** Every generator hands the Tree's global leaf lighting down to its children, so a Leaf at any depth can read it. */
+function inheritLighting(out: NodeOutputs, parentIn: PortValue | undefined): NodeOutputs {
+  const own = out[PORT.children];
+  if (!own || own.kind !== 'Structure' || own.value.lighting || !parentIn || parentIn.kind !== 'Structure' || !parentIn.value.lighting) return out;
+  return { ...out, [PORT.children]: { kind: 'Structure', value: { ...own.value, lighting: parentIn.value.lighting } } };
 }
 
 /** Logger handed to node code: warnings/errors are captured for the node badge and forwarded to the console logger. */

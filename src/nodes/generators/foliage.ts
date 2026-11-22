@@ -5,11 +5,16 @@ import { SkeletonBuilder, type Skeleton } from '@/contracts/skeleton';
 import type { LodLevel } from '@/contracts/material';
 import { deg2rad } from '@/core/math';
 import { AttachmentBuilder } from '@/geometry/attachments';
-import { bladeBasis, buildLeafMesh, cardAttachments, type LeafCard, type LeafOutline } from '@/geometry/leafMesher';
+import { bladeBasis, buildLeafMesh, cardAttachments, type CardLight, type LeafCard, type LeafOutline } from '@/geometry/leafMesher';
+import type { LeafLightingSettings } from '@/contracts/lighting';
+import { mergeByMaterial, type LeafSpan } from '@/geometry/batchedLeaf';
+import { isLightingActive, resolveAdjust, resolveLightAnchor, surfaceDirection } from '@/geometry/leafLighting';
 import { instanceKey } from '@/instances/keys';
 import { anchorWind, orientAtAnchor, placementsFromSlots, planAnchorSlots } from './cutoutPlacement';
 import { cross, dot, norm, rotate, type V3 } from '@/geometry/math3';
 import { chainOf } from '@/geometry/lineage';
+import type { Rng } from '@/core/rng';
+import type { ParentSample } from './frames';
 import {
   AnchorResolver,
   crossedSide,
@@ -22,6 +27,7 @@ import {
   type AnchorStyle,
 } from '@/geometry/leafPlacement';
 import { readLeafPlacement, type LeafPlacementConfig } from './leafPlacementParams';
+import { resolveLeafLighting } from './leafLightingParams';
 import { leafDeformFor, materialHasHeight, materialHeightSampler, readLeafDeform, readLeafResolution, type LeafDeformConfig, type LeafResolution } from './leafDeformParams';
 import { chooseMeshLod, filledMeshLods, sizeIncreaseFactor } from '@/geometry/leafLod';
 import { resolveUvAreaRect } from '@/materials/materialSource';
@@ -105,6 +111,8 @@ interface LeafEnv {
   heights: Map<string, ((u: number, v: number) => number) | null>;
   /** One-time warnings already shown. */
   warned: Set<string>;
+  /** Lighting settings when they change any normal, else null. */
+  lighting: LeafLightingSettings | null;
 }
 
 /** Build the card(s) of one leaf; null when its weld failed and failed welds are dropped. */
@@ -198,6 +206,7 @@ function leafCards(ctx: NodeContext, parent: Skeleton, pl: Placement, k: number,
     }
   }
   const deform = leafDeformFor(env.deform, p, rng, u, height, heightSample, ctx.lod);
+  const light = leafLight(env, pl.branch.id, s, attach, rng);
   const sideSign = resolveSide(pl.placement.side, env.parentSide ? (env.parentSide[s.parentPoint] ?? 0) : 0, () => pl.rng.fork(`side:${k}`).next());
   const mirror = isMirrored(cfg.flip, cfg.initial, sideSign, pl.rng.fork(`flip:${k}`).next());
   const uvArea = resolveUvAreaRect(type.materialId, 'leaf', rng);
@@ -236,11 +245,22 @@ function leafCards(ctx: NodeContext, parent: Skeleton, pl: Placement, k: number,
         lod: meshLod,
         ...(deform ? { deform } : {}),
         ...(mirror ? { mirror: true } : {}),
+        ...(light ? { light } : {}),
       });
     }
   }
   const tip: V3 = [origin[0] + ax[0] * height, origin[1] + ax[1] * height, origin[2] + ax[2] * height];
   return { cards, tip, origin };
+}
+
+/** Lighting inputs of one leaf: parent puffiness anchor / axis and the Up / Right / Out jitter (own random sub-stream). */
+function leafLight(env: LeafEnv, branchId: number, s: ParentSample, attach: V3, rng: Rng): CardLight | undefined {
+  const lighting = env.lighting;
+  if (!lighting) return undefined;
+  const lr = rng.fork('light');
+  const anchor = resolveLightAnchor(lighting, (style) => env.anchors.computeAnchorPoint(branchId, style), attach);
+  const surface = surfaceDirection(lighting.parentAnchor, { normal: s.normal, binormal: s.binormal, tangent: s.tangent });
+  return { anchor, surface, adjust: resolveAdjust(lighting, () => lr.next()) };
 }
 
 /** Placements of the node: one per selected parent anchor or the normal distribution along the parents. */
@@ -250,12 +270,26 @@ function leafPlacements(ctx: NodeContext, inputs: NodeInputs, parent: Skeleton, 
 }
 
 export function evaluateLeaf(ctx: NodeContext, inputs: NodeInputs, p: NodeParams): NodeOutputs {
+  return evaluateLeafNode(ctx, inputs, p, false);
+}
+
+/**
+ * Batched leaf: the Leaf evaluator at the highest detail (it does not follow the viewport / dynamic LOD), without
+ * Unify and World up, merged into one slot per material with an index table that maps every triangle to its leaf.
+ */
+export function evaluateBatchedLeaf(ctx: NodeContext, inputs: NodeInputs, p: NodeParams): NodeOutputs {
+  return evaluateLeafNode({ ...ctx, lod: 0 }, inputs, p, true);
+}
+
+function evaluateLeafNode(ctx: NodeContext, inputs: NodeInputs, p: NodeParams, batched: boolean): NodeOutputs {
   const parent = parentOf(inputs);
   if (!isActive(p) || parent.count === 0) return emptyFoliage(parent, ctx.seed);
   const placements = leafPlacements(ctx, inputs, parent, p);
   const cfg = readLeafPlacement(p);
   const pv = inputs.parent?.[0];
   const lineage: Lineage | undefined = pv && pv.kind === 'Structure' ? pv.value.lineage : undefined;
+  const lightingSettings = resolveLeafLighting(p, pv && pv.kind === 'Structure' ? pv.value.lighting : undefined, batched);
+  const lightingAllow = batched ? { unify: false, worldUp: false } : undefined;
   const branchIndex = new Map<number, number>();
   parent.branches.forEach((b, i) => branchIndex.set(b.id, i));
   const env: LeafEnv = {
@@ -266,6 +300,7 @@ export function evaluateLeaf(ctx: NodeContext, inputs: NodeInputs, p: NodeParams
     resolution: readLeafResolution(p),
     heights: new Map(),
     warned: new Set(),
+    lighting: isLightingActive(lightingSettings) ? lightingSettings : null,
   };
   const perNode = Math.max(1, Math.round(getNumber(p, 'leavesPerNode', 1)));
   const cards: LeafCard[] = [];
@@ -278,6 +313,9 @@ export function evaluateLeaf(ctx: NodeContext, inputs: NodeInputs, p: NodeParams
     for (let k = 0; k < copies; k++) {
       const r = leafCards(ctx, parent, pl, k, copies, p, env);
       if (!r) continue;
+      const key = pl.anchor ? pl.anchor.key : instanceKey(ctx.nodeId, pl.branch.id, pl.placement.slotIndex, k);
+      const source = { key, branch: outBranch };
+      for (const c of r.cards) c.source = source;
       cards.push(...r.cards);
       sb.beginBranch(pl.branch.id, pl.sample.parentPoint, gen);
       sb.addPoint(r.origin[0], r.origin[1], r.origin[2], 0.001);
@@ -285,7 +323,6 @@ export function evaluateLeaf(ctx: NodeContext, inputs: NodeInputs, p: NodeParams
       sb.endBranch();
       const ca = r.cards[0] ? cardAttachments(r.cards[0]) : null;
       if (ca) {
-        const key = pl.anchor ? pl.anchor.key : instanceKey(ctx.nodeId, pl.branch.id, pl.placement.slotIndex, k);
         att.beginInstance(key, outBranch, ca.base);
         for (const a of ca.anchors) att.addFrame(a.frame, a.scale, a.anchor.id, a.anchor.index, a.anchor.axisT, a.anchor.tags);
       }
@@ -293,5 +330,14 @@ export function evaluateLeaf(ctx: NodeContext, inputs: NodeInputs, p: NodeParams
     }
   }
   const sk = sb.build();
-  return foliageOutput(sk, parent, buildLeafMesh(cards, { defaultMaterial: 'leaf', fixWinding: cfg.fixWinding }), sk.branches.length, ctx.seed, att.build());
+  const spans: LeafSpan[] = [];
+  let mesh = buildLeafMesh(cards, {
+    defaultMaterial: 'leaf',
+    fixWinding: cfg.fixWinding,
+    ...(env.lighting ? { lighting: env.lighting } : {}),
+    ...(lightingAllow ? { lightingAllow } : {}),
+    ...(batched ? { spans } : {}),
+  });
+  if (batched) mesh = mergeByMaterial(mesh, spans);
+  return foliageOutput(sk, parent, mesh, sk.branches.length, ctx.seed, att.build());
 }

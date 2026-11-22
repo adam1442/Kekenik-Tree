@@ -35,6 +35,22 @@ Root of the plant. Its Shape defines the ground disc in which first-generation n
 
 ### Tab: Collision _(not implemented yet - shown disabled)_
 
+### Tab: Lighting
+
+| Section | Parameter | id | Range | Default | Var | Curve | Meaning |
+|---|---|---|---|---|---|---|---|
+| Normals | Smooth | `globalLightSmooth` | 0..1 | 0 |  |  | Blends the original normals towards smoothed ones (averaged over the neighbouring faces) after the leaf is deformed. The other normal edits follow the smoothing. |
+| Parent puffiness | Amount | `globalLightParentAmount` | 0..1 | 0 |  |  | Turns the normals to face out from the anchor through each vertex. 1 = fully aligned. Needs an anchor other than None. |
+| Parent puffiness | Anchor | `globalLightParentAnchor` | Global / Deep / Intermediate / Local / None / Height / Surface X / Surface Y / Surface Z | none |  |  | Global / Deep / Intermediate / Local: an ancestor in the hierarchy. Height: the ground below the highest ancestor. Surface X / Y / Z: align with the parent’s X / Y / Z axis at the attachment. |
+| Anchor shift | Position | `globalLightAnchorPosition` | 0..1 | 0 |  |  | Where the anchor sits inside its shift range (straight up). Has no effect while Amount is 0. |
+| Anchor shift | Amount | `globalLightAnchorAmount` | 0..100 (slider 0..10) m | 0 |  |  | Length of the range the anchor can be moved up by Position. |
+| Normals | Puffiness | `globalLightPuffiness` | 0..1 | 0 |  |  | Spherizes the normals around the centre of each leaf. Applied after all other normal edits. |
+| Normals | Unify | `globalLightUnify` | 0..1 | 0 |  |  | Blends every normal of a leaf towards the average normal direction. |
+| Adjustments | Up | `globalLightUp` | -180..180 ° | 0 | yes |  | Rotates the normals (not the geometry) about the leaf’s local X axis. Use the variance to jumble clusters. |
+| Adjustments | Right | `globalLightRight` | -180..180 ° | 0 | yes |  | Rotates the normals (not the geometry) about the leaf’s local Y axis. Use the variance to jumble clusters. |
+| Adjustments | Out | `globalLightOut` | -180..180 ° | 0 | yes |  | Rotates the normals (not the geometry) about the leaf’s local Z axis. Use the variance to jumble clusters. |
+| Normals | World up | `globalLightWorldUp` | 0..1 | 0 |  |  | Forces the normals upwards (even grass-like lighting). Overrides puffiness and the adjustments. |
+
 ## Trunk (`generator.trunk`)
 
 Main stem with crown height, buttress flare, lean, gnarliness, and profile curves.
@@ -784,6 +800,34 @@ Existing Leaf tabs (Generation, Skin, Forces, Orientation, Material, Lighting, W
 | Resolution | Mesh LOD | `resMeshLod` | curve | curve |  |  | Which mesh version to use at each LOD. X: LOD (0 … 3), Y: 0 = High, 1 = Medium, 2 = Low. |
 | Resolution | Mesh LOD offset | `resMeshLodOffset` | -2..2 | 0 |  |  | Shifts the chosen mesh LOD toward lower (+) or higher (−) detail. Needs at least two mesh LOD slots filled: with one, it is ignored. |
 
+## Leaf (`generator.leaf`) - Lighting tab
+
+| Section | Parameter | id | Range | Default | Var | Curve | Meaning |
+|---|---|---|---|---|---|---|---|
+| Style | Style | `lightingStyle` | Global / Local | global |  |  | Global reads the shared leaf lighting of the Tree node; Local uses the settings below for this generator only. |
+| Normals | Smooth | `lightSmooth` | 0..1 | 0 |  |  | Blends the original normals towards smoothed ones (averaged over the neighbouring faces) after the leaf is deformed. The other normal edits follow the smoothing. |
+| Parent puffiness | Amount | `lightParentAmount` | 0..1 | 0 |  |  | Turns the normals to face out from the anchor through each vertex. 1 = fully aligned. Needs an anchor other than None. |
+| Parent puffiness | Anchor | `lightParentAnchor` | Global / Deep / Intermediate / Local / None / Height / Surface X / Surface Y / Surface Z | none |  |  | Global / Deep / Intermediate / Local: an ancestor in the hierarchy. Height: the ground below the highest ancestor. Surface X / Y / Z: align with the parent’s X / Y / Z axis at the attachment. |
+| Anchor shift | Position | `lightAnchorPosition` | 0..1 | 0 |  |  | Where the anchor sits inside its shift range (straight up). Has no effect while Amount is 0. |
+| Anchor shift | Amount | `lightAnchorAmount` | 0..100 (slider 0..10) m | 0 |  |  | Length of the range the anchor can be moved up by Position. |
+| Normals | Puffiness | `lightPuffiness` | 0..1 | 0 |  |  | Spherizes the normals around the centre of each leaf. Applied after all other normal edits. |
+| Normals | Unify | `lightUnify` | 0..1 | 0 |  |  | Blends every normal of a leaf towards the average normal direction. |
+| Adjustments | Up | `lightUp` | -180..180 ° | 0 | yes |  | Rotates the normals (not the geometry) about the leaf’s local X axis. Use the variance to jumble clusters. |
+| Adjustments | Right | `lightRight` | -180..180 ° | 0 | yes |  | Rotates the normals (not the geometry) about the leaf’s local Y axis. Use the variance to jumble clusters. |
+| Adjustments | Out | `lightOut` | -180..180 ° | 0 | yes |  | Rotates the normals (not the geometry) about the leaf’s local Z axis. Use the variance to jumble clusters. |
+| Normals | World up | `lightWorldUp` | 0..1 | 0 |  |  | Forces the normals upwards (even grass-like lighting). Overrides puffiness and the adjustments. |
+| Ambient occlusion | Strength | `aoStrength` | 0..1 | 0.5 |  | yes | Strength of the baked vertex ambient occlusion. |
+| Ambient occlusion | Depth | `aoDepth` | 0..1 | 0.5 |  |  | Depth of the ambient-occlusion darkening towards the centre of the crown. |
+
+### Lighting tab - how the pieces fit together
+
+* **Style.** *Global* (default) reads the shared leaf lighting on the **Tree** node (Lighting tab, same parameters as Local, handed down the hierarchy as `StructureData.lighting`); *Local* uses this generator's own values. Defaults are neutral, so older projects look the same. The former *Spherize* / *Bend* controls did nothing and were removed (the ambient-occlusion section is unchanged).
+* **Pass.** A normal-only pass runs after deformation, mirroring and the winding fix, per leaf (`applyLeafLighting`, reused by the Frond later). Geometry never moves; tangents are re-orthogonalised to the new normals. Order: Smooth → Parent puffiness → Unify → Adjustments → Puffiness → World up.
+* **Smooth** blends the original normals toward area-weighted face-averaged normals computed from the deformed mesh.
+* **Parent puffiness.** *Amount* blends each normal toward the direction anchor → vertex (1 = fully aligned). *Anchor*: Global / Deep / Intermediate / Local are ancestor base points (as in the Leaves tab); *Height* = the Global ancestor dropped to the ground (z = 0); *Surface X / Y / Z* use the parent's normal / binormal / tangent at the attachment as one fixed direction; *None* = off.
+* **Anchor shift.** *Amount* is the length (m) of the straight-up range the anchor can move through and *Position* (0..1) picks the spot inside it, so Position does nothing while Amount is 0. It applies to every point anchor (not to Surface / None).
+* **Unify** blends all normals of a leaf toward their average. **Adjustments** (Up / Right / Out, with ± variance per leaf) rotate the normals about the leaf's local X / Y / Z. **Puffiness** spherizes the normals around the centre of each leaf after all other edits. **World up** blends toward straight up (+Z) and overrides puffiness and the adjustments.
+
 ### Deformation and Resolution tabs - how the pieces fit together
 
 * **Frame.** Deformation works on the vertices of the chosen mesh (or card) in the leaf's local frame: X across the blade, Y along the growth axis, Z the face. Every step maps the pivot (attachment point) to itself, so welds, anchors and children stay attached. Order: Height, Scale, Fold, Twist, Curl, Vertex noise.
@@ -792,6 +836,10 @@ Existing Leaf tabs (Generation, Skin, Forces, Orientation, Material, Lighting, W
 * **Vertex** adds a 3D simplex-noise offset to every vertex in local space. *Amount* is in metres, *Noise* is the tightness (cycles per leaf length, higher = more localized), *Seed* picks the pattern. Each leaf samples its own place in the noise field (deterministic).
 * **Scale** X / Y / Z scale each leaf along its local axes.
 * **Variance / curves.** Each value gets its optional ± variance and is multiplied by its curve along the parent. Variance of a value that is 0 uses a fixed span (Height 0.05 m, Fold 45°, Curl 90°, Twist 180°, Vertex 0.05 m, Scale 0.5) so it still has an effect.
-* **Sparse meshes.** At the high LODs (0 and 1) meshes with fewer than ~24 vertices are subdivided (midpoints, up to three passes) before deforming, so folds and curls are visible on a plain quad. Normals are recomputed from the deformed surface (lighting options follow in a later step).
+* **Sparse meshes.** At the high LODs (0 and 1) meshes with fewer than ~24 vertices are subdivided (midpoints, up to three passes) before deforming, so folds and curls are visible on a plain quad. Normals are recomputed from the deformed surface (the Lighting tab edits them afterwards).
 * **Anchors.** Attachment frames of cutout meshes go through the same deformation (without Height): position by the deformation, direction / up by its local derivative.
 * **Resolution.** The *LOD* axis of both curves is the active LOD (viewport LOD selector, export LODs, 0 = highest … 3 = lowest) divided by 3. *Size increase %* multiplies the leaf size by 1 + y/100 (default curve 0 % → 36 %, the growth older projects had). *Mesh LOD* picks the mesh slot (0 High, 1 Medium, 2 Low, rounded; default curve = High at LOD 0, Medium at 1, Low from 2). *Mesh LOD offset* shifts it and is clamped to High..Low; it needs two or more filled mesh LOD slots (otherwise it is ignored with a warning). An empty slot falls back to the nearest filled one. Plain cards (no mesh) only follow the existing segment reduction.
+
+### Batched Leaf (`generator.batchedLeaf`)
+
+Same tabs and parameters as Leaf (placement, orientation, type, deformation, resolution, lighting) except **Mesh LOD offset**, the vertex-noise **Seed**, **Unify** and **World up**, which do not exist. It does not follow the viewport / export LOD (it always builds at the highest detail; the Resolution curves are read at LOD 0). All leaves are merged into **one slot per material** (`mergeByMaterial`), and `MeshData.parts` is an index table (source key, skeleton branch, vertex and index ranges per leaf, sorted by index) so a triangle can be resolved back to the leaf that produced it.

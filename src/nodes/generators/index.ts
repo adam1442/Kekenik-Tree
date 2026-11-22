@@ -4,7 +4,7 @@ import type { ParamDef } from '@/contracts/params';
 import type { PortDef } from '@/contracts/ports';
 import { attachIns, childrenOut, parentIn } from '../shared/ports';
 import { evaluateBranch } from './branch';
-import { evaluateLeaf } from './foliage';
+import { evaluateBatchedLeaf, evaluateLeaf } from './foliage';
 import { migrateLegacyMaterialParam } from '@/materials/meshSelection';
 import { evaluateFrond, migrateFrondParams } from './frond';
 import { frondParams } from './frondParams';
@@ -42,6 +42,7 @@ import {
 import { anchorPlacementParams } from './cutoutPlacement';
 import { leafPlacementParams } from './leafPlacementParams';
 import { leafDeformParams, leafDependencyKey } from './leafDeformParams';
+import { leafLightingParams } from './leafLightingParams';
 import { migrateLeafParams } from './foliage';
 import { withLineage } from './lineageHook';
 import { evaluateRoot } from './root';
@@ -107,20 +108,27 @@ const structureParams = (
   ...handDrawnParams(),
 ];
 
-const leafTabs = (gen: GenerationDefaults, extra: ParamDef[] = []): ParamDef[] => [
-  ...generationParams(gen),
-  ...anchorPlacementParams(),
-  ...leafSkinParams(),
-  ...leafPlacementParams(),
-  ...leafDeformParams(),
-  ...extra,
-  ...forcesParams(),
-  ...orientationParams(),
-  ...leafMaterialParams().filter((d) => d.id !== 'leafTypes'),
-  ...lightingParams(),
-  ...leafWindParams(),
-  ...postParams(),
-];
+/** Leaf-only parameters the Batched leaf does not have (no Mesh LOD offset, no vertex-noise Seed). */
+const BATCHED_EXCLUDED = new Set(['resMeshLodOffset', 'vertexSeed']);
+
+const leafTabs = (gen: GenerationDefaults, extra: ParamDef[] = [], batched = false): ParamDef[] => {
+  const defs = [
+    ...generationParams(gen),
+    ...anchorPlacementParams(),
+    ...leafSkinParams(),
+    ...leafPlacementParams(),
+    ...leafDeformParams(),
+    ...extra,
+    ...forcesParams(),
+    ...orientationParams(),
+    ...leafMaterialParams().filter((d) => d.id !== 'leafTypes'),
+    ...leafLightingParams({ batched }),
+    ...lightingParams(),
+    ...leafWindParams(),
+    ...postParams(),
+  ];
+  return batched ? defs.filter((d) => !BATCHED_EXCLUDED.has(d.id)) : defs;
+};
 
 export const nodeDefs: NodeDef[] = [
   {
@@ -235,6 +243,20 @@ export const nodeDefs: NodeDef[] = [
     migrate: migrateLeafParams,
     params: leafTabs({ number: 6, first: 0.1, last: 1 }),
     evaluate: withLineage(evaluateLeaf),
+    dependencyKey: leafDependencyKey,
+  },
+  {
+    type: 'generator.batchedLeaf',
+    category: 'generator',
+    label: 'Batched Leaf',
+    icon: 'nodeBatchedLeaf',
+    color: 'var(--kt-node-leaf)',
+    description: 'Leaf cards or meshes merged into one batched mesh per material (fewer draw calls). Always uses the highest detail and has no Mesh LOD offset, vertex-noise seed, Unify or World up.',
+    statsGroup: 'leaf meshes',
+    ports: withChildren,
+    version: 1,
+    params: leafTabs({ number: 6, first: 0.1, last: 1 }, [], true),
+    evaluate: withLineage(evaluateBatchedLeaf),
     dependencyKey: leafDependencyKey,
   },
   {

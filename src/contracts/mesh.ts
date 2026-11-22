@@ -26,6 +26,25 @@ export interface InstancedMeshPayload {
   matrices: Float32Array;
 }
 
+/**
+ * Index table of a batched mesh: part `i` (one leaf of a Batched Leaf node) owns vertices
+ * `[vertexStart[i], vertexStart[i] + vertexCount[i])` and indices `[indexStart[i], indexStart[i] + indexCount[i])`.
+ * Rows are sorted by `indexStart`, so a triangle resolves to its source by binary search.
+ */
+export interface MeshPartTable {
+  count: number;
+  /** Stable source key (the instance key of the placement) of every part. */
+  key: Uint32Array;
+  /** Index of the part's branch in the generator's output skeleton (-1 = unknown). */
+  branch: Int32Array;
+  /** Index into `MeshData.slots` (one slot per material). */
+  slot: Uint32Array;
+  vertexStart: Uint32Array;
+  vertexCount: Uint32Array;
+  indexStart: Uint32Array;
+  indexCount: Uint32Array;
+}
+
 export interface MeshData {
   positions: Float32Array; // xyz
   normals: Float32Array; // xyz
@@ -40,6 +59,8 @@ export interface MeshData {
   /** Baked ambient-occlusion estimate per vertex (0 dark .. 1 open). Also multiplied into `colors`. */
   ao?: Float32Array;
   instanced?: InstancedMeshPayload;
+  /** Present on batched meshes: which source (leaf) every vertex / index range comes from. */
+  parts?: MeshPartTable;
   slots: MaterialSlotRange[];
 }
 

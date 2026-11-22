@@ -77,9 +77,28 @@ const DEFORM_NOTES = [
   '* **Vertex** adds a 3D simplex-noise offset to every vertex in local space. *Amount* is in metres, *Noise* is the tightness (cycles per leaf length, higher = more localized), *Seed* picks the pattern. Each leaf samples its own place in the noise field (deterministic).',
   '* **Scale** X / Y / Z scale each leaf along its local axes.',
   '* **Variance / curves.** Each value gets its optional ± variance and is multiplied by its curve along the parent. Variance of a value that is 0 uses a fixed span (Height 0.05 m, Fold 45°, Curl 90°, Twist 180°, Vertex 0.05 m, Scale 0.5) so it still has an effect.',
-  '* **Sparse meshes.** At the high LODs (0 and 1) meshes with fewer than ~24 vertices are subdivided (midpoints, up to three passes) before deforming, so folds and curls are visible on a plain quad. Normals are recomputed from the deformed surface (lighting options follow in a later step).',
+  '* **Sparse meshes.** At the high LODs (0 and 1) meshes with fewer than ~24 vertices are subdivided (midpoints, up to three passes) before deforming, so folds and curls are visible on a plain quad. Normals are recomputed from the deformed surface (the Lighting tab edits them afterwards).',
   '* **Anchors.** Attachment frames of cutout meshes go through the same deformation (without Height): position by the deformation, direction / up by its local derivative.',
   '* **Resolution.** The *LOD* axis of both curves is the active LOD (viewport LOD selector, export LODs, 0 = highest … 3 = lowest) divided by 3. *Size increase %* multiplies the leaf size by 1 + y/100 (default curve 0 % → 36 %, the growth older projects had). *Mesh LOD* picks the mesh slot (0 High, 1 Medium, 2 Low, rounded; default curve = High at LOD 0, Medium at 1, Low from 2). *Mesh LOD offset* shifts it and is clamped to High..Low; it needs two or more filled mesh LOD slots (otherwise it is ignored with a warning). An empty slot falls back to the nearest filled one. Plain cards (no mesh) only follow the existing segment reduction.',
+  '',
+].join('\n');
+
+const LIGHTING_NOTES = [
+  '### Lighting tab - how the pieces fit together',
+  '',
+  '* **Style.** *Global* (default) reads the shared leaf lighting on the **Tree** node (Lighting tab, same parameters as Local, handed down the hierarchy as `StructureData.lighting`); *Local* uses this generator\'s own values. Defaults are neutral, so older projects look the same. The former *Spherize* / *Bend* controls did nothing and were removed (the ambient-occlusion section is unchanged).',
+  '* **Pass.** A normal-only pass runs after deformation, mirroring and the winding fix, per leaf (`applyLeafLighting`, reused by the Frond later). Geometry never moves; tangents are re-orthogonalised to the new normals. Order: Smooth → Parent puffiness → Unify → Adjustments → Puffiness → World up.',
+  '* **Smooth** blends the original normals toward area-weighted face-averaged normals computed from the deformed mesh.',
+  '* **Parent puffiness.** *Amount* blends each normal toward the direction anchor → vertex (1 = fully aligned). *Anchor*: Global / Deep / Intermediate / Local are ancestor base points (as in the Leaves tab); *Height* = the Global ancestor dropped to the ground (z = 0); *Surface X / Y / Z* use the parent\'s normal / binormal / tangent at the attachment as one fixed direction; *None* = off.',
+  '* **Anchor shift.** *Amount* is the length (m) of the straight-up range the anchor can move through and *Position* (0..1) picks the spot inside it, so Position does nothing while Amount is 0. It applies to every point anchor (not to Surface / None).',
+  '* **Unify** blends all normals of a leaf toward their average. **Adjustments** (Up / Right / Out, with ± variance per leaf) rotate the normals about the leaf\'s local X / Y / Z. **Puffiness** spherizes the normals around the centre of each leaf after all other edits. **World up** blends toward straight up (+Z) and overrides puffiness and the adjustments.',
+  '',
+].join('\n');
+
+const BATCHED_NOTES = [
+  '### Batched Leaf (`generator.batchedLeaf`)',
+  '',
+  'Same tabs and parameters as Leaf (placement, orientation, type, deformation, resolution, lighting) except **Mesh LOD offset**, the vertex-noise **Seed**, **Unify** and **World up**, which do not exist. It does not follow the viewport / export LOD (it always builds at the highest detail; the Resolution curves are read at LOD 0). All leaves are merged into **one slot per material** (`mergeByMaterial`), and `MeshData.parts` is an index table (source key, skeleton branch, vertex and index ranges per leaf, sorted by index) so a triangle can be resolved back to the leaf that produced it.',
   '',
 ].join('\n');
 
@@ -87,7 +106,7 @@ function leafTab(): string {
   const def = getNodeDef('generator.leaf');
   if (!def) throw new Error('generator.leaf');
   const lines: string[] = [];
-  for (const group of ['Leaves', 'Deformation', 'Resolution']) {
+  for (const group of ['Leaves', 'Deformation', 'Resolution', 'Lighting']) {
     lines.push(`## ${def.label} (\`generator.leaf\`) - ${group} tab`, '', '| Section | Parameter | id | Range | Default | Var | Curve | Meaning |', '|---|---|---|---|---|---|---|---|');
     for (const p of def.params.filter((d) => d.group === group)) {
       const meaning = (p.tooltip ?? '').replace(/\|/g, '/');
@@ -96,8 +115,9 @@ function leafTab(): string {
     }
     lines.push('');
     if (group === 'Leaves') lines.push(LEAF_NOTES);
+    if (group === 'Lighting') lines.push(LIGHTING_NOTES);
   }
-  return lines.join('\n') + '\n' + DEFORM_NOTES;
+  return lines.join('\n') + '\n' + DEFORM_NOTES + '\n' + BATCHED_NOTES;
 }
 
 describe('PARAMETERS.md', () => {

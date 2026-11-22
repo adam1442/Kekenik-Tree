@@ -216,8 +216,6 @@ const HELP: Record<string, string> = {
   vertexColorGradient: 'Darkens (−) or brightens (+) towards the tip.',
   lightmap: 'Generates a second UV set for light-map baking.',
   lightmapResolution: 'Resolution of the lightmap UV layout.',
-  normalSpherize: 'Blends leaf normals towards a sphere for softer shading.',
-  normalBend: 'Bends normals away from the branch.',
   aoDepth: 'Depth of the ambient-occlusion darkening towards the centre of the crown.',
   windGroup: 'Wind hierarchy level this leaf follows.',
   flutterAmount: 'Strength of the leaf flutter.',

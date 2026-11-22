@@ -139,7 +139,7 @@ export const STRUCTURE_TABS: readonly InspectorTab[] = [
 ];
 
 /** Tab strip of the Tree node. */
-export const TREE_TABS: readonly InspectorTab[] = [tab('All'), tab('Generation', 'Gen'), tab('Shape'), tab('LOD'), tab('Collision')];
+export const TREE_TABS: readonly InspectorTab[] = [tab('All'), tab('Generation', 'Gen'), tab('Shape'), tab('LOD'), tab('Collision'), tab('Lighting')];
 
 const STRUCTURE_TYPES = new Set(['generator.trunk', 'generator.branch', 'generator.spine', 'generator.root']);
 

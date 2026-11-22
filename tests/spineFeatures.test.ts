@@ -30,9 +30,10 @@ describe('inspector tabs', () => {
     }
   });
 
-  it('Tree shows All | Gen | Shape | LOD | Collision', () => {
+  it('Tree shows All | Gen | Shape | LOD | Collision | Lighting', () => {
     const tabs = getInspectorTabSpecs('output.tree', getNodeDef('output.tree')!.params);
-    expect(tabs.map((t) => t.label)).toEqual(['All', 'Gen', 'Shape', 'LOD', 'Collision']);
+    expect(tabs.map((t) => t.label)).toEqual(['All', 'Gen', 'Shape', 'LOD', 'Collision', 'Lighting']);
+    expect(tabs.find((t) => t.label === 'Lighting')?.disabled).toBeFalsy();
     expect(tabs.find((t) => t.label === 'Shape')?.disabled).toBeFalsy();
     expect(tabs.find((t) => t.label === 'Collision')?.disabled).toBe(true);
   });

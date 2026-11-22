@@ -3,6 +3,7 @@ import type { MeshData } from './mesh';
 import type { InstanceTable } from '@/instances/types';
 import type { Skeleton } from './skeleton';
 import type { AttachmentSet } from './attachment';
+import type { LeafLightingSettings } from './lighting';
 
 /**
  * Ports & data kinds.
@@ -68,6 +69,8 @@ export interface StructureData {
   instances?: InstanceTable;
   /** Attachment frames of the instances in `skeleton`. Absent = no anchors. */
   attachments?: AttachmentSet;
+  /** Tree-level (global) leaf lighting; handed down the hierarchy by the generators. */
+  lighting?: LeafLightingSettings;
 }
 
 /** Tagged payload travelling along edges during evaluation. */

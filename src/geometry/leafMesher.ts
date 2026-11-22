@@ -1,4 +1,5 @@
 import type { CutoutMesh, LodLevel } from '@/contracts/material';
+import type { LeafLightingSettings } from '@/contracts/lighting';
 import type { MeshData } from '@/contracts/mesh';
 import { buildCutoutGeometry } from '@/materials/cutouts/buildCutoutGeometry';
 import { anchorFrameInPose, baseFrameInPose, buildCutoutFrame, cardPoseFor, placedMetric, type ResolvedAnchor } from '@/materials/cutouts/frame';
@@ -6,8 +7,26 @@ import type { Frame } from './rigid';
 import { cross, dot, len, mul, norm, perpendicular, rotate, sub, type V3 } from './math3';
 import { deformFrame, deformWorldVertex, isDeformActive, leafLocalFrame, subdivisionPasses, type LeafDeform } from './leafDeform';
 import { MeshAccumulator, newVertex, type VertexAttrs } from './meshAccumulator';
+import { applyLeafLighting, isLightingActive, type LightingGroup } from './leafLighting';
+import type { LeafSpan } from './batchedLeaf';
 
 export type LeafOutline = 'rect' | 'oval' | 'pointed' | 'heart';
+
+/** Per-leaf inputs of the Lighting pass (see `applyLeafLighting`). */
+export interface CardLight {
+  /** Parent puffiness anchor point (null = none). */
+  anchor: V3 | null;
+  /** Fixed direction of the Surface X / Y / Z anchors (null = none). */
+  surface: V3 | null;
+  /** Up / Right / Out rotation in radians (variance applied). */
+  adjust: V3;
+}
+
+/** Identity of the placement a card belongs to (index table of batched meshes). */
+export interface CardSource {
+  key: number;
+  branch: number;
+}
 
 /** One leaf blade / card. `axis` runs base -> tip, `side` across the blade (both unit, perpendicular). */
 export interface LeafCard {
@@ -43,6 +62,10 @@ export interface LeafCard {
   mirror?: boolean;
   /** Leaf > Deformation applied to the finished card (vertices and attachment frames). */
   deform?: LeafDeform;
+  /** Lighting inputs of this leaf; without them only the settings that need no per-leaf data apply. */
+  light?: CardLight;
+  /** Source placement, recorded in `LeafMeshOptions.spans`. Cards of one leaf must share the same object. */
+  source?: CardSource;
 }
 
 export const FULL_ATLAS: [number, number, number, number] = [0, 0, 1, 1];
@@ -65,6 +88,12 @@ export interface LeafMeshOptions {
   defaultMaterial: string;
   /** Flip triangles whose winding disagrees with the vertex normals (after every deformation and mirroring). */
   fixWinding?: boolean;
+  /** Normal-editing pass applied after deformation, mirroring and winding fixes. */
+  lighting?: LeafLightingSettings;
+  /** Options that do not exist for this generator (Batched leaf: no Unify, no World up). */
+  lightingAllow?: { unify?: boolean; worldUp?: boolean };
+  /** Output: one span per source leaf (cards with `source`), in emission order. */
+  spans?: LeafSpan[];
 }
 
 /** Build one mesh from many cards. Cards are grouped per material so the result has one slot per material. */
@@ -82,8 +111,12 @@ export function buildLeafMesh(cards: readonly LeafCard[], opts: LeafMeshOptions)
     list.push(i);
   });
   const cells = Math.max(1, Math.ceil(Math.sqrt(cards.length)));
+  const lit = opts.lighting !== undefined && isLightingActive(opts.lighting, { allowUnify: opts.lightingAllow?.unify, allowWorldUp: opts.lightingAllow?.worldUp });
+  const groups: LightingGroup[] = [];
+  let lastSource: CardSource | undefined;
   for (const mat of order) {
     acc.beginSlot(mat);
+    lastSource = undefined;
     for (const i of byMat.get(mat) as number[]) {
       const card = cards[i] as LeafCard;
       const first = acc.vertexCount;
@@ -91,10 +124,37 @@ export function buildLeafMesh(cards: readonly LeafCard[], opts: LeafMeshOptions)
       emitCard(acc, card, i, cells);
       if (card.deform && isDeformActive(card.deform)) deformCard(acc, card, first, firstIndex);
       if (card.mirror) acc.mirrorFrom(first, card.origin, norm(card.side));
+      if (lit) groups.push(cardGroup(card, first, acc.vertexCount - first, firstIndex, acc.indexCount - firstIndex));
+      if (opts.spans && card.source) {
+        const last = opts.spans[opts.spans.length - 1];
+        if (last && lastSource === card.source) {
+          last.vertexCount = acc.vertexCount - last.vertexStart;
+          last.indexCount = acc.indexCount - last.indexStart;
+        } else {
+          opts.spans.push({ key: card.source.key, branch: card.source.branch, materialId: mat, vertexStart: first, vertexCount: acc.vertexCount - first, indexStart: firstIndex, indexCount: acc.indexCount - firstIndex });
+        }
+        lastSource = card.source;
+      }
     }
   }
   if (opts.fixWinding) acc.fixWinding();
-  return acc.build(opts.defaultMaterial, true);
+  const mesh = acc.build(opts.defaultMaterial, true);
+  if (lit && opts.lighting) applyLeafLighting(mesh, opts.lighting, { groups, allowUnify: opts.lightingAllow?.unify, allowWorldUp: opts.lightingAllow?.worldUp });
+  return mesh;
+}
+
+function cardGroup(card: LeafCard, vertexStart: number, vertexCount: number, indexStart: number, indexCount: number): LightingGroup {
+  const f = leafLocalFrame(card.origin, card.axis, card.side);
+  return {
+    vertexStart,
+    vertexCount,
+    indexStart,
+    indexCount,
+    anchor: card.light?.anchor ?? null,
+    surface: card.light?.surface ?? null,
+    frame: { x: f.x, y: f.y, z: f.z },
+    adjust: card.light?.adjust ?? [0, 0, 0],
+  };
 }
 
 /** Applies the card's Deformation to the vertices emitted since `first` (subdividing sparse cards first). */

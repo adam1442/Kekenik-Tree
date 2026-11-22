@@ -24,6 +24,7 @@ const FAMILY: Record<string, VisibilityKey> = {
   'generator.knot': 'branches',
   'generator.frond': 'fronds',
   'generator.leaf': 'leaves',
+  'generator.batchedLeaf': 'leaves',
   'generator.cluster': 'leaves',
   'generator.meshes': 'leaves',
   'generator.cap': 'caps',

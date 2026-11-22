@@ -5,8 +5,9 @@ import { emptySkeleton } from '@/contracts/skeleton';
 import { PORT } from '@/graph/ports';
 import { section } from '../shared/builders';
 import { childrenOut, windIn } from '../shared/ports';
+import { GLOBAL_PREFIX, readLeafLighting, treeLightingParams } from '../generators/leafLightingParams';
 
-/** Tree node tabs are: Gen | Shape | LOD | Collision. */
+/** Tree node tabs are: Gen | Shape | LOD | Collision, plus Lighting (shared leaf lighting). */
 const gen = section('Generation', 'More');
 const season = section('Generation', 'Season');
 const shape = section('Shape', 'Shape');
@@ -44,10 +45,11 @@ export const nodeDefs: NodeDef[] = [
       shape.float('treeSink', 'Sink', 0, { min: -50, max: 50, softMin: -2, softMax: 2, unit: 'm', tooltip: 'Depth every child is sunk into the ground.' }),
       shape.float('treeRoll', 'Roll', 0, { min: -360, max: 360, softMin: -180, softMax: 180, unit: '°', tooltip: 'Rotates the whole placement pattern around the vertical axis.' }),
       shape.bool('unifyChildOrientation', 'Unify child orientation', false, { tooltip: 'Give all children the same orientation instead of a random one.' }),
+      ...treeLightingParams(),
     ],
     /** The root hands an empty structure plus the placement disc to its children; they decide where to start. */
     evaluate: (_ctx, _inputs, params) => {
-      return { [PORT.children]: { kind: 'Structure', value: { skeleton: emptySkeleton(), placement: placementFromTreeParams(params) } } };
+      return { [PORT.children]: { kind: 'Structure', value: { skeleton: emptySkeleton(), placement: placementFromTreeParams(params), lighting: readLeafLighting(params, GLOBAL_PREFIX) } } };
     },
   },
 ];

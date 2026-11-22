@@ -636,12 +636,10 @@ export function leafMaterialParams(): ParamDef[] {
   ];
 }
 
+/** Leaf "Lighting" tab: ambient occlusion. The normal-editing groups live in leafLightingParams.ts. */
 export function lightingParams(): ParamDef[] {
-  const n = section('Lighting', 'Normals');
   const a = section('Lighting', 'Ambient occlusion');
   return [
-    n.float('normalSpherize', 'Spherize', 0, { min: 0, max: 1, curve: true }),
-    n.float('normalBend', 'Bend', 0, { min: -1, max: 1 }),
     a.float('aoStrength', 'Strength', 0.5, { min: 0, max: 1, curve: true }),
     a.float('aoDepth', 'Depth', 0.5, { min: 0, max: 1 }),
   ];

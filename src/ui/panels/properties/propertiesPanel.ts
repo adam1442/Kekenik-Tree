@@ -399,7 +399,7 @@ export function createPropertiesPanel(host: HTMLElement): PanelInstance {
       enableBtn.classList.toggle('off', !node.enabled);
       bypassBtn.classList.toggle('active', Boolean(node.bypass));
 
-      const isLeafLike = node.type === 'generator.leaf' || node.type === 'generator.frond' || node.type === 'generator.cluster';
+      const isLeafLike = node.type === 'generator.leaf' || node.type === 'generator.batchedLeaf' || node.type === 'generator.frond' || node.type === 'generator.cluster';
       renderModeButtons(isLeafLike);
 
       const diag = app.graph.diagnostics.get(node.id);
