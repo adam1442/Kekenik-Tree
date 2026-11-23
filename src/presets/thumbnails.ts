@@ -22,6 +22,7 @@ import { IndexedDbKeyValueStore, type KeyValueStore } from '@/app/project/kvStor
 import { GraphModel } from '@/graph/model/graphModel';
 import { GraphEvaluator, snapshotGraph } from '@/graph/engine';
 import { meshDataToGeometry } from '@/viewport/meshDataToGeometry';
+import { createWebGLRenderer } from '@/viewport/rendererFactory';
 import type { PresetEntry } from './types';
 
 export const THUMB_SIZE = 128;
@@ -169,8 +170,10 @@ export class ThumbnailService {
     const result = await new GraphEvaluator().evaluate(snapshotGraph(model), { seed: project.settings.seed, lod: 1, token: new CancellationSource().token, budgetMs: 30 });
     if (!this.renderer) {
       const canvas = document.createElement('canvas');
-      this.renderer = new WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
-      this.renderer.setPixelRatio(1);
+      const created = createWebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+      if (!created) throw new Error('WebGL is not available.');
+      created.setPixelRatio(1);
+      this.renderer = created;
     }
     return renderSceneThumbnail(this.renderer, result.scene, materialColors(project));
   }

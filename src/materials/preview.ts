@@ -1,5 +1,6 @@
 import { ACESFilmicToneMapping, AmbientLight, DirectionalLight, DoubleSide, Group, HemisphereLight, Material, Mesh, PerspectiveCamera, PlaneGeometry, Scene, SphereGeometry, SRGBColorSpace, WebGLRenderer, type Texture } from 'three';
 import { buildGradientEnvironment } from '@/viewport/lighting';
+import { createWebGLRenderer } from '@/viewport/rendererFactory';
 import { getMaterialLibrary } from './library';
 import { KtMaterialResolver } from './materialResolver';
 import { getTextureManager } from '@/textures/textureManager';
@@ -50,11 +51,8 @@ export class MaterialPreviewRenderer {
 
   private ensure(): { renderer: WebGLRenderer; resolver: KtMaterialResolver } | null {
     if (!this.renderer) {
-      try {
-        this.renderer = new WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: false });
-      } catch {
-        return null;
-      }
+      this.renderer = createWebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: false });
+      if (!this.renderer) return null;
       this.renderer.setClearColor(0x000000, 0);
       this.renderer.outputColorSpace = SRGBColorSpace;
       this.renderer.toneMapping = ACESFilmicToneMapping;

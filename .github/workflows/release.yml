@@ -30,7 +30,7 @@ jobs:
         run: |
           npm run typecheck
           npm run lint
-          npm test
+          npm test -- --run --maxWorkers=2
 
       - name: Build
         run: npm run build

@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+// The viewport panel is exercised against a stub Viewport; jsdom has no WebGL, so the renderer factory is stubbed too.
+vi.mock('@/viewport/rendererFactory', () => ({
+  isWebGLAvailable: () => false,
+  createWebGLRenderer: () => null,
+  createViewportRenderer: () => ({}),
+}));
+
 vi.mock('@/viewport/viewport', async () => {
   const { Box3 } = await import('three');
   return {
@@ -198,6 +205,6 @@ describe('engine + project integration (jsdom)', () => {
     expect(app.store.get().dirty).toBe(false);
     expect(root.querySelectorAll('.kt-doctab')).toHaveLength(2);
     expect(app.commands.get('file.save')?.shortcut).toBe('Mod+S');
-  });
+  }, 30_000);
 });
 

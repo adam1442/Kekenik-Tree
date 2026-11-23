@@ -5,6 +5,7 @@ import { Vector3 } from 'three';
 import { SceneSync } from '@/viewport/sceneSync';
 import { getLodPreview } from '@/export/lod/lodPreview';
 import { Viewport } from '@/viewport/viewport';
+import { createViewportRenderer } from '@/viewport/rendererFactory';
 import { getLighting, onLightingChange, setLighting } from '@/viewport/lighting';
 import { AxisGizmo } from '@/viewport/axisGizmo';
 import { ForceGizmos } from '@/viewport/gizmos/forceGizmos';
@@ -105,7 +106,24 @@ export function createViewportPanel(host: HTMLElement, ctx: PanelContext): Panel
   host.classList.add('kt-vp');
   host.append(docTabs, buildViewportToolbar(app, ctx), view);
 
-  const viewport = new Viewport(canvasWrap);
+  const renderer = createViewportRenderer();
+  if (!renderer) {
+    // No WebGL: keep the document tabs and toolbar, replace the 3D view with a neutral notice.
+    view.replaceChildren(
+      h(
+        'div',
+        'kt-vp-unavailable',
+        h('b', '', 'WebGL unavailable'),
+        h('span', '', 'This browser or device cannot create a WebGL 2 context, so the 3D view is disabled. The graph and the parameters still work.'),
+      ),
+    );
+    renderTabs();
+    const unsubTabs = store.subscribe((s, prev) => {
+      if (s.documents !== prev.documents || s.activeDocumentId !== prev.activeDocumentId) renderTabs();
+    });
+    return { dispose: unsubTabs };
+  }
+  const viewport = new Viewport(canvasWrap, renderer);
   app.viewport = viewport;
 
   // --- wind preview + interactive gizmos (force handles, wind arrow)

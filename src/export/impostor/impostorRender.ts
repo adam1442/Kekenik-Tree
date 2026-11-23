@@ -23,6 +23,7 @@ import {
   type Texture,
 } from 'three';
 import { CancelledError, type CancellationToken } from '@/contracts/nodes';
+import { createWebGLRenderer } from '@/viewport/rendererFactory';
 import type { PlantGeometry } from '../geometry';
 import { createImage, dilateColor, resizeImage, type RGBAImage } from '../images/imageOps';
 import type { ImpostorSettings } from '../types';
@@ -164,7 +165,8 @@ export async function renderImpostor(input: ImpostorRenderInput, token: Cancella
   }
   radius = Math.max(radius, 1e-3) * (1 + settings.padding / Math.max(8, settings.frameSize));
 
-  const renderer = new WebGLRenderer({ antialias: false, alpha: true, preserveDrawingBuffer: false });
+  const renderer = createWebGLRenderer({ antialias: false, alpha: true, preserveDrawingBuffer: false });
+  if (!renderer) throw new Error('WebGL is not available, so the impostor cannot be rendered.');
   const disposables: { dispose(): void }[] = [];
   try {
     const ss = settings.frameSize * 2 <= 2048 ? 2 : 1;

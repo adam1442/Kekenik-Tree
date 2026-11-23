@@ -6,6 +6,9 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+- CI/deploy no longer fails on `tests/shell.dom.test.ts` timeouts: WebGL renderers are created through one factory that returns `null` without WebGL (the viewport then shows a "WebGL unavailable" notice instead of throwing), tests never construct a real renderer, and Vitest uses a 30 s per-test budget with at most 2 workers on CI.
+
 ### Added
 - **Knot** generator rewritten as real surface geometry: three sections welded onto the parent branch - *Outer* (Size, Offset, Rotation, Scale, Lip, Noise > Shape / Offset / Seed; always the parent material and the parent's UV), *Inner* (Size %, Scale, Curvature, Overlap, UV Style Match trunk / Ring, Noise > Shape) and *Core* (Size %, Offset, UV, Noise > Shape / Offset) - with Material lists for Inner and Core (UV Area), Segments (Rings per section, Slices, Resolution) and Dynamic LOD (Weight, Ring segments, Slice segments). Knots count as decorations. Old Knot nodes are migrated on load.
 - **UV Mapping** tab on Branch (and the Extensions UV list): Style (Unrestricted / U locked / U and V locked), Extension style, U (Absolute, + Relative, Offset with variance, Fractional Enable / Auto / Value, Twist Amount / Random flip), V (Style Absolute / Relative (keep aspect ratio) / Relative, Anchor, Scale, Skew correction, Pinch, Offset with variance) and Tiling (Style Tiling / 0-1 patches choose one / use all, Optimize segments, V tolerance, Seed). The Branch and Extension **Material** lists have Material (material, Material Set or Inherited), Weight and, with a patch style, a patch options button (UV Area, Placement). Patches keep UV inside their UV Area and double the vertices along seams. Formulas are in `docs/PARAMETERS.md`; old projects keep their look (node version 5).

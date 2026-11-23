@@ -8,8 +8,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 # Never cancel a deployment that is already running.
 concurrency:
@@ -21,6 +19,9 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      pages: write
     steps:
       # actions/checkout v4
       - uses: actions/checkout@v4
@@ -41,10 +42,12 @@ jobs:
         run: npm run lint
 
       - name: Unit tests
-        run: npm test
+        run: npm test -- --run --maxWorkers=2
 
       - name: Build
         run: npm run build
+        env:
+          VITE_BASE: /Kekenik-Tree/
 
       - name: Verify built CSS (style contract)
         run: npm run check:css
@@ -66,6 +69,9 @@ jobs:
     name: Deploy
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

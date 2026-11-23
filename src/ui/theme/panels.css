@@ -190,6 +190,25 @@
   inset: 0;
   background: linear-gradient(to bottom, var(--kt-viewport-top) 0%, var(--kt-viewport-mid) 55%, var(--kt-viewport-bottom) 100%);
 }
+.kt-vp-unavailable {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--kt-space-3);
+  padding: var(--kt-space-6);
+  text-align: center;
+  background: var(--kt-viewport-mid);
+  color: var(--kt-viewport-label);
+  font-size: var(--kt-fs-md);
+}
+.kt-vp-unavailable b {
+  color: var(--kt-text);
+  font-size: var(--kt-fs-lg);
+  font-weight: var(--kt-fw-semibold);
+}
 .kt-viewport-canvas {
   display: block;
   width: 100%;

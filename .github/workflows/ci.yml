@@ -38,10 +38,12 @@ jobs:
         run: npm run lint
 
       - name: Unit tests
-        run: npm test
+        run: npm test -- --run --maxWorkers=2
 
       - name: Build
         run: npm run build
+        env:
+          VITE_BASE: /Kekenik-Tree/
 
       - name: Verify built CSS (style contract)
         run: npm run check:css

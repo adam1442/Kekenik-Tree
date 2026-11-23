@@ -83,10 +83,11 @@ export class Viewport {
   onFrame: ((info: FrameInfo) => void) | null = null;
   private readonly beforeRender = new Set<(dt: number) => void>();
 
-  constructor(private readonly container: HTMLElement) {
+  /** `renderer` comes from `createViewportRenderer()`; the Viewport takes ownership and disposes it. */
+  constructor(private readonly container: HTMLElement, renderer: WebGLRenderer) {
     // The canvas itself is never multisampled: the scene is rendered into a multisampled HDR target (QualityPipeline)
     // which also draws the gradient background, so the canvas is opaque.
-    this.renderer = new WebGLRenderer({ antialias: false, alpha: false, stencil: false, powerPreference: 'high-performance' });
+    this.renderer = renderer;
     this.renderer.setClearColor(0x000000, 1);
     this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.toneMapping = ACESFilmicToneMapping;
