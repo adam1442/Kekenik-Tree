@@ -453,3 +453,15 @@ Skin > **Welding** (Branch and Root; ids `weldEnabled`, `weldKeep`, `weldKeepFai
 * **Flares.** `radius x baseRadius x lobe(u) x (1 - s / Height)^2`; lobes are seamless noise with `Noise scale` cells around, Pinch raises the lobe to `1 + 2 pinch` (thinner ridges), Angle shifts the pattern around the spine. The offset never exceeds `radius x baseRadius`.
 * **Cache.** `displacementDependencyKey` includes the stamp of the chosen asset and, for Source = Material, of the Height maps of the referenced material / set members, so only nodes that use a changed map re-evaluate (150 ms debounce in `installMaterialSystem`); mip chains are cached per asset and processing settings.
 * Tests: `tests/displaceR15.test.ts`.
+
+## Branch UV mapping and material patches (R16) — `src/generators/uv/`, `geometry/tubeUv.ts`, `nodes/generators/uvConfig.ts`, `ui/components/params/materialSlotList.ts`
+
+* **Pure module** `generators/uv/`: `types.ts` (`UvMapping`, defaults, skeleton attribute names `uvTiles` / `uvDensity` / `uvV` / `uvTwist` / `uvUOffset` that let extensions and welded children continue the parent's mapping), `uMath.ts` (`wholeUTiles`, `resolveUTiles`, `uDensity`), `vMath.ts` (`computeRingV`, `aspectRadius`, `snapRingsToWhole`), `areas.ts` (`normalizeRect`, `remapToRect`, `resolveAreaRect`), `patches.ts` (`layoutPatches`, `choosePatches`). No Three.js, no globals; randomness only through the passed `Rng`.
+* **Glue** `geometry/tubeUv.ts#planBranchUv` builds one `UvPlan` per branch (tile count, offset, twist, V per ring, optional patch layout with the resampled rings, material and rectangle of every patch) and `writeUvAttributes` stores the attributes for the children. `tubeMesher` only reads the plan: UV0 per vertex, one mesh slot per patch material, no quads across a seam, and the `weldParentUV` / displacement `uvU`, `uvV` inputs come from the same plan, so no mapping rule is written twice.
+* **Parameters.** `uvParams(extensions)` (Branch passes `true`: Extension style, Tiling Style and Seed exist only there) and `barkMaterialList` (Material / Extension material lists, widget `barkMaterials`). `readUvMapping`, `readBranchMaterialRows`, `readExtensionMaterialRows`, `uvMaterialOptions` and `migrateBranchMaterial` (node version 5) live in `uvConfig.ts`. The widget reuses `createListWidget` and the shared pick-probability hint of the Material / Mesh list; UV Areas come from the material library (`uvAreaChoices`).
+* **Cache.** `uvDependencyKey` includes the UV Areas of the library only while a patch style is used.
+* Tests: `tests/uvR16.test.ts`. Formulas: `docs/PARAMETERS.md`.
+
+## Wind controls (`app/windControl.ts`)
+
+The preview wind is `WindSystem.params`: a Wind node attached to the Tree replaces the project settings (`WindSystem.overridden`). Every wind control (viewport popover, Wind panel, Properties > Global Wind, wind arrow gizmo) reads `getWindSystem().params` and writes through `setWindParam`, which edits the Wind node on the Tree (undoable graph edit, `windNodeParamId` maps keys to node ids) or, without one, the project settings. Tests: `tests/windControl.test.ts`.

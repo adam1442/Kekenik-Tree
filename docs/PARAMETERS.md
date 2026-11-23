@@ -278,16 +278,28 @@ Main stem with crown height, buttress flare, lean, gnarliness, and profile curve
 | Vertex color | Variance | `tintVariance` | 0..1 | 0.1 |  |  | Random variation of the vertex colour per instance. |
 | Vertex color | AO strength | `aoStrength` | 0..1 | 0.6 |  |  | Strength of the baked vertex ambient occlusion. |
 
-### Tab: UV
+### Tab: UV Mapping
 
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
-| Mapping | Mode | `uvMode` | Metric / Normalized | metric |  |  | How UVs are laid out: metric (real-world scale) or normalized (0…1). |
-| Mapping | Rotate 90° | `uvRotate` | bool | false |  |  | Rotates the UV layout by 90°. |
-| Tiling | U scale | `uvScaleU` | 0.01..100 (slider 0.01..10) | 1 |  |  | Texture tiling around the stem. |
-| Tiling | V scale | `uvScaleV` | 0.01..100 (slider 0.01..10) | 1 |  |  | Texture tiling along the stem. |
-| Tiling | U offset | `uvOffsetU` | -10..10 | 0 |  |  | Shifts the texture around the stem. |
-| Tiling | V offset | `uvOffsetV` | -10..10 | 0 |  |  | Shifts the texture along the stem. |
+| Mapping | Style | `uvStyle` | Unrestricted / U locked [0,1], V unrestricted / U and V locked [0,1] | unrestricted |  |  | Unrestricted lets the coordinates tile freely. The locked styles keep U (or U and V) inside 0..1: one texture copy around the branch, and for U and V locked one along it. Offsets and twist are ignored while locked. |
+| Mapping | Rotate 90° | `uvRotate` | bool | false |  |  | Swaps U and V (turns the texture a quarter turn). |
+| U | Absolute | `uvUAbsolute` | 0..64 (slider 0..8) | 0 |  |  | Texture copies around the branch regardless of its thickness. The total is always a whole number, at least 1. |
+| U | + Relative | `uvURelative` | 0..16 (slider 0..4) | 1 |  |  | Extra copies per metre of circumference, so thick branches get more (1 = one copy per metre of girth, the classic world-size tiling). |
+| U | Offset | `uvOffsetU` | -10..10 | 0 | yes |  | Turns the texture around the branch (in copies). The variance turns every branch by a random amount, so the seam faces a different way. |
+| Fractional | Enable | `uvFractional` | bool | false |  |  | Allow a fractional number of copies around the branch. The texture no longer closes on itself, so a seam can show. |
+| Fractional | Auto | `uvFractionalAuto` | bool | false |  |  | Uses the same texel density as the parent branch (copies per metre of girth). A seam may appear. |
+| Fractional | Value | `uvFractionalValue` | 0.01..64 (slider 0.01..8) | 1 |  |  | Free number of copies around the branch; Absolute and Relative are ignored. |
+| Twist | Amount | `uvTwist` | -16..16 (slider -2..2) | 0 |  |  | Turns per V tile: the texture spirals around the branch as it runs along it. |
+| Twist | Random flip | `uvTwistFlip` | bool | false |  |  | Gives every branch a random spiral direction. |
+| V | Style | `uvVStyle` | Absolute / Relative (keep aspect ratio) / Relative | absolute |  |  | Absolute: copies per metre of length. Relative (keep aspect ratio): the texture keeps its proportions, a copy is as long as it is wide. Relative: the texture is stretched over the whole length of the branch. |
+| V | Anchor | `uvVAnchor` | Start / End | start |  |  | Which end of the branch lies on a whole V number (End puts a texture edge exactly at the tip). |
+| V | Scale | `uvScaleV` | 0.01..100 (slider 0.01..10) | 1 |  |  | Absolute: V copies per metre. Relative (keep aspect ratio): multiplies the density. Relative: the number of copies along the branch. |
+| V | Skew correction | `uvSkew` | 0..1 | 0 |  |  | Compensates the narrowing or widening of a tapering branch (0 = the texture tapers with it, 1 = it keeps its proportions everywhere). |
+| V | Pinch | `uvPinch` | 0..1 | 0.25 |  |  | Stops the texture from racing along the last stretch of a pointed tip (higher values keep the radius used for V further from zero). |
+| V | Offset | `uvOffsetV` | -10..10 | 0 | yes |  | Moves the texture along the branch (in copies). The variance starts every branch at a random V. |
+| Tiling | Optimize segments | `uvOptimize` | bool | false |  |  | Avoids rings that are very close together near a patch seam (or a whole V number): the seam moves onto a ring within the V tolerance instead of adding one. |
+| Tiling | V tolerance | `uvVTolerance` | 0..0.5 | 0.1 |  |  | How close (in V) a ring must be to a whole number to be moved onto it while Optimize segments is on. |
 
 ### Tab: LOD
 
@@ -620,17 +632,31 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 | Vertex color | Variance | `tintVariance` | 0..1 | 0.1 |  |  | Random variation of the vertex colour per instance. |
 | Vertex color | AO strength | `aoStrength` | 0..1 | 0.6 |  |  | Strength of the baked vertex ambient occlusion. |
 
-### Tab: UV
+### Tab: UV Mapping
 
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
-| Extensions | Extension style | `extensionUvStyle` | Automatic / Manual (match) / Manual (match u only) / Manual (full control) | automatic |  |  | How the texture coordinates of extensions follow their parent. Extensions always continue the parent mapping; the manual styles arrive with the UV mapping update and map as Automatic for now. |
-| Mapping | Mode | `uvMode` | Metric / Normalized | metric |  |  | How UVs are laid out: metric (real-world scale) or normalized (0…1). |
-| Mapping | Rotate 90° | `uvRotate` | bool | false |  |  | Rotates the UV layout by 90°. |
-| Tiling | U scale | `uvScaleU` | 0.01..100 (slider 0.01..10) | 1 |  |  | Texture tiling around the stem. |
-| Tiling | V scale | `uvScaleV` | 0.01..100 (slider 0.01..10) | 1 |  |  | Texture tiling along the stem. |
-| Tiling | U offset | `uvOffsetU` | -10..10 | 0 |  |  | Shifts the texture around the stem. |
-| Tiling | V offset | `uvOffsetV` | -10..10 | 0 |  |  | Shifts the texture along the stem. |
+| Mapping | Style | `uvStyle` | Unrestricted / U locked [0,1], V unrestricted / U and V locked [0,1] | unrestricted |  |  | Unrestricted lets the coordinates tile freely. The locked styles keep U (or U and V) inside 0..1: one texture copy around the branch, and for U and V locked one along it. Offsets and twist are ignored while locked. |
+| Mapping | Extension style | `extensionUvStyle` | Automatic / Manual (match) / Manual (match u only) / Manual (full control) | automatic |  |  | How an extension maps its texture next to the branch it extends. Automatic continues the parent (tiles around, V, twist, offset). Manual (match) uses its own settings but the parent tile count and a V that starts where the parent ends. Manual (match u only) only copies the tile count. Manual (full control) ignores the parent. |
+| Mapping | Rotate 90° | `uvRotate` | bool | false |  |  | Swaps U and V (turns the texture a quarter turn). |
+| U | Absolute | `uvUAbsolute` | 0..64 (slider 0..8) | 0 |  |  | Texture copies around the branch regardless of its thickness. The total is always a whole number, at least 1. |
+| U | + Relative | `uvURelative` | 0..16 (slider 0..4) | 1 |  |  | Extra copies per metre of circumference, so thick branches get more (1 = one copy per metre of girth, the classic world-size tiling). |
+| U | Offset | `uvOffsetU` | -10..10 | 0 | yes |  | Turns the texture around the branch (in copies). The variance turns every branch by a random amount, so the seam faces a different way. |
+| Fractional | Enable | `uvFractional` | bool | false |  |  | Allow a fractional number of copies around the branch. The texture no longer closes on itself, so a seam can show. |
+| Fractional | Auto | `uvFractionalAuto` | bool | false |  |  | Uses the same texel density as the parent branch (copies per metre of girth). A seam may appear. |
+| Fractional | Value | `uvFractionalValue` | 0.01..64 (slider 0.01..8) | 1 |  |  | Free number of copies around the branch; Absolute and Relative are ignored. |
+| Twist | Amount | `uvTwist` | -16..16 (slider -2..2) | 0 |  |  | Turns per V tile: the texture spirals around the branch as it runs along it. |
+| Twist | Random flip | `uvTwistFlip` | bool | false |  |  | Gives every branch a random spiral direction. |
+| V | Style | `uvVStyle` | Absolute / Relative (keep aspect ratio) / Relative | absolute |  |  | Absolute: copies per metre of length. Relative (keep aspect ratio): the texture keeps its proportions, a copy is as long as it is wide. Relative: the texture is stretched over the whole length of the branch. |
+| V | Anchor | `uvVAnchor` | Start / End | start |  |  | Which end of the branch lies on a whole V number (End puts a texture edge exactly at the tip). |
+| V | Scale | `uvScaleV` | 0.01..100 (slider 0.01..10) | 1 |  |  | Absolute: V copies per metre. Relative (keep aspect ratio): multiplies the density. Relative: the number of copies along the branch. |
+| V | Skew correction | `uvSkew` | 0..1 | 0 |  |  | Compensates the narrowing or widening of a tapering branch (0 = the texture tapers with it, 1 = it keeps its proportions everywhere). |
+| V | Pinch | `uvPinch` | 0..1 | 0.25 |  |  | Stops the texture from racing along the last stretch of a pointed tip (higher values keep the radius used for V further from zero). |
+| V | Offset | `uvOffsetV` | -10..10 | 0 | yes |  | Moves the texture along the branch (in copies). The variance starts every branch at a random V. |
+| Tiling | Style | `uvTilingStyle` | Tiling / 0-1 patches (choose one assigned material) / 0-1 patches (use all assigned materials) | tiling |  |  | Tiling repeats the texture. The patch styles cut the branch into 0..1 patches (one per V tile) that show a UV Area of the material: one material for the whole branch, or any assigned material per patch. Vertices are doubled along the seams. Set the area and placement of every row with the patch button in the Material tab. |
+| Tiling | Optimize segments | `uvOptimize` | bool | false |  |  | Avoids rings that are very close together near a patch seam (or a whole V number): the seam moves onto a ring within the V tolerance instead of adding one. |
+| Tiling | V tolerance | `uvVTolerance` | 0..0.5 | 0.1 |  |  | How close (in V) a ring must be to a whole number to be moved onto it while Optimize segments is on. |
+| Tiling | Seed | `uvTilingSeed` | seed | 0 |  |  | UV mapping setting for textures on this geometry. “Seed” in UV › Tiling. |
 
 ### Tab: LOD
 
@@ -691,7 +717,8 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
-| Material | Material | `material` | None |  |  |  | Material (or Material Set) used for this node; empty = the default for the node type. |
+| Material | Material | `barkMaterials` | list | [curve] |  |  | Materials of the branches. Each branch picks a row by weight. Inherited uses the material of the parent. |
+| Extensions | Extension material | `extensionMaterials` | list | [curve] |  |  | Materials of the branches. Each branch picks a row by weight. Inherited uses the material of the parent. |
 | Material | Tint | `materialTint` | color | [1, 1, 1, 1] |  |  | Colour multiplied onto the material. |
 | Material | Variation | `materialVariation` | 0..1 | 0 | yes |  | How much the material variation colours are applied. |
 | Blend | Base blend | `blendBase` | 0..1 | 0 |  | yes | Blends the material towards the parent at the base. |
@@ -731,6 +758,20 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 | Hand drawn | Enabled | `handDrawn` | bool | false |  |  | Enables hand-drawn control of the spine shape. |
 | Hand drawn | Strength | `handStrength` | 0..1 | 1 |  |  | Strength of the hand-drawn influence. |
 | Hand drawn | Smoothing | `handSmoothing` | 0..1 | 0.5 |  |  | Smoothing of the hand-drawn spine. |
+
+### Branch UV Mapping and material patches (R16) - formulas
+
+Pure maths: `src/generators/uv/` (`uMath`, `vMath`, `areas`, `patches`); glue for the tube mesher: `src/geometry/tubeUv.ts`; parameter reader: `src/nodes/generators/uvConfig.ts`. With the defaults the result equals the tiling by world size of older projects. `metresPerTile` is the world size of one texture copy (from the bark material).
+
+* **U tiles (around).** `tiles = max(1, round(Absolute + Relative x circumference / metresPerTile))`, circumference = 2 pi x thickest radius of the branch. Always a whole number >= 1, so the texture closes without a seam. **Offset** (copies, variance = random per branch) turns the texture around the branch.
+* **Fractional.** *Enable* allows a float count. *Value* is used as is (Absolute / Relative are ignored). *Auto* = texel density of the parent (`parentTiles / parentCircumference`, tiles per metre) x circumference at the base of the branch; without a parent the world scale is used. A seam may show.
+* **Twist.** U shifts by `Amount x tiles x V` along the branch (revolutions per V tile). *Random flip* gives every branch a random sign.
+* **V, Absolute.** `V = arc length x Scale / metresPerTile`. **Relative:** `V = arc length / branch length x Scale`. **Relative (keep aspect ratio):** `dV/ds = Scale x tiles / (2 pi x r)` integrated along the branch, so one V copy is as long as one U copy is wide (on a cylinder). `r = max(ref + (local - ref) x Skew, ref x floor(Pinch))` with `ref` the thickest radius, `floor = 0.02 + 0.48 x Pinch`: Skew correction 0 keeps the reference radius (the texture tapers with the branch), 1 follows the local radius (it keeps its proportions); Pinch stops V from racing away at a pointed tip.
+* **Anchor / Offset.** V is 0 at the base (Start). *End* shifts V so the tip lies on a whole number (`ceil`). *Offset* adds copies (variance = random start V per branch).
+* **Style.** *U locked* forces one U copy around the branch and ignores offsets / twist; *U and V locked* additionally maps V to 0..1 over the whole branch (V style Relative, Scale 1). **Extension style** (Branch > Extensions): Automatic continues the parent (tiles, V at the attachment, twist, U offset), Manual (match) = own settings but parent tile count and V, Manual (match u only) = parent tile count only, Manual (full control) = own settings.
+* **Patches (Tiling).** *0-1 patches* cut the branch at every whole V number: patch `p` covers V in `[p, p + 1]`, local V 0..1 and U 0..1 are remapped into the patch's UV Area rectangle (`u = u0 + (u1 - u0) x U`, same for V), so UVs never leave the area (and never leave 0..1). A seam ring exists twice (end of one patch, start of the next), the quad between them is not drawn: **vertices along a seam are doubled**. Seams never fall inside a weld. *Optimize segments* moves a seam (or, in Tiling, a ring) onto an existing ring within *V tolerance* instead of adding a close ring. *Seed* varies the random choices.
+* **Materials.** Branch rows: Material (material, Material Set or `Inherited`), Weight, and (patch styles only, patch options button) *UV Area* (`Whole map`, `Any` = weighted pick among the bark / any-usage areas of the material, or a named area) and *Placement* (`Anywhere`, `First ring` = only competes for the first patch). *Choose one assigned material*: one material (rows grouped by material, summed weights) for the whole branch, each patch picks one of its rows (UV Area). *Use all assigned materials*: every patch picks any row by weight; one mesh slot per material. In Tiling one weighted row is used for the whole branch. Extension rows start as `Inherited` (the material the parent resolved to).
+* **Reads / writes.** The mesher writes UV0; weld blend attributes keep using the parent-side UV (`weldParentUV`), Displacement > Use UVs reads the U / V of the same vertices. Old projects: `uvScaleU` multiplies *+ Relative*, `Normalized` mapping and *Match one V tile* map to V style Relative with a free tile count, the single Branch `material` migrates to the first row of the list (node version 5).
 
 ## Spine (`generator.spine`)
 
@@ -942,16 +983,28 @@ Lightweight spine-only structural guides for attaching foliage or child branches
 | Vertex color | Variance | `tintVariance` | 0..1 | 0.1 |  |  | Random variation of the vertex colour per instance. |
 | Vertex color | AO strength | `aoStrength` | 0..1 | 0.6 |  |  | Strength of the baked vertex ambient occlusion. |
 
-### Tab: UV
+### Tab: UV Mapping
 
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
-| Mapping | Mode | `uvMode` | Metric / Normalized | metric |  |  | How UVs are laid out: metric (real-world scale) or normalized (0…1). |
-| Mapping | Rotate 90° | `uvRotate` | bool | false |  |  | Rotates the UV layout by 90°. |
-| Tiling | U scale | `uvScaleU` | 0.01..100 (slider 0.01..10) | 1 |  |  | Texture tiling around the stem. |
-| Tiling | V scale | `uvScaleV` | 0.01..100 (slider 0.01..10) | 1 |  |  | Texture tiling along the stem. |
-| Tiling | U offset | `uvOffsetU` | -10..10 | 0 |  |  | Shifts the texture around the stem. |
-| Tiling | V offset | `uvOffsetV` | -10..10 | 0 |  |  | Shifts the texture along the stem. |
+| Mapping | Style | `uvStyle` | Unrestricted / U locked [0,1], V unrestricted / U and V locked [0,1] | unrestricted |  |  | Unrestricted lets the coordinates tile freely. The locked styles keep U (or U and V) inside 0..1: one texture copy around the branch, and for U and V locked one along it. Offsets and twist are ignored while locked. |
+| Mapping | Rotate 90° | `uvRotate` | bool | false |  |  | Swaps U and V (turns the texture a quarter turn). |
+| U | Absolute | `uvUAbsolute` | 0..64 (slider 0..8) | 0 |  |  | Texture copies around the branch regardless of its thickness. The total is always a whole number, at least 1. |
+| U | + Relative | `uvURelative` | 0..16 (slider 0..4) | 1 |  |  | Extra copies per metre of circumference, so thick branches get more (1 = one copy per metre of girth, the classic world-size tiling). |
+| U | Offset | `uvOffsetU` | -10..10 | 0 | yes |  | Turns the texture around the branch (in copies). The variance turns every branch by a random amount, so the seam faces a different way. |
+| Fractional | Enable | `uvFractional` | bool | false |  |  | Allow a fractional number of copies around the branch. The texture no longer closes on itself, so a seam can show. |
+| Fractional | Auto | `uvFractionalAuto` | bool | false |  |  | Uses the same texel density as the parent branch (copies per metre of girth). A seam may appear. |
+| Fractional | Value | `uvFractionalValue` | 0.01..64 (slider 0.01..8) | 1 |  |  | Free number of copies around the branch; Absolute and Relative are ignored. |
+| Twist | Amount | `uvTwist` | -16..16 (slider -2..2) | 0 |  |  | Turns per V tile: the texture spirals around the branch as it runs along it. |
+| Twist | Random flip | `uvTwistFlip` | bool | false |  |  | Gives every branch a random spiral direction. |
+| V | Style | `uvVStyle` | Absolute / Relative (keep aspect ratio) / Relative | absolute |  |  | Absolute: copies per metre of length. Relative (keep aspect ratio): the texture keeps its proportions, a copy is as long as it is wide. Relative: the texture is stretched over the whole length of the branch. |
+| V | Anchor | `uvVAnchor` | Start / End | start |  |  | Which end of the branch lies on a whole V number (End puts a texture edge exactly at the tip). |
+| V | Scale | `uvScaleV` | 0.01..100 (slider 0.01..10) | 1 |  |  | Absolute: V copies per metre. Relative (keep aspect ratio): multiplies the density. Relative: the number of copies along the branch. |
+| V | Skew correction | `uvSkew` | 0..1 | 0 |  |  | Compensates the narrowing or widening of a tapering branch (0 = the texture tapers with it, 1 = it keeps its proportions everywhere). |
+| V | Pinch | `uvPinch` | 0..1 | 0.25 |  |  | Stops the texture from racing along the last stretch of a pointed tip (higher values keep the radius used for V further from zero). |
+| V | Offset | `uvOffsetV` | -10..10 | 0 | yes |  | Moves the texture along the branch (in copies). The variance starts every branch at a random V. |
+| Tiling | Optimize segments | `uvOptimize` | bool | false |  |  | Avoids rings that are very close together near a patch seam (or a whole V number): the seam moves onto a ring within the V tolerance instead of adding one. |
+| Tiling | V tolerance | `uvVTolerance` | 0..0.5 | 0.1 |  |  | How close (in V) a ring must be to a whole number to be moved onto it while Optimize segments is on. |
 
 ### Tab: LOD
 

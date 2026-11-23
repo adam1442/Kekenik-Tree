@@ -567,7 +567,7 @@ describe('Properties Inspector & Global Settings panels (DOM integration)', () =
     const panel = createPropertiesPanel(host);
 
     try {
-      // Select 'trunk' -> shows Trunk header and tabs (All, Gen, Spine, Forces, Shape, Skin, UV, LOD, Displacement, Material, Animation, Segments, Physics, Hand Drawn)
+      // Select 'trunk' -> shows Trunk header and tabs (All, Gen, Spine, Forces, Shape, Skin, UV Mapping, LOD, Displacement, Material, Animation, Segments, Physics, Hand Drawn)
       app.graph.setSelection(['trunk']);
       expect(host.querySelector('.kt-prop-title')?.textContent).toBe('Trunk');
       const tabTexts = [...host.querySelectorAll('.kt-prop-tab')].map((t) => t.textContent);
@@ -578,7 +578,7 @@ describe('Properties Inspector & Global Settings panels (DOM integration)', () =
         'Forces',
         'Shape',
         'Skin',
-        'UV',
+        'UV Mapping',
         'LOD',
         'Displacement',
         'Material',

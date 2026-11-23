@@ -75,6 +75,8 @@ export interface StructureData {
   sizeScalar?: number;
   /** Node type of the generator that produced this structure (e.g. `generator.meshes`). */
   kind?: string;
+  /** Material id of the generator that produced `skeleton` (what children with an `Inherited` material use). */
+  materialId?: string;
 }
 
 /** Tagged payload travelling along edges during evaluation. */

@@ -16,6 +16,8 @@ import { buildTubeMesh, SQUASH_ANGLE_ATTR, SQUASH_ATTR, type TubeOptions } from 
 import { branchVisibility, isSpineOnly, SUB_LEVEL_ATTR } from '@/generators/skin';
 import { attachSkeletonWind } from '@/geometry/windAttributes';
 import { readWeldConfig } from './weldApply';
+import { MATERIAL_INHERITED } from '@/generators/uv';
+import { primaryMaterialRef, readUvMapping, uvMaterialOptions } from './uvConfig';
 import { fillTableBounds } from '@/instances/scope';
 import { FLAG_HIDDEN, type InstanceTable } from '@/instances/types';
 
@@ -76,6 +78,7 @@ export function tubeOptionsFromParams(
   materialId: string,
   seed: number,
   skeleton?: Skeleton,
+  inheritedMaterial?: string,
 ): TubeOptions {
   const displacement = tubeDisplacementOptions(params, lod, skeleton ?? parent, materialId);
   const displaced = displacement.displace !== undefined || displacement.displaceField !== undefined;
@@ -125,14 +128,9 @@ export function tubeOptionsFromParams(
     ...(parent ? { parent } : {}),
     segmentKeep: lodSegmentKeep(lod, getNumber(params, 'lodSegments', 0.5)),
     section,
-    uv: {
-      normalized: getString(params, 'uvMode', 'metric') === 'normalized' || getBool(params, 'matchOneVTile', false),
-      scaleU: Math.max(0.01, getNumber(params, 'uvScaleU', 1)),
-      scaleV: Math.max(0.01, getNumber(params, 'uvScaleV', 1)),
-      offsetU: getNumber(params, 'uvOffsetU', 0),
-      offsetV: getNumber(params, 'uvOffsetV', 0),
-      rotate: getBool(params, 'uvRotate', false),
-    },
+    uvMapping: readUvMapping(params),
+    ...(uvMaterialOptions(params) ? { uvMaterials: uvMaterialOptions(params) as NonNullable<TubeOptions['uvMaterials']> } : {}),
+    ...(inheritedMaterial ? { inheritedMaterial } : {}),
     ...displacement,
     smoothing: lod >= 2 ? 1 : getNumber(params, 'smoothing', 1),
     flatten: getNumber(params, 'flatten', 0),
@@ -205,19 +203,22 @@ export function emitStructureOutput(
   attachSkeletonWind(skeleton, parent ?? null, seed);
   writeSquashAttributes(skeleton, params);
   // The Material property overrides the generator's built-in slot id; a Material Set is resolved with the node's RNG.
-  const chosen = getString(params, 'material', '') || materialId;
+  const parentValue = inputs?.parent?.[0];
+  const parentMaterial = parentValue && parentValue.kind === 'Structure' ? parentValue.value.materialId : undefined;
+  const ref = primaryMaterialRef(params);
+  const chosen = ref === MATERIAL_INHERITED ? (parentMaterial ?? materialId) : ref || materialId;
   const resolvedMaterial = resolveMaterialRef(chosen, new Rng(seed).fork('material'));
   const mesh =
     spineOnly || skeleton.count === 0
       ? emptyMeshData()
       : buildTubeMesh(skeleton, {
-          ...tubeOptionsFromParams(params, lod, parent ?? null, resolvedMaterial, seed, skeleton),
+          ...tubeOptionsFromParams(params, lod, parent ?? null, resolvedMaterial, seed, skeleton, parentMaterial ?? materialId),
           ...skipOptions(skeleton, params, parent ?? null, hiddenBranches),
         });
 
   const instances = instancesOverride ?? skeleton.branches.length;
   return {
-    children: { kind: 'Structure', value: { skeleton, ...(table ? { instances: table } : {}) } } satisfies PortValue,
+    children: { kind: 'Structure', value: { skeleton, materialId: resolvedMaterial, ...(table ? { instances: table } : {}) } } satisfies PortValue,
     [OUTPUT_KEY.geometry]: { kind: 'Mesh', value: mesh },
     [OUTPUT_KEY.instances]: { kind: 'Scalar', value: instances },
     [OUTPUT_KEY.branchCount]: { kind: 'Scalar', value: skeleton.branches.length },

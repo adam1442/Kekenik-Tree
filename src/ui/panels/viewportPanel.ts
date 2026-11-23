@@ -1,4 +1,5 @@
 import { getApp } from '@/app/context';
+import { setWindParam } from '@/app/windControl';
 import type { EvaluationSummary } from '@/contracts/engine';
 import { Vector3 } from 'three';
 import { SceneSync } from '@/viewport/sceneSync';
@@ -13,7 +14,6 @@ import { WindGizmo } from '@/viewport/gizmos/windGizmo';
 import { NodeModeController } from '@/viewport/nodeModeController';
 import { OverlaySystem } from '@/viewport/overlays/overlaySystem';
 import { selectionStats, type SelectionStats } from '@/viewport/overlays/selectionStats';
-import { writeWindParam } from '@/viewport/wind/windParams';
 import { getWindSystem } from '@/viewport/wind/windSystem';
 import type { ContentStats } from '@/viewport/types';
 import { getViewFilter, onViewFilterChange } from '@/viewport/viewState';
@@ -115,13 +115,7 @@ export function createViewportPanel(host: HTMLElement, ctx: PanelContext): Panel
   wind.syncProject(projectWind());
   const windPoll = window.setInterval(() => wind.syncProject(projectWind()), 200);
   const layer = new GizmoLayer(viewport, canvasWrap);
-  const windGizmo = new WindGizmo(layer, wind, (deg) => {
-    const ws = projectWind();
-    if (!ws) return;
-    writeWindParam(ws, 'directionDeg', deg);
-    app.undo.markDirty();
-    wind.syncProject(ws);
-  });
+  const windGizmo = new WindGizmo(layer, wind, (deg) => setWindParam(app, 'directionDeg', deg, true));
   const forceGizmos = new ForceGizmos(app, viewport, layer);
   const treeGizmo = new TreePlacementGizmo(app, viewport, layer, canvasWrap);
   layer.onActiveChange = (o) => treeGizmo.setActive(o);

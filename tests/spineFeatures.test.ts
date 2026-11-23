@@ -24,7 +24,7 @@ describe('inspector tabs', () => {
   it('Trunk / Branch / Spine show the standard tab strip with unimplemented tabs disabled', () => {
     for (const type of ['generator.trunk', 'generator.branch', 'generator.spine']) {
       const tabs = getInspectorTabSpecs(type, getNodeDef(type)!.params);
-      expect(tabs.map((t) => t.label)).toEqual(['All', 'Gen', 'Spine', 'Forces', 'Shape', 'Skin', 'UV', 'LOD', 'Displacement', 'Material', 'Animation', 'Segments', 'Physics', 'Hand Drawn']);
+      expect(tabs.map((t) => t.label)).toEqual(['All', 'Gen', 'Spine', 'Forces', 'Shape', 'Skin', 'UV Mapping', 'LOD', 'Displacement', 'Material', 'Animation', 'Segments', 'Physics', 'Hand Drawn']);
       expect(tabs.find((t) => t.label === 'Physics')?.disabled).toBe(true);
       expect(tabs.find((t) => t.label === 'Gen')?.disabled).toBeFalsy();
     }

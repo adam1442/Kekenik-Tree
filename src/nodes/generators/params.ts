@@ -860,22 +860,99 @@ export function skinParams(defaultSpineOnly = false, sides?: number, welding = f
 
 export function uvParams(extensions = false): ParamDef[] {
   const m = section('UV', 'Mapping');
+  const u = section('UV', 'U');
+  const fr = section('UV', 'Fractional');
+  const tw = section('UV', 'Twist');
+  const v = section('UV', 'V');
   const t = section('UV', 'Tiling');
-  const ex = section('UV', 'Extensions');
+  const whole = { param: 'uvFractional', op: 'eq', value: false } as const;
+  const aspect = { param: 'uvVStyle', op: 'eq', value: 'relative-keep-aspect-ratio' } as const;
   return [
+    m.enumOf('uvStyle', 'Style', 'Unrestricted', ['Unrestricted', 'U locked [0,1], V unrestricted', 'U and V locked [0,1]'], {
+      tooltip: 'Unrestricted lets the coordinates tile freely. The locked styles keep U (or U and V) inside 0..1: one texture copy around the branch, and for U and V locked one along it. Offsets and twist are ignored while locked.',
+    }),
     ...(extensions
       ? [
-          ex.enumOf('extensionUvStyle', 'Extension style', 'Automatic', ['Automatic', 'Manual (match)', 'Manual (match u only)', 'Manual (full control)'], {
-            tooltip: 'How the texture coordinates of extensions follow their parent. Extensions always continue the parent mapping; the manual styles arrive with the UV mapping update and map as Automatic for now.',
+          m.enumOf('extensionUvStyle', 'Extension style', 'Automatic', ['Automatic', 'Manual (match)', 'Manual (match u only)', 'Manual (full control)'], {
+            tooltip: 'How an extension maps its texture next to the branch it extends. Automatic continues the parent (tiles around, V, twist, offset). Manual (match) uses its own settings but the parent tile count and a V that starts where the parent ends. Manual (match u only) only copies the tile count. Manual (full control) ignores the parent.',
           }),
         ]
       : []),
-    m.enumOf('uvMode', 'Mode', 'Metric', ['Metric', 'Normalized']),
-    m.bool('uvRotate', 'Rotate 90°', false),
-    t.float('uvScaleU', 'U scale', 1, { min: 0.01, max: 100, softMax: 10 }),
-    t.float('uvScaleV', 'V scale', 1, { min: 0.01, max: 100, softMax: 10 }),
-    t.float('uvOffsetU', 'U offset', 0, { min: -10, max: 10 }),
-    t.float('uvOffsetV', 'V offset', 0, { min: -10, max: 10 }),
+    m.bool('uvRotate', 'Rotate 90°', false, { tooltip: 'Swaps U and V (turns the texture a quarter turn).' }),
+    u.int('uvUAbsolute', 'Absolute', 0, {
+      min: 0,
+      max: 64,
+      softMax: 8,
+      visibleIf: whole,
+      tooltip: 'Texture copies around the branch regardless of its thickness. The total is always a whole number, at least 1.',
+    }),
+    u.float('uvURelative', '+ Relative', 1, {
+      min: 0,
+      max: 16,
+      softMax: 4,
+      step: 0.05,
+      visibleIf: whole,
+      tooltip: 'Extra copies per metre of circumference, so thick branches get more (1 = one copy per metre of girth, the classic world-size tiling).',
+    }),
+    u.float('uvOffsetU', 'Offset', 0, {
+      min: -10,
+      max: 10,
+      variance: 0,
+      tooltip: 'Turns the texture around the branch (in copies). The variance turns every branch by a random amount, so the seam faces a different way.',
+    }),
+    fr.bool('uvFractional', 'Enable', false, { tooltip: 'Allow a fractional number of copies around the branch. The texture no longer closes on itself, so a seam can show.' }),
+    fr.bool('uvFractionalAuto', 'Auto', false, {
+      visibleIf: { param: 'uvFractional', op: 'eq', value: true },
+      tooltip: 'Uses the same texel density as the parent branch (copies per metre of girth). A seam may appear.',
+    }),
+    fr.float('uvFractionalValue', 'Value', 1, {
+      min: 0.01,
+      max: 64,
+      softMax: 8,
+      step: 0.01,
+      visibleIf: { all: [{ param: 'uvFractional', op: 'eq', value: true }, { param: 'uvFractionalAuto', op: 'eq', value: false }] },
+      tooltip: 'Free number of copies around the branch; Absolute and Relative are ignored.',
+    }),
+    tw.float('uvTwist', 'Amount', 0, { min: -16, max: 16, softMin: -2, softMax: 2, step: 0.01, tooltip: 'Turns per V tile: the texture spirals around the branch as it runs along it.' }),
+    tw.bool('uvTwistFlip', 'Random flip', false, { tooltip: 'Gives every branch a random spiral direction.' }),
+    v.enumOf('uvVStyle', 'Style', 'Absolute', ['Absolute', 'Relative (keep aspect ratio)', 'Relative'], {
+      tooltip: 'Absolute: copies per metre of length. Relative (keep aspect ratio): the texture keeps its proportions, a copy is as long as it is wide. Relative: the texture is stretched over the whole length of the branch.',
+    }),
+    v.enumOf('uvVAnchor', 'Anchor', 'Start', ['Start', 'End'], { tooltip: 'Which end of the branch lies on a whole V number (End puts a texture edge exactly at the tip).' }),
+    v.float('uvScaleV', 'Scale', 1, {
+      min: 0.01,
+      max: 100,
+      softMax: 10,
+      tooltip: 'Absolute: V copies per metre. Relative (keep aspect ratio): multiplies the density. Relative: the number of copies along the branch.',
+    }),
+    v.float('uvSkew', 'Skew correction', 0, {
+      min: 0,
+      max: 1,
+      visibleIf: aspect,
+      tooltip: 'Compensates the narrowing or widening of a tapering branch (0 = the texture tapers with it, 1 = it keeps its proportions everywhere).',
+    }),
+    v.float('uvPinch', 'Pinch', 0.25, {
+      min: 0,
+      max: 1,
+      visibleIf: aspect,
+      tooltip: 'Stops the texture from racing along the last stretch of a pointed tip (higher values keep the radius used for V further from zero).',
+    }),
+    v.float('uvOffsetV', 'Offset', 0, {
+      min: -10,
+      max: 10,
+      variance: 0,
+      tooltip: 'Moves the texture along the branch (in copies). The variance starts every branch at a random V.',
+    }),
+    ...(extensions
+      ? [
+          t.enumOf('uvTilingStyle', 'Style', 'Tiling', ['Tiling', '0-1 patches (choose one assigned material)', '0-1 patches (use all assigned materials)'], {
+            tooltip: 'Tiling repeats the texture. The patch styles cut the branch into 0..1 patches (one per V tile) that show a UV Area of the material: one material for the whole branch, or any assigned material per patch. Vertices are doubled along the seams. Set the area and placement of every row with the patch button in the Material tab.',
+          }),
+        ]
+      : []),
+    t.bool('uvOptimize', 'Optimize segments', false, { tooltip: 'Avoids rings that are very close together near a patch seam (or a whole V number): the seam moves onto a ring within the V tolerance instead of adding one.' }),
+    t.float('uvVTolerance', 'V tolerance', 0.1, { min: 0, max: 0.5, step: 0.01, tooltip: 'How close (in V) a ring must be to a whole number to be moved onto it while Optimize segments is on.' }),
+    ...(extensions ? [t.seed('uvTilingSeed', 'Seed')] : []),
   ];
 }
 
@@ -1040,11 +1117,38 @@ export function displacementParams(): ParamDef[] {
   ];
 }
 
-export function materialTabParams(): ParamDef[] {
+/**
+ * Branch / Extension material row list (Material, Weight; the UV Area and Placement fields of the patch options show only
+ * while Tiling is not `Tiling`). Rendered by the `barkMaterials` list widget; read through `readBranchMaterialRows`.
+ */
+export function barkMaterialList(id: string, label: string, subgroup: string, defaultMaterial: string): ListParamDef {
+  return {
+    kind: 'list',
+    widget: 'barkMaterials',
+    id,
+    label,
+    group: 'Material',
+    subgroup,
+    minItems: 1,
+    maxItems: 32,
+    default: [{ material: defaultMaterial, weight: 1, uvArea: 'whole', placement: 'anywhere' }],
+    tooltip: 'Materials of the branches. Each branch picks a row by weight. Inherited uses the material of the parent.',
+    fields: [
+      { kind: 'enum', id: 'material', label: 'Material', group: 'Material', default: defaultMaterial, options: [{ value: '', label: 'None' }] },
+      { kind: 'float', id: 'weight', label: 'Weight', group: 'Material', default: 1, min: 0, max: 100, softMax: 10 },
+      { kind: 'enum', id: 'uvArea', label: 'UV Area', group: 'Material', default: 'whole', options: [{ value: 'whole', label: 'Whole map' }, { value: 'any', label: 'Any' }] },
+      { kind: 'enum', id: 'placement', label: 'Placement', group: 'Material', default: 'anywhere', options: [{ value: 'anywhere', label: 'Anywhere' }, { value: 'first-ring', label: 'First ring' }] },
+    ],
+  };
+}
+
+export function materialTabParams(branch = false): ParamDef[] {
   const m = section('Material', 'Material');
   const b = section('Material', 'Blend');
   return [
-    { kind: 'enum', id: 'material', label: 'Material', group: 'Material', subgroup: 'Material', default: '', options: [{ value: '', label: 'None' }] },
+    ...(branch
+      ? [barkMaterialList('barkMaterials', 'Material', 'Material', ''), barkMaterialList('extensionMaterials', 'Extension material', 'Extensions', 'inherited')]
+      : [{ kind: 'enum', id: 'material', label: 'Material', group: 'Material', subgroup: 'Material', default: '', options: [{ value: '', label: 'None' }] } satisfies ParamDef]),
     m.color('materialTint', 'Tint', [1, 1, 1, 1]),
     m.float('materialVariation', 'Variation', 0, { min: 0, max: 1, variance: 0 }),
     b.float('blendBase', 'Base blend', 0, { min: 0, max: 1, curve: true }),

@@ -1,5 +1,8 @@
 import { getApp, type AppContext } from '@/app/context';
 import { activeDocument } from '@/app/state';
+import { setWindParam } from '@/app/windControl';
+import type { WindNumericKey } from '@/viewport/wind/windParams';
+import { getWindSystem } from '@/viewport/wind/windSystem';
 import { VIEW_MODES, VIEW_MODE_LABELS, type ViewMode } from '@/contracts/app';
 import type { ParamDef, ParamState, RGBA } from '@/contracts/params';
 import { rgbaToCss } from '../../components/colorPicker';
@@ -278,55 +281,26 @@ export function mountProjectSettingsContent(container: HTMLElement, app: AppCont
   rowInstances.push(lodCountRow);
   lodRows.push(lodCountRow.element);
 
-  // Global Wind rows
+  // Global Wind rows: read the effective wind, write where it takes effect (Wind node on the Tree or project settings).
   const windRows: HTMLElement[] = [];
-  const windEnHolder = h('div', '');
-  const windEnRow = mountParamRow(windEnHolder, {
-    def: windEnabledDef,
-    state: { value: getMeta()?.settings.wind.enabled ?? false },
-    nodeName: 'Wind',
-    onChange: (next) => {
-      const meta = getMeta();
-      if (meta && typeof next.value === 'boolean') {
-        meta.settings.wind.enabled = next.value;
-        app.undo.markDirty();
-      }
-    },
-  });
-  rowInstances.push(windEnRow);
-  windRows.push(windEnRow.element);
-
-  const windStrHolder = h('div', '');
-  const windStrRow = mountParamRow(windStrHolder, {
-    def: windStrengthDef,
-    state: { value: getMeta()?.settings.wind.strength ?? 0.3 },
-    nodeName: 'Wind',
-    onChange: (next) => {
-      const meta = getMeta();
-      if (meta && typeof next.value === 'number') {
-        meta.settings.wind.strength = next.value;
-        app.undo.markDirty();
-      }
-    },
-  });
-  rowInstances.push(windStrRow);
-  windRows.push(windStrRow.element);
-
-  const windDirHolder = h('div', '');
-  const windDirRow = mountParamRow(windDirHolder, {
-    def: windDirDef,
-    state: { value: getMeta()?.settings.wind.directionDeg ?? 0 },
-    nodeName: 'Wind',
-    onChange: (next) => {
-      const meta = getMeta();
-      if (meta && typeof next.value === 'number') {
-        meta.settings.wind.directionDeg = next.value;
-        app.undo.markDirty();
-      }
-    },
-  });
-  rowInstances.push(windDirRow);
-  windRows.push(windDirRow.element);
+  const windRow = (def: ParamDef, key: WindNumericKey | 'enabled'): ParamRowInstance => {
+    const holder = h('div', '');
+    const r = mountParamRow(holder, {
+      def,
+      state: { value: getWindSystem().params[key] },
+      nodeName: 'Wind',
+      onChange: (next, merge) => {
+        if (typeof next.value === 'boolean' || typeof next.value === 'number') setWindParam(app, key, next.value, merge);
+      },
+      onCommit: () => app.graph.endGesture(),
+    });
+    rowInstances.push(r);
+    windRows.push(r.element);
+    return r;
+  };
+  const windEnRow = windRow(windEnabledDef, 'enabled');
+  const windStrRow = windRow(windStrengthDef, 'strength');
+  const windDirRow = windRow(windDirDef, 'directionDeg');
 
   container.append(
     makeCollapsibleSection('Project & Units', projectRows, () => {
@@ -352,6 +326,10 @@ export function mountProjectSettingsContent(container: HTMLElement, app: AppCont
     unitsRow.update({ value: getMeta()?.settings.units ?? 'm' });
     lodPrevRow.update({ value: app.store.get().lodLevel });
     lodCountRow.update({ value: getMeta()?.settings.lodCount ?? 4 });
+    const w = getWindSystem().params;
+    windEnRow.update({ value: w.enabled });
+    windStrRow.update({ value: w.strength });
+    windDirRow.update({ value: w.directionDeg });
     const tNode = findTreeNode();
     if (tNode) {
       scaleRow.update(tNode.params.scale ?? { value: 1 });
@@ -363,6 +341,7 @@ export function mountProjectSettingsContent(container: HTMLElement, app: AppCont
   unsubs.push(
     app.store.subscribe(() => syncFromApp()),
     app.events.on('graph:changed', () => syncFromApp()),
+    getWindSystem().onChange(() => syncFromApp()),
   );
 
   return {

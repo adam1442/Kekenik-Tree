@@ -689,6 +689,7 @@ export function createPropertiesPanel(host: HTMLElement): PanelInstance {
                 disabled: allLocked,
                 pairedEnable: pairedOpt,
                 resolveDynamicOptions,
+                nodeParams: () => (nodes[0] as GraphNode).params,
                 onChange: (nextState, merge) => {
                   isEditingParam = true;
                   applyParams(nodes.map((n) => n.id),

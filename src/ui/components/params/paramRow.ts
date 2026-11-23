@@ -1,5 +1,5 @@
 import { cloneCurve, flatCurve, getCurvePreset, type Curve } from '@/core/curve';
-import { defaultParamState, type BoolParamDef, type ParamDef, type ParamState } from '@/contracts/params';
+import { defaultParamState, type BoolParamDef, type NodeParams, type ParamDef, type ParamState } from '@/contracts/params';
 import { mountMiniCurve, type MiniCurveInstance } from '../curve';
 import { h } from '../dom';
 import { showMenu, type MenuItem } from '../menu';
@@ -49,6 +49,8 @@ export interface ParamRowMountOptions {
     onCommit?: (next: ParamState, previous: ParamState) => void;
   };
   resolveDynamicOptions?: (fieldId: string) => { value: string; label: string }[];
+  /** Parameters of the edited node (for widgets that depend on other parameters). */
+  nodeParams?: () => NodeParams;
   onChange: (next: ParamState, merge: boolean) => void;
   onCommit?: (next: ParamState, previous: ParamState) => void;
 }
@@ -76,6 +78,7 @@ export function mountParamRow(host: HTMLElement, opts: ParamRowMountOptions): Pa
       mixed: opts.mixed,
       disabled: opts.disabled,
       resolveDynamicOptions: opts.resolveDynamicOptions,
+      nodeParams: opts.nodeParams,
       onChange: opts.onChange,
       onCommit: opts.onCommit,
     });

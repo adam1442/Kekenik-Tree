@@ -1,11 +1,12 @@
-import { getString, type NodeParams } from '@/contracts/params';
+import type { NodeParams } from '@/contracts/params';
+import { primaryMaterialRef } from './uvConfig';
 import type { MaterialDef } from '@/contracts/material';
 import { getSourceSize } from '@/materials/displacement';
 import { getMaterialSource } from '@/materials/materialSource';
 
 function findMaterial(params: NodeParams): MaterialDef | null {
   const src = getMaterialSource();
-  const ref = getString(params, 'material', '');
+  const ref = primaryMaterialRef(params);
   if (!src || !ref) return null;
   const materials = src.materials();
   const direct = materials.find((m) => m.id === ref || m.name === ref);

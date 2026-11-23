@@ -1024,6 +1024,11 @@
   right: 6px;
   top: 4px;
 }
+.kt-type-patch {
+  position: absolute;
+  right: 28px;
+  top: 4px;
+}
 .kt-slot-prob {
   position: absolute;
   left: var(--kt-space-3);

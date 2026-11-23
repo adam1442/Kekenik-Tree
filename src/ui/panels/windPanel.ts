@@ -1,7 +1,7 @@
 import { getApp } from '@/app/context';
-import type { WindSettings } from '@/contracts/material';
+import { setWindParam } from '@/app/windControl';
 import { getWindSystem } from '@/viewport/wind/windSystem';
-import { WIND_PARAM_RANGES, windParamsFromSettings, writeWindParam, type WindNumericKey } from '@/viewport/wind/windParams';
+import { WIND_PARAM_RANGES, type WindNumericKey } from '@/viewport/wind/windParams';
 import { h } from '../components/dom';
 import { createSelect } from '../components/select';
 import type { PanelContext, PanelInstance } from '../docking/panelRegistry';
@@ -20,7 +20,6 @@ export function createWindPanel(host: HTMLElement, _ctx: PanelContext): PanelIns
   const wind = getWindSystem();
   host.classList.add('kt-wind');
 
-  const settings = (): WindSettings | null => app.project.metaOf(app.store.get().activeDocumentId)?.settings.wind ?? null;
   const rows: RowHandle[] = [];
 
   const row = (label: string, ...controls: HTMLElement[]): HTMLElement => h('div', 'kt-wind-row', h('label', 'kt-wind-label', label), ...controls);
@@ -61,12 +60,7 @@ export function createWindPanel(host: HTMLElement, _ctx: PanelContext): PanelIns
   };
 
   const commit = (key: WindNumericKey | 'enabled', value: number | boolean): void => {
-    const s = settings();
-    if (!s) return;
-    if (key === 'enabled') s.enabled = Boolean(value);
-    else writeWindParam(s, key, Number(value));
-    app.undo.markDirty();
-    wind.syncProject(s);
+    setWindParam(app, key, value, key !== 'enabled');
     sync();
   };
 
@@ -104,7 +98,7 @@ export function createWindPanel(host: HTMLElement, _ctx: PanelContext): PanelIns
       sec = h('div', 'kt-wind-section', h('div', 'kt-wind-title', r.group));
       sections.set(r.group, sec);
     }
-    const s = slider(r.min, r.softMax, r.step, () => windParamsFromSettings(settings())[r.key], (v) => commit(r.key, v));
+    const s = slider(r.min, r.softMax, r.step, () => wind.params[r.key], (v) => commit(r.key, v));
     rows.push(s);
     sec.append(row(r.unit ? `${r.label} (${r.unit})` : r.label, s.wrap));
   }
@@ -114,7 +108,7 @@ export function createWindPanel(host: HTMLElement, _ctx: PanelContext): PanelIns
   const sync = (): void => {
     rows.forEach((r) => r.sync());
     playBtn.replaceChildren(icon(wind.state.playing ? 'pause' : 'play', 14), h('span', '', wind.state.playing ? 'Pause' : 'Play'));
-    note.textContent = wind.overridden ? 'A Wind node attached to the Tree overrides the project wind settings.' : '';
+    note.textContent = wind.overridden ? 'A Wind node attached to the Tree provides these settings; changes here edit that node.' : '';
   };
   sync();
   const unsub = wind.onChange(sync);

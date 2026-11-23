@@ -47,6 +47,7 @@ import { leafPlacementParams } from './leafPlacementParams';
 import { leafDeformParams, leafDependencyKey, materialHeightKey } from './leafDeformParams';
 import { leafLightingParams } from './leafLightingParams';
 import { migrateLeafParams } from './foliage';
+import { migrateBranchMaterial, uvDependencyKey } from './uvConfig';
 import { withGenerationMigration } from './generationMigration';
 import { migrateSpineParams } from '@/generators/spine';
 import { vTileDependencyKey } from './vTile';
@@ -111,7 +112,7 @@ const structureParams = (
   ...uvParams(spine.kind === 'branch'),
   ...lodParams(),
   ...structureDisplacementParams(),
-  ...materialTabParams(),
+  ...materialTabParams(spine.kind === 'branch'),
   ...animationParams(),
   ...handDrawnParams(),
 ];
@@ -169,15 +170,15 @@ const baseNodeDefs: NodeDef[] = [
     description: 'Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifurcations, and pruning.',
     statsGroup: 'branches',
     ports: withChildren,
-    version: 4,
-    migrate: withGenerationMigration((params) => migrateSpineParams(params)),
+    version: 5,
+    migrate: withGenerationMigration((params) => migrateBranchMaterial(migrateSpineParams(params))),
     params: structureParams(
       { number: 12, first: 0.2, last: 0.95, jumble: 0.2, includeBranchExtended: true, placement: true, extend: true },
       { kind: 'branch', length: 3.2, radius: 0.06, taper: 0.88, segments: 10, spread: 48, gravity: 0.16, upDown: 0.06, noiseAmount: 0.2 },
       8,
     ),
     evaluate: withLineage(withDisplacementWarning(evaluateBranch)),
-    dependencyKey: displacementDeps,
+    dependencyKey: (params) => `${displacementDeps(params)}|${uvDependencyKey(params)}`,
   },
   {
     type: 'generator.root',

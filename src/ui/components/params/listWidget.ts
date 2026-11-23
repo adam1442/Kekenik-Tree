@@ -56,6 +56,10 @@ export interface ListWidgetHooks {
   rowChanged?(item: ListItem, fieldId: string): boolean;
   /** Small caption shown in the row's corner (e.g. pick probability). */
   rowHint?(item: ListItem, items: readonly ListItem[]): string;
+  /** True for a field that is not shown for this row (e.g. patch options while they are collapsed). */
+  fieldHidden?(fieldId: string, item: ListItem, index: number): boolean;
+  /** Extra control shown in the corner of a row (e.g. the patch options button); `rerender` rebuilds the cards. */
+  rowControl?(item: ListItem, index: number, rerender: () => void): HTMLElement | null;
 }
 
 export function createListWidget(
@@ -161,6 +165,8 @@ export function createListWidget(
         hintEls.push(hint);
         card.append(hint);
       }
+      const control = hooks.rowControl?.(item, idx, renderCards);
+      if (control) card.append(control);
       card.addEventListener('dragover', (e) => {
         if (e.dataTransfer?.types.includes('application/x-kekenik-cutout')) {
           e.preventDefault();
@@ -183,6 +189,7 @@ export function createListWidget(
       });
 
       for (const field of def.fields) {
+        if (hooks.fieldHidden?.(field.id, item, idx)) continue;
         const fieldVal: ParamScalar = item[field.id] ?? (field.default as ParamScalar);
         const fieldHost = h('div', 'kt-row-control');
         let gestureStart = structuredClone(curState);

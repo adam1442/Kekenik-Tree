@@ -10,6 +10,7 @@ import { Rng } from '@/core/rng';
 import { createBranchDisplacer, sharpnessLut, type BranchDisplaceSpec, type DisplaceMapping, type DisplaceSource } from '@/generators/displace';
 import { createDisplacementDef, displacementStamp, getHeightMips, hasDisplacementSource, type HeightField } from '@/materials/displacement';
 import { getMaterialSource, resolveMaterialRef } from '@/materials/materialSource';
+import { primaryMaterialRef } from './uvConfig';
 
 export type DisplacementState = 'off' | 'missing' | 'unloaded' | 'ready';
 
@@ -41,7 +42,7 @@ export function displacementDependencyKey(params: NodeParams): string {
   const id = getString(params, 'displacement', '');
   const assetKey = !id ? '' : ((def) => (def ? `${id}:${displacementStamp(def)}` : `${id}:missing`))(getMaterialSource()?.displacements().find((d) => d.id === id));
   if (readSource(params) !== 'material') return assetKey;
-  const heights = materialHeightDefs(getString(params, 'material', '')).map((d) => displacementStamp(d));
+  const heights = materialHeightDefs(primaryMaterialRef(params)).map((d) => displacementStamp(d));
   return `${assetKey}|m:${heights.join(',')}`;
 }
 
@@ -103,7 +104,7 @@ export function resolveHeightSource(params: NodeParams, materialId: string): Res
 export function warnDisplacement(ctx: NodeContext, params: NodeParams): void {
   const mainActive = getNumber(params, 'displaceRadial', 0) !== 0 || getNumber(params, 'displaceLength', 0) !== 0;
   if (mainActive && readSource(params) === 'material') {
-    const ref = resolveMaterialRef(getString(params, 'material', ''), new Rng(0));
+    const ref = resolveMaterialRef(primaryMaterialRef(params), new Rng(0));
     const h = resolveHeightSource(params, ref);
     if (h.state === 'missing') ctx.logger.warn('Displacement source is Material: assign a material that has a Height map.');
     else if (h.state === 'unloaded') ctx.logger.warn('The material Height image is not loaded yet.');

@@ -6,7 +6,9 @@ import { cross, dot, hash01, len, mul, norm, orthogonalize, perpendicular, rotat
 import { MeshAccumulator, newVertex, type VertexAttrs } from './meshAccumulator';
 import { computeSkeletonWind, WIND_ATTRIBUTES } from './windAttributes';
 import { ChildPathEvaluator, frameNormalFor, lightingNormal, lightingValue, parentSurfaceFor, solveWeld, squashSurface, weldBlendValue, weldRingCount, type ChildPath, type ParentSurface, type WeldMeshOptions, type WeldResult } from '@/generators/weld';
-import { bendPushFactor, leanNormal, seamWeight, squashRadius } from '@/generators/skin';
+import { bendPushFactor, leanNormal, seamWeight, squashRadius, SUB_LEVEL_ATTR } from '@/generators/skin';
+import { DEFAULT_UV_MAPPING, remapToRect, WHOLE_MAP, type UvMapping, type UvRect } from '@/generators/uv';
+import { planBranchUv, writeUvAttributes, type UvMaterialOptions, type UvPlan } from './tubeUv';
 import { EXTENSION_ATTR, EXTENSION_DISPLACE_ATTR, EXTENSION_SMOOTH_ATTR } from '@/generators/split';
 import type { BranchDisplacer, BranchDisplaceVertex, DisplaceOut } from '@/generators/displace';
 
@@ -41,6 +43,15 @@ export interface TubeOptions {
   segmentKeep?: number;
   section?: SectionShape;
   uv?: Partial<TubeUv>;
+  /**
+   * Branch UV mapping (UV tab). Absent = the legacy `uv` scale / offset options, which are translated to the same mapping.
+   * Written to the skeleton points of every meshed branch so children and extensions can continue it.
+   */
+  uvMapping?: UvMapping;
+  /** Material lists of Branch / Extension (one row per entry, patches use UV Areas); absent = every branch uses `materialId`. */
+  uvMaterials?: UvMaterialOptions;
+  /** Material that an `Inherited` row resolves to (the parent generator's material). */
+  inheritedMaterial?: string;
   /** 1 = smooth normals, < 0.5 = faceted (unwelded quads). */
   smoothing?: number;
   /** 0..1 blend of the normals toward the pure cylindrical normal (hides section detail in lighting). */
@@ -438,6 +449,21 @@ function spliceWeld(sm: Samples, frames: V3[], w: WeldResult): { sm: Samples; fr
   return { sm: { n: count, pos, rad, sf: sfo, s, t, tan, first: 0 }, frames: outFrames };
 }
 
+/** The mapping the legacy `uv` options (scale, offset, normalized) describe, so old callers and saved projects map identically. */
+function legacyUvMapping(uv: TubeUv): UvMapping {
+  return {
+    ...DEFAULT_UV_MAPPING,
+    rotate: uv.rotate,
+    uAbsolute: 0,
+    uRelative: uv.normalized ? 0 : uv.scaleU,
+    fractional: uv.normalized ? { enabled: true, auto: false, value: uv.scaleU } : DEFAULT_UV_MAPPING.fractional,
+    uOffset: uv.offsetU,
+    vStyle: uv.normalized ? 'relative' : 'absolute',
+    vScale: uv.scaleV,
+    vOffset: uv.offsetV,
+  };
+}
+
 /**
  * Skeleton -> tube mesh. Rotation-minimising frames (continuous twist), analytic smooth normals + tangents,
  * metric UV0 (tiling by world length), unique UV1 cells, baked AO / colour, wind attributes, closed tips and bases,
@@ -450,6 +476,15 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
   const aspect = Math.max(0.05, opts.section?.aspect ?? 1);
   const sqrtA = Math.sqrt(aspect);
   const uvo: TubeUv = { normalized: false, scaleU: 1, scaleV: 1, offsetU: 0, offsetV: 0, rotate: false, ...opts.uv };
+  const uvMap: UvMapping = opts.uvMapping ?? legacyUvMapping(uvo);
+  const uvRotate = opts.uvMapping ? uvMap.rotate : uvo.rotate;
+  let slotMaterial = opts.materialId;
+  const setSlot = (material: string): void => {
+    if (material === slotMaterial) return;
+    acc.beginSlot(material);
+    slotMaterial = material;
+  };
+  const branchMaterials = new Map<number, string>();
   const smooth = (opts.smoothing ?? 1) >= 0.5;
   const flatten = Math.min(1, Math.max(0, opts.flatten ?? 0));
   const collarAmountOpt = Math.max(0, opts.collarAmount ?? 0.3);
@@ -500,8 +535,31 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
       sm = sampleBranch(sk, b, opts, junction, collarAmount);
       if (sm.n >= 2) frames = buildNormals(sk, b, sm, opts);
     }
+    if (sm.n < 2) continue;
+    let rMaxPlan = 0;
+    for (let i = 0; i < sm.n; i++) rMaxPlan = Math.max(rMaxPlan, sm.rad[i] as number);
+    const host = (sk.attributes.get(SUB_LEVEL_ATTR)?.[b.start] ?? 0) > 0 ? sk : (opts.parent ?? null);
+    const plan: UvPlan = planBranchUv({
+      mapping: uvMap,
+      ...(opts.uvMaterials ? { materials: opts.uvMaterials } : {}),
+      sk,
+      b,
+      host,
+      isExtension,
+      sm,
+      frames,
+      weldRings: weld ? weld.rings : 0,
+      rMax: rMaxPlan,
+      metresPerTile: Math.max(1e-4, opts.uvMetres),
+      seed,
+      fallbackMaterial: opts.materialId,
+      inheritedMaterial: (host === sk ? branchMaterials.get(b.parentBranch) : undefined) ?? opts.inheritedMaterial ?? opts.materialId,
+    });
+    sm = plan.sm;
+    frames = plan.frames;
+    branchMaterials.set(bi, plan.materials[0] as string);
+    writeUvAttributes(sk, b, plan);
     const R = sm.n;
-    if (R < 2) continue;
     const weldRings = weld ? weld.rings : 0;
     const r0 = sm.rad[sm.first] as number;
     const squash = opts.squash && opts.squash.amount > 0 ? opts.squash : null;
@@ -516,7 +574,7 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
     }
     let rMax = 0;
     for (let i = 0; i < R; i++) rMax = Math.max(rMax, sm.rad[i] as number);
-    const uTiles = uvo.normalized ? uvo.scaleU : Math.max(1, Math.round(((2 * Math.PI * rMax * uvo.scaleU) / Math.max(1e-4, opts.uvMetres))));
+    const uTiles = plan.uTiles;
     const tintMul = 1 + (hash01(b.id + 1, seed) * 2 - 1) * (opts.tintVariance ?? 0) * 0.5;
     const parentT = junction && opts.parent && b.parentPoint < opts.parent.count ? (opts.parent.t[b.parentPoint] as number) : 0.5;
     const parentColor = junction && opts.parent ? opts.color(Math.max(0, b.generation - 1), parentT) : null;
@@ -530,8 +588,6 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
     };
     const dOut: DisplaceOut = { radial: 0, along: 0, normal: 0 };
     const displaced = opts.displace !== undefined || opts.displaceField !== undefined;
-    const ringTotalS = Math.max(1e-9, sm.s[R - 1] as number);
-    const ringV = (sv: number): number => (uvo.normalized ? (sv / ringTotalS) * uvo.scaleV : (sv / Math.max(1e-4, opts.uvMetres)) * uvo.scaleV) + uvo.offsetV;
     const weldEndS = weld ? weld.sEnd : 0;
     const gp = new Float32Array(R * V * 3);
     const dirs = new Float32Array(R * V * 3);
@@ -568,7 +624,7 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
         dv.sEnd = (sm.s[R - 1] as number) - s;
         dv.radius = radius;
         dv.sFree = s - weldEndS;
-        dv.uvV = ringV(s);
+        dv.uvV = plan.vRing[i] as number;
       }
       // Smooth: on a bend the ring plane cuts the tube obliquely, so the section stretches by 1 / cos(half the turn) in the bend plane.
       let bendK = 0;
@@ -609,7 +665,7 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
           dv.u = (j % sides) / sides;
           if (opts.displace) dd = opts.displace(dv) * displaceScale;
           if (opts.displaceField) {
-            dv.uvU = dv.u * uTiles + uvo.offsetU;
+            dv.uvU = dv.u * uTiles + plan.uOffset;
             opts.displaceField(dv, dOut);
             dd += dOut.normal * displaceScale;
             radialD = dOut.radial * displaceScale;
@@ -656,9 +712,8 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
       const w1 = lerpAttr(wind[1], b, f, 0);
       const w2 = lerpAttr(wind[2], b, f, 0);
       const w3 = lerpAttr(wind[3], b, f, 0);
-      const totalS = Math.max(1e-9, sm.s[R - 1] as number);
-      const vAt = (sv: number): number => (uvo.normalized ? (sv / totalS) * uvo.scaleV : (sv / Math.max(1e-4, opts.uvMetres)) * uvo.scaleV);
-      const vBase = vAt(s);
+      const vBase = plan.vRing[i] as number;
+      const ringRect = plan.patch ? (plan.rects[plan.patch.patch[i] as number] ?? plan.rects[0]) : undefined;
       for (let j = 0; j < V; j++) {
         const jm = j % sides;
         const jp = (jm + 1) % sides;
@@ -692,15 +747,17 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
         if (extensionSmooth > 0) n = leanNormal(n, d, seamWeight(s, r0, extensionSmooth));
         const tg = norm(dPu, perpendicular(n));
         const bit = cross(n, tg);
-        const u = (j / sides) * uTiles + uvo.offsetU;
-        const v = (onWeld && weld ? vAt(weld.vs[i * sides + jm] as number) : vBase) + uvo.offsetV;
+        const vHere = onWeld && weld ? plan.vAt(weld.vs[i * sides + jm] as number) : vBase;
+        let u = (j / sides) * uTiles + plan.uOffset + plan.twist * uTiles * vHere;
+        let v = vHere;
+        if (ringRect) [u, v] = remapToRect(ringRect, j / sides, vHere);
         const vx = newVertex();
         vx.px = gp[o] as number; vx.py = gp[o + 1] as number; vx.pz = gp[o + 2] as number;
         vx.nx = n[0]; vx.ny = n[1]; vx.nz = n[2];
         vx.tx = tg[0]; vx.ty = tg[1]; vx.tz = tg[2];
         vx.tw = dot(bit, dPv) >= 0 ? 1 : -1;
-        vx.u = uvo.rotate ? v : u;
-        vx.v = uvo.rotate ? u : v;
+        vx.u = uvRotate ? v : u;
+        vx.v = uvRotate ? u : v;
         vx.u1 = (cx + j / sides) / cells;
         vx.v1 = (cy + t) / cells;
         vx.r = col[0] * shade; vx.g = col[1] * shade; vx.b = col[2] * shade;
@@ -718,13 +775,13 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
           const qz = rz - al * attach.axis[2];
           let dphi = Math.atan2(qx * attach.binormal[0] + qy * attach.binormal[1] + qz * attach.binormal[2], qx * attach.normal[0] + qy * attach.normal[1] + qz * attach.normal[2]) - attach.childPhi;
           dphi -= Math.round(dphi / (2 * Math.PI)) * 2 * Math.PI;
-          const pTiles = uvo.normalized ? uvo.scaleU : Math.max(1, Math.round((2 * Math.PI * attach.radius * uvo.scaleU) / Math.max(1e-4, opts.uvMetres)));
-          const pu = (((attach.childPhi + dphi) / (2 * Math.PI)) * pTiles + uvo.offsetU) * blendOpt.textureScale;
+          const pTiles = plan.parentTiles(attach.radius);
+          const pu = (((attach.childPhi + dphi) / (2 * Math.PI)) * pTiles + plan.uOffset) * blendOpt.textureScale;
           const alongP = attach.along + al;
-          const pv = ((uvo.normalized ? alongP / attach.length : alongP / Math.max(1e-4, opts.uvMetres)) * uvo.scaleV + uvo.offsetV) * blendOpt.textureScale;
+          const pv = plan.parentV(alongP, attach.length, attach.radius) * blendOpt.textureScale;
           vx.wb = blendHere;
-          vx.wu = uvo.rotate ? pv : pu;
-          vx.wv = uvo.rotate ? pu : pv;
+          vx.wu = uvRotate ? pv : pu;
+          vx.wv = uvRotate ? pu : pv;
           vx.wc = blendOpt.contrast;
           vx.wn = blendOpt.noise;
           vx.wa = 1;
@@ -733,11 +790,16 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
       }
     }
 
-    // --- body triangles
+    // --- body triangles (a patch seam is a doubled ring: the quads between the two copies are not drawn)
+    const patchOf = (ring: number): number => (plan.patch ? (plan.patch.patch[ring] as number) : 0);
+    const materialOf = (patch: number): string => plan.materials[patch] ?? (plan.materials[0] as string);
+    setSlot(materialOf(0));
     if (smooth) {
       const base = acc.vertexCount;
       for (let k = 0; k < grid.length; k++) acc.addVertex(grid[k] as VertexAttrs);
       for (let i = 0; i < R - 1; i++) {
+        if (plan.patch && plan.patch.seamStart[i + 1] === 1) continue;
+        if (plan.patch) setSlot(materialOf(patchOf(i + 1)));
         for (let j = 0; j < sides; j++) {
           const a0 = base + i * V + j;
           const a1 = a0 + 1;
@@ -749,6 +811,8 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
       }
     } else {
       for (let i = 0; i < R - 1; i++) {
+        if (plan.patch && plan.patch.seamStart[i + 1] === 1) continue;
+        if (plan.patch) setSlot(materialOf(patchOf(i + 1)));
         for (let j = 0; j < sides; j++) {
           const q = [grid[i * V + j], grid[i * V + j + 1], grid[(i + 1) * V + j], grid[(i + 1) * V + j + 1]] as VertexAttrs[];
           const e1: V3 = [q[1]!.px - q[0]!.px, q[1]!.py - q[0]!.py, q[1]!.pz - q[0]!.pz];
@@ -764,10 +828,16 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
     }
 
     // --- tip dome
-    if (opts.capEnd !== false) emitTipDome(acc, grid, sm, R, V, sides, tipRings, opts, uvo);
+    if (opts.capEnd !== false) {
+      setSlot(materialOf(plan.materials.length - 1));
+      emitTipDome(acc, grid, sm, R, V, sides, tipRings, { rotate: uvRotate, tipSlope: plan.tipSlope, confined: plan.confined });
+    }
     // --- flat base cap
     const capStart = opts.capStart === undefined || opts.capStart === 'auto' ? !attached : opts.capStart;
-    if (capStart) emitBaseCap(acc, grid, sm, V, sides);
+    if (capStart) {
+      setSlot(materialOf(0));
+      emitBaseCap(acc, grid, sm, V, sides, plan.patch ? (plan.rects[0] ?? WHOLE_MAP) : WHOLE_MAP);
+    }
   }
   return acc.build(opts.materialId, true);
 }
@@ -780,8 +850,7 @@ function emitTipDome(
   V: number,
   sides: number,
   rings: number,
-  opts: TubeOptions,
-  uvo: TubeUv,
+  uv: { rotate: boolean; tipSlope: number; confined: boolean },
 ): void {
   const last = R - 1;
   const P: V3 = [sm.pos[last * 3] as number, sm.pos[last * 3 + 1] as number, sm.pos[last * 3 + 2] as number];
@@ -789,7 +858,8 @@ function emitTipDome(
   const rEnd = sm.rad[last] as number;
   const h = Math.max(rEnd * 0.6, 1e-4);
   const ref = grid[last * V] as VertexAttrs;
-  const vStep = uvo.normalized ? 0.04 : (h / Math.max(1e-4, opts.uvMetres)) * uvo.scaleV;
+  const vStep = uv.tipSlope * h;
+  const apexShift = uv.confined ? 0 : 0.5;
   let prev: number[] = [];
   for (let k = 0; k < rings; k++) {
     const phi = (k / rings) * (Math.PI / 2);
@@ -808,8 +878,8 @@ function emitTipDome(
         py: P[1] + rel[1] * c + T[1] * sn * h,
         pz: P[2] + rel[2] * c + T[2] * sn * h,
         nx: n[0], ny: n[1], nz: n[2],
-        v: uvo.rotate ? src.v : src.v + vStep * (k / rings),
-        u: uvo.rotate ? src.u + vStep * (k / rings) : src.u,
+        v: uv.rotate ? src.v : src.v + vStep * (k / rings),
+        u: uv.rotate ? src.u + vStep * (k / rings) : src.u,
         ao: src.ao,
       };
       cur.push(acc.addVertex(vv));
@@ -826,23 +896,25 @@ function emitTipDome(
     ...ref,
     px: P[0] + T[0] * h, py: P[1] + T[1] * h, pz: P[2] + T[2] * h,
     nx: T[0], ny: T[1], nz: T[2],
-    u: uvo.rotate ? ref.u + vStep : ref.u + 0.5,
-    v: uvo.rotate ? ref.v + 0.5 : ref.v + vStep,
+    u: uv.rotate ? ref.u + vStep : ref.u + apexShift,
+    v: uv.rotate ? ref.v + apexShift : ref.v + vStep,
     tw: 1,
   });
   for (let j = 0; j < sides; j++) acc.addTriangle(prev[j] as number, prev[j + 1] as number, apex);
 }
 
-function emitBaseCap(acc: MeshAccumulator, grid: VertexAttrs[], sm: Samples, V: number, sides: number): void {
+function emitBaseCap(acc: MeshAccumulator, grid: VertexAttrs[], sm: Samples, V: number, sides: number, rect: UvRect): void {
   const P: V3 = [sm.pos[0] as number, sm.pos[1] as number, sm.pos[2] as number];
   const T: V3 = [sm.tan[0] as number, sm.tan[1] as number, sm.tan[2] as number];
   const ref = grid[0] as VertexAttrs;
-  const center = acc.addVertex({ ...ref, px: P[0], py: P[1], pz: P[2], nx: -T[0], ny: -T[1], nz: -T[2], u: 0.5, v: 0.5, tw: 1 });
+  const [cu, cv] = remapToRect(rect, 0.5, 0.5);
+  const center = acc.addVertex({ ...ref, px: P[0], py: P[1], pz: P[2], nx: -T[0], ny: -T[1], nz: -T[2], u: cu, v: cv, tw: 1 });
   const ring: number[] = [];
   for (let j = 0; j < V; j++) {
     const src = grid[j] as VertexAttrs;
     const a = (2 * Math.PI * (j % sides)) / sides;
-    ring.push(acc.addVertex({ ...src, nx: -T[0], ny: -T[1], nz: -T[2], u: 0.5 + 0.5 * Math.cos(a), v: 0.5 + 0.5 * Math.sin(a) }));
+    const [ru, rv] = remapToRect(rect, 0.5 + 0.5 * Math.cos(a), 0.5 + 0.5 * Math.sin(a));
+    ring.push(acc.addVertex({ ...src, nx: -T[0], ny: -T[1], nz: -T[2], u: ru, v: rv }));
   }
   for (let j = 0; j < sides; j++) acc.addTriangle(center, ring[j + 1] as number, ring[j] as number);
 }

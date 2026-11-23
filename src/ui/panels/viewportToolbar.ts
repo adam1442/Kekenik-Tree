@@ -1,14 +1,14 @@
 import { commandItem } from '@/app/menus';
+import { setWindParam } from '@/app/windControl';
 import type { AppContext } from '@/app/context';
 import { formatShortcut } from '@/app/shortcuts';
 import { VIEW_MODES, VIEW_MODE_LABELS, type EditMode, type ViewMode } from '@/contracts/app';
-import type { WindSettings } from '@/contracts/material';
 import { getMaterialLibrary } from '@/materials/library';
 import { getLighting, setLighting } from '@/viewport/lighting';
 import { DEBUG_VIEW_LIMITS, getDebugView, setDebugView } from '@/viewport/debug/debugSettings';
 import { applyQualityPreset, getQuality, QUALITY_PRESETS, type QualityPreset } from '@/viewport/quality/qualitySettings';
 import { addSceneObject, getSceneObjects, getViewFilter, removeSceneObject, setIsolate, setVisibility, showAll, updateSceneObject, VISIBILITY_LABELS, type VisibilityKey } from '@/viewport/viewState';
-import { WIND_PARAM_RANGES, windParamsFromSettings, writeWindParam, type WindNumericKey } from '@/viewport/wind/windParams';
+import { WIND_PARAM_RANGES, type WindNumericKey } from '@/viewport/wind/windParams';
 import { getWindSystem } from '@/viewport/wind/windSystem';
 import { h, isMac } from '../components/dom';
 import { showMenu, type MenuItem } from '../components/menu';
@@ -162,15 +162,7 @@ export function buildViewportToolbar(app: AppContext, ctx: PanelContext): HTMLEl
   const windBtn = btn('wind', 'Wind', 'Wind preview and settings', (b) =>
     showPopover(b, 'Wind', (body) => {
       const wind = getWindSystem();
-      const settings = (): WindSettings | null => app.project.metaOf(store.get().activeDocumentId)?.settings.wind ?? null;
-      const commit = (key: WindNumericKey | 'enabled', value: number | boolean): void => {
-        const s = settings();
-        if (!s) return;
-        if (key === 'enabled') s.enabled = Boolean(value);
-        else writeWindParam(s, key, Number(value));
-        app.undo.markDirty();
-        wind.syncProject(s);
-      };
+      const commit = (key: WindNumericKey | 'enabled', value: number | boolean): void => setWindParam(app, key, value, key !== 'enabled');
       body.append(popToggle('Enable wind', () => wind.params.enabled, (v) => commit('enabled', v)));
       const play = popButton(wind.state.playing ? 'Pause' : 'Play', () => {
         wind.patchState({ playing: !wind.state.playing });
@@ -179,7 +171,7 @@ export function buildViewportToolbar(app: AppContext, ctx: PanelContext): HTMLEl
       body.append(h('div', 'kt-pop-btns', play, popButton('Wind & Timeline panel…', () => app.dock?.openPanel('timeline'))));
       for (const key of ['directionDeg', 'speed', 'strength', 'gustStrength', 'turbulence', 'baseHold'] as const) {
         const r = WIND_PARAM_RANGES.find((x) => x.key === key);
-        if (r) body.append(popSlider(r.label, r.min, r.softMax, r.step, () => windParamsFromSettings(settings())[key], (v) => commit(key, v), r.step < 0.1 ? 2 : 0));
+        if (r) body.append(popSlider(r.label, r.min, r.softMax, r.step, () => wind.params[key], (v) => commit(key, v), r.step < 0.1 ? 2 : 0));
       }
       body.append(popNote('Base hold: height above the ground over which the wind ramps in. Trunk bases and roots never move.'));
     }),

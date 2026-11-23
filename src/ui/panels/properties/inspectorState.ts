@@ -24,6 +24,8 @@ const COUPLED_PARENT_SECTION: Record<string, string> = {
   'Skin/Split spread': 'Splits>Spread',
   'Skin/Split expand': 'Splits>Expand',
   'Skin/Split smooth': 'Splits>Smooth',
+  'UV/Fractional': 'U>Fractional',
+  'UV/Twist': 'U>Twist',
 };
 
 export interface InspectorParamEntry {
@@ -138,7 +140,7 @@ export const STRUCTURE_TABS: readonly InspectorTab[] = [
   tab('Forces'),
   tab('Shape'),
   tab('Skin'),
-  tab('UV'),
+  tab('UV', 'UV Mapping'),
   tab('LOD'),
   tab('Displacement'),
   tab('Material'),

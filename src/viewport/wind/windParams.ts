@@ -106,6 +106,15 @@ export function windParamsFromSettings(s: WindSettings | null | undefined): Wind
   });
 }
 
+/**
+ * Parameter ids of the Wind node. The first four keep the ids of the original contract; the other keys use their own
+ * name (the node stores them in `WindSettings.params`).
+ */
+export const WIND_NODE_PARAM_ID: Readonly<Partial<Record<WindNumericKey, string>>> = { directionDeg: 'direction', gustStrength: 'gustiness', gustFrequency: 'frequency' };
+
+/** Id of `key` on a Wind node. */
+export const windNodeParamId = (key: WindNumericKey): string => WIND_NODE_PARAM_ID[key] ?? key;
+
 /** Write one parameter back into a persisted `WindSettings` (mutates). */
 export function writeWindParam(s: WindSettings, key: WindNumericKey, value: number): void {
   const r = RANGE.get(key);

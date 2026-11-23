@@ -148,6 +148,23 @@ const BATCHED_NOTES = [
   '',
 ].join('\n');
 
+const UV_NOTES = [
+  '### Branch UV Mapping and material patches (R16) - formulas',
+  '',
+  'Pure maths: `src/generators/uv/` (`uMath`, `vMath`, `areas`, `patches`); glue for the tube mesher: `src/geometry/tubeUv.ts`; parameter reader: `src/nodes/generators/uvConfig.ts`. With the defaults the result equals the tiling by world size of older projects. `metresPerTile` is the world size of one texture copy (from the bark material).',
+  '',
+  '* **U tiles (around).** `tiles = max(1, round(Absolute + Relative x circumference / metresPerTile))`, circumference = 2 pi x thickest radius of the branch. Always a whole number >= 1, so the texture closes without a seam. **Offset** (copies, variance = random per branch) turns the texture around the branch.',
+  '* **Fractional.** *Enable* allows a float count. *Value* is used as is (Absolute / Relative are ignored). *Auto* = texel density of the parent (`parentTiles / parentCircumference`, tiles per metre) x circumference at the base of the branch; without a parent the world scale is used. A seam may show.',
+  '* **Twist.** U shifts by `Amount x tiles x V` along the branch (revolutions per V tile). *Random flip* gives every branch a random sign.',
+  '* **V, Absolute.** `V = arc length x Scale / metresPerTile`. **Relative:** `V = arc length / branch length x Scale`. **Relative (keep aspect ratio):** `dV/ds = Scale x tiles / (2 pi x r)` integrated along the branch, so one V copy is as long as one U copy is wide (on a cylinder). `r = max(ref + (local - ref) x Skew, ref x floor(Pinch))` with `ref` the thickest radius, `floor = 0.02 + 0.48 x Pinch`: Skew correction 0 keeps the reference radius (the texture tapers with the branch), 1 follows the local radius (it keeps its proportions); Pinch stops V from racing away at a pointed tip.',
+  '* **Anchor / Offset.** V is 0 at the base (Start). *End* shifts V so the tip lies on a whole number (`ceil`). *Offset* adds copies (variance = random start V per branch).',
+  '* **Style.** *U locked* forces one U copy around the branch and ignores offsets / twist; *U and V locked* additionally maps V to 0..1 over the whole branch (V style Relative, Scale 1). **Extension style** (Branch > Extensions): Automatic continues the parent (tiles, V at the attachment, twist, U offset), Manual (match) = own settings but parent tile count and V, Manual (match u only) = parent tile count only, Manual (full control) = own settings.',
+  '* **Patches (Tiling).** *0-1 patches* cut the branch at every whole V number: patch `p` covers V in `[p, p + 1]`, local V 0..1 and U 0..1 are remapped into the patch\'s UV Area rectangle (`u = u0 + (u1 - u0) x U`, same for V), so UVs never leave the area (and never leave 0..1). A seam ring exists twice (end of one patch, start of the next), the quad between them is not drawn: **vertices along a seam are doubled**. Seams never fall inside a weld. *Optimize segments* moves a seam (or, in Tiling, a ring) onto an existing ring within *V tolerance* instead of adding a close ring. *Seed* varies the random choices.',
+  '* **Materials.** Branch rows: Material (material, Material Set or `Inherited`), Weight, and (patch styles only, patch options button) *UV Area* (`Whole map`, `Any` = weighted pick among the bark / any-usage areas of the material, or a named area) and *Placement* (`Anywhere`, `First ring` = only competes for the first patch). *Choose one assigned material*: one material (rows grouped by material, summed weights) for the whole branch, each patch picks one of its rows (UV Area). *Use all assigned materials*: every patch picks any row by weight; one mesh slot per material. In Tiling one weighted row is used for the whole branch. Extension rows start as `Inherited` (the material the parent resolved to).',
+  '* **Reads / writes.** The mesher writes UV0; weld blend attributes keep using the parent-side UV (`weldParentUV`), Displacement > Use UVs reads the U / V of the same vertices. Old projects: `uvScaleU` multiplies *+ Relative*, `Normalized` mapping and *Match one V tile* map to V style Relative with a free tile count, the single Branch `material` migrates to the first row of the list (node version 5).',
+  '',
+].join('\n');
+
 function leafTab(): string {
   const def = getNodeDef('generator.leaf');
   if (!def) throw new Error('generator.leaf');
@@ -179,7 +196,7 @@ describe('PARAMETERS.md', () => {
       '* Curves on a parameter are evaluated along the *parent* (0 = base, 1 = tip) for placement params, and along the *spine* for shape params.',
       '',
     ].join('\n');
-    const doc = [header, MODE_NOTES, COMMON_NOTES, ...['output.tree', 'generator.trunk', 'generator.branch', 'generator.spine'].map(table), leafTab()].join('\n');
+    const doc = [header, MODE_NOTES, COMMON_NOTES, ...['output.tree', 'generator.trunk', 'generator.branch', 'generator.spine'].map((type) => (type === 'generator.branch' ? `${table(type)}\n${UV_NOTES}` : table(type))), leafTab()].join('\n');
     expect(doc).toContain('Tree placement');
     expect(doc).toContain('Internode length');
     expect(doc).toContain('Force containers');

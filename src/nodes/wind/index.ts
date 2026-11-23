@@ -2,7 +2,7 @@ import type { WindSettings } from '@/contracts/material';
 import type { NodeDef } from '@/contracts/nodes';
 import { getBool, getNumber } from '@/contracts/params';
 import { PORT } from '@/graph/ports';
-import { WIND_PARAM_RANGES, type WindNumericKey } from '@/viewport/wind/windParams';
+import { WIND_PARAM_RANGES, windNodeParamId, type WindNumericKey } from '@/viewport/wind/windParams';
 import { section } from '../shared/builders';
 import { attachOut } from '../shared/ports';
 
@@ -12,14 +12,13 @@ import { attachOut } from '../shared/ports';
  * (`direction`, `strength`, `gustiness`, `frequency`); everything else lands in `WindSettings.params`.
  */
 const SECTION: Record<string, string> = { Wind: 'Wind', Gusts: 'Gusts', Response: 'Response', Dynamics: 'Dynamics' };
-const PARAM_ID: Partial<Record<WindNumericKey, string>> = { directionDeg: 'direction', gustStrength: 'gustiness', gustFrequency: 'frequency' };
 const EXTRA_KEYS: WindNumericKey[] = ['speed', 'turbulence', 'trunkResponse', 'branchResponse', 'leafResponse', 'stiffness', 'damping', 'ripple'];
 
 const params = [
   section('Wind', 'Wind').bool('enabled', 'Enabled', true),
   ...WIND_PARAM_RANGES.map((r) => {
     const sec = section('Wind', SECTION[r.group]);
-    return sec.float(PARAM_ID[r.key] ?? r.key, r.label, r.def, { min: r.min, max: r.max, softMax: r.softMax, step: r.step, ...(r.unit ? { unit: r.unit } : {}) });
+    return sec.float(windNodeParamId(r.key), r.label, r.def, { min: r.min, max: r.max, softMax: r.softMax, step: r.step, ...(r.unit ? { unit: r.unit } : {}) });
   }),
 ];
 

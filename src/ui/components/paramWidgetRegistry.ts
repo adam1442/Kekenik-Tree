@@ -5,6 +5,7 @@ import type {
   ParamDef,
   ParamKind,
   ParamState,
+  NodeParams,
   ParamValue,
   RampParamDef,
   RGBA,
@@ -13,7 +14,7 @@ import { openColorPickerPopup, rgbaToCss } from './colorPicker';
 import { mountMiniCurve } from './curve';
 import { h } from './dom';
 import { createListWidget } from './params/listWidget';
-import { createMaterialSlotList } from './params/materialSlotList';
+import { createBarkMaterialList, createMaterialSlotList } from './params/materialSlotList';
 import { createNumericWidget } from './params/numericWidgets';
 import { createRangeWidget } from './params/rangeWidget';
 import {
@@ -43,6 +44,8 @@ export interface ParamWidgetMountOptions<D extends ParamDef = ParamDef> {
   disabled?: boolean;
   /** Optional dynamic option provider for enum/list fields (e.g. Material / Mesh names). */
   resolveDynamicOptions?: (fieldId: string) => { value: string; label: string }[];
+  /** Parameters of the edited node (the first selected one): lets a widget react to other parameters. */
+  nodeParams?: () => NodeParams;
   /** Called continuously during drag gestures (`merge = true`). */
   onChange: (next: ParamState, merge: boolean) => void;
   /** Called when a drag/scrub gesture finishes (`endGesture()`). */
@@ -260,7 +263,9 @@ export function registerBuiltinParamWidgets(): void {
   registerParamWidget('string', (host, opts) => createStringWidget(host, opts));
   registerParamWidget('seed', (host, opts) => createSeedWidget(host, opts));
   registerParamWidget('asset', (host, opts) => createAssetWidget(host, opts));
-  registerParamWidget('list', (host, opts) => (opts.def.widget === 'materialSlots' ? createMaterialSlotList(host, opts) : createListWidget(host, opts)));
+  registerParamWidget('list', (host, opts) =>
+    opts.def.widget === 'materialSlots' ? createMaterialSlotList(host, opts) : opts.def.widget === 'barkMaterials' ? createBarkMaterialList(host, opts) : createListWidget(host, opts),
+  );
 }
 
 // Auto-register all built-in widgets on module import
