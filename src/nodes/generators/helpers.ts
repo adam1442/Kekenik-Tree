@@ -1,4 +1,3 @@
-import { evaluateCurve } from '@/contracts/curve';
 import type { NodeContext, NodeInputs, NodeOutputs } from '@/contracts/nodes';
 import { getNumber, type NodeParams } from '@/contracts/params';
 import { emptySkeleton } from '@/contracts/skeleton';
@@ -6,23 +5,9 @@ import { clamp, deg2rad } from '@/core/math';
 import { sampleVariance } from '@/graph/engine/seeds';
 import { evaluateBranch } from './branch';
 import { emitStructureOutput, extractParentSkeleton, isGeneratorActive, MAX_BRANCHES_PER_NODE } from './common';
-import { generateChildPlacements } from './distribution';
-import {
-  buildChildInitialFrame,
-  prepareParentBranch,
-  sampleParentBranch,
-  v3Add,
-  v3Norm,
-  v3Scale,
-  type Vec3,
-} from './frames';
+import { buildChildInitialFrame, prepareParentBranch, sampleParentBranch } from './frames';
 import { StructureSkeletonBuilder } from './skeletonBuild';
 import { compileSpineConfig, growSpineIntoBuilder } from './spine';
-
-function evalParentCurve(params: NodeParams, id: string, u: number, fallback = 1): number {
-  const c = params[id]?.curve;
-  return c ? evaluateCurve(c, u) : fallback;
-}
 
 /**
  * Split / Fork helper (`generator.split`): bifurcates each parent branch at `splitAt` (default 1.0 = tip)
@@ -106,101 +91,6 @@ export function evaluateSplit(ctx: NodeContext, inputs: NodeInputs, params: Node
         builder,
         ctx.cancel,
       );
-    }
-  }
-
-  return emitStructureOutput(builder.build(), params, ctx.lod, 'bark', undefined, parent, ctx.seed, inputs);
-}
-
-/**
- * Knot helper (`generator.knot`): places short protruding stub/burl skeleton segments
- * along parent branches (outer collar -> inner ridge -> blunt/cupped core).
- */
-export function evaluateKnot(ctx: NodeContext, inputs: NodeInputs, params: NodeParams): NodeOutputs {
-  const parent = extractParentSkeleton(inputs);
-  if (!isGeneratorActive(params, ctx.lod) || parent.count === 0) {
-    return emitStructureOutput(emptySkeleton(), params, ctx.lod, 'bark', 0);
-  }
-
-  const segs = Math.max(2, Math.min(32, Math.round(getNumber(params, 'segments', 5))));
-  const knotRadiusFrac = Math.max(0.05, getNumber(params, 'knotRadius', 0.55));
-  const knotRadiusVar = params.knotRadius?.variance ?? 0;
-  const knotLengthBase = Math.max(0.01, getNumber(params, 'knotLength', 0.12));
-  const knotLengthVar = params.knotLength?.variance ?? 0;
-  const coreScale = clamp(getNumber(params, 'knotCoreScale', 0.65), 0.1, 1.2);
-  const knotCurv = clamp(getNumber(params, 'knotCurvature', 0.25), -1, 1);
-  const spreadDeg = getNumber(params, 'spread', 82);
-  const spreadVar = params.spread?.variance ?? 0;
-
-  const builder = new StructureSkeletonBuilder(parent.branches.length * 32);
-  let written = 0;
-
-  for (let bi = 0; bi < parent.branches.length && written < MAX_BRANCHES_PER_NODE; bi++) {
-    if ((bi & 31) === 0) ctx.cancel.throwIfCancelled();
-    const pb = parent.branches[bi]!;
-    if (pb.count < 2) continue;
-
-    const prep = prepareParentBranch(parent, pb);
-    const pbRng = ctx.rng.fork(`knt:${pb.id}`);
-    const placements = generateChildPlacements(prep, params, pbRng, ctx.lod, MAX_BRANCHES_PER_NODE - written);
-
-    for (let pi = 0; pi < placements.length && written < MAX_BRANCHES_PER_NODE; pi++) {
-      const pl = placements[pi]!;
-      const kRng = pbRng.fork(`kc:${pl.slotIndex}`);
-      const sample = sampleParentBranch(prep, pl.u);
-
-      const outerR = Math.max(
-        0.003,
-        sample.radius *
-          sampleVariance(kRng.fork('kr'), knotRadiusFrac, knotRadiusVar) *
-          evalParentCurve(params, 'knotRadius', pl.u, 1),
-      );
-      const extrudeLen = Math.max(
-        0.008,
-        sampleVariance(kRng.fork('kl'), knotLengthBase, knotLengthVar) *
-          evalParentCurve(params, 'knotLength', pl.u, 1),
-      );
-      const ang = deg2rad(clamp(sampleVariance(kRng.fork('ka'), spreadDeg, spreadVar), 15, 165));
-
-      const frame = buildChildInitialFrame(
-        { tangent: sample.tangent, normal: sample.normal, binormal: sample.binormal },
-        { azimuthRad: pl.azimuthRad, spreadRad: ang },
-      );
-
-      // Start slightly embedded inside parent bark so outer ring welds cleanly
-      const startPos = v3Add(sample.position, v3Scale(frame.tangent, sample.radius * 0.55));
-      const count = segs + 1;
-      const pos = new Float32Array(count * 3);
-      const rad = new Float32Array(count);
-
-      for (let s = 0; s <= segs; s++) {
-        const f = s / segs;
-        const arch = Math.sin(f * Math.PI * 0.5) * knotCurv * extrudeLen * 0.35;
-        const p: Vec3 = [
-          startPos[0] + frame.tangent[0] * (f * extrudeLen) + frame.normal[0] * arch,
-          startPos[1] + frame.tangent[1] * (f * extrudeLen) + frame.normal[1] * arch,
-          startPos[2] + frame.tangent[2] * (f * extrudeLen) + frame.normal[2] * arch,
-        ];
-        pos[s * 3] = p[0];
-        pos[s * 3 + 1] = p[1];
-        pos[s * 3 + 2] = p[2];
-
-        // Outer -> puffed Inner rim -> Core radius profile
-        const puff = Math.sin(Math.PI * Math.min(1, f * 1.4)) * 0.18 * Math.max(0, knotCurv);
-        const r = outerR * (1 - f * (1 - coreScale) + puff);
-        rad[s] = Math.max(0.001, r);
-      }
-
-      const res = builder.addPolylineBranch({
-        parentBranch: pb.id,
-        parentPoint: sample.parentPoint,
-        generation: pb.generation + 1,
-        count,
-        positions: pos,
-        radii: rad,
-        initialNormalHint: v3Norm(frame.normal),
-      });
-      if (res.branchId >= 0) written += 1;
     }
   }
 

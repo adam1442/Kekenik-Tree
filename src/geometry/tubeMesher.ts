@@ -7,7 +7,7 @@ import { MeshAccumulator, newVertex, type VertexAttrs } from './meshAccumulator'
 import { computeSkeletonWind, WIND_ATTRIBUTES } from './windAttributes';
 import { ChildPathEvaluator, frameNormalFor, lightingNormal, lightingValue, parentSurfaceFor, solveWeld, squashSurface, weldBlendValue, weldRingCount, type ChildPath, type ParentSurface, type WeldMeshOptions, type WeldResult } from '@/generators/weld';
 import { bendPushFactor, leanNormal, seamWeight, squashRadius, SUB_LEVEL_ATTR } from '@/generators/skin';
-import { DEFAULT_UV_MAPPING, remapToRect, WHOLE_MAP, type UvMapping, type UvRect } from '@/generators/uv';
+import { DEFAULT_UV_MAPPING, remapToRect, tubeU, WHOLE_MAP, type UvMapping, type UvRect } from '@/generators/uv';
 import { planBranchUv, writeUvAttributes, type UvMaterialOptions, type UvPlan } from './tubeUv';
 import { EXTENSION_ATTR, EXTENSION_DISPLACE_ATTR, EXTENSION_SMOOTH_ATTR } from '@/generators/split';
 import type { BranchDisplacer, BranchDisplaceVertex, DisplaceOut } from '@/generators/displace';
@@ -748,7 +748,7 @@ export function buildTubeMesh(sk: Skeleton, opts: TubeOptions): MeshData {
         const tg = norm(dPu, perpendicular(n));
         const bit = cross(n, tg);
         const vHere = onWeld && weld ? plan.vAt(weld.vs[i * sides + jm] as number) : vBase;
-        let u = (j / sides) * uTiles + plan.uOffset + plan.twist * uTiles * vHere;
+        let u = tubeU(j / sides, uTiles, plan.uOffset, plan.twist, vHere);
         let v = vHere;
         if (ringRect) [u, v] = remapToRect(ringRect, j / sides, vHere);
         const vx = newVertex();

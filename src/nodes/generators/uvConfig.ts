@@ -55,9 +55,9 @@ export function readUvMapping(params: NodeParams): UvMapping {
 
 // ---- material lists ------------------------------------------------------------------------------------------------
 
-const DEFAULT_ROW = (material: string): PatchRow => ({ material, weight: 1, uvArea: UV_AREA_WHOLE, placement: 'anywhere' });
+export const DEFAULT_ROW = (material: string): PatchRow => ({ material, weight: 1, uvArea: UV_AREA_WHOLE, placement: 'anywhere' });
 
-function rowsOf(raw: unknown, fallback: PatchRow): PatchRow[] {
+export function rowsOf(raw: unknown, fallback: PatchRow): PatchRow[] {
   if (!Array.isArray(raw)) return [fallback];
   const rows: PatchRow[] = [];
   for (const it of raw as ListItem[]) {

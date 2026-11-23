@@ -462,6 +462,14 @@ Skin > **Welding** (Branch and Root; ids `weldEnabled`, `weldKeep`, `weldKeepFai
 * **Cache.** `uvDependencyKey` includes the UV Areas of the library only while a patch style is used.
 * Tests: `tests/uvR16.test.ts`. Formulas: `docs/PARAMETERS.md`.
 
+## Knot generator (R17) — `src/generators/knot/`, `nodes/generators/{knot,knotParams,knotConfig}.ts`
+
+* **Pure module** `generators/knot/`: `types.ts` (`KnotShape`, `KnotFrame`, `ParentUv`, `KnotMesh`), `segments.ts` (`knotSegments`: base rings / slices x Resolution x Dynamic LOD keep; `knotSurvivesLod`: the Weight cull), `knotMesh.ts#buildKnotMesh`: three ring stacks (Outer, Inner, Core) in the tangent plane of the parent, projected onto the parent cone, lifted along the cone normal by smoothstep height profiles. Logical vertices (shared by neighbouring sections) carry position and smooth normals; each section gets physical copies because its UV differs. The Outer edge is at height 0 with the exact parent normal, so the weld has no crack.
+* **Node** `nodes/generators/knot.ts#evaluateKnot`: placements from the shared Generation engine (`collectPlacements`), the parent's frame / taper / sag (`knotFrame`) and UV mapping (`parentUvAtPlacement`, read from the `uvTiles` / `uvUOffset` / `uvTwist` / `uvV` skeleton attributes), one `MeshAccumulator` with a slot per material (Outer = parent material), plus one short skeleton branch per knot so children can attach (like Decoration).
+* **Parameters** `knotParams.ts` (tabs Generation, Outer, Inner, Core, Material, Segments, LOD); reader and per-knot variance sampling `knotConfig.ts` (one RNG stream per parameter id). Material lists use the `knotMaterials` list widget (`createBarkMaterialList` with patch options always available, UV Area only). Sub-heads of the Noise sections are declared in `COUPLED_PARENT_SECTION`.
+* **Back-compat.** Node version 2 + `migrateKnotParams` (old `knotRadius`, `knotLength`, `knotCoreScale`, `knotCurvature`, `material`). Statistics group and visibility family: decorations.
+* Tests: `tests/knotMesh.test.ts` (pure), `tests/knotNode.test.ts` (node, migration, real trunk UV). Formulas: `docs/PARAMETERS.md`.
+
 ## Wind controls (`app/windControl.ts`)
 
 The preview wind is `WindSystem.params`: a Wind node attached to the Tree replaces the project settings (`WindSystem.overridden`). Every wind control (viewport popover, Wind panel, Properties > Global Wind, wind arrow gizmo) reads `getWindSystem().params` and writes through `setWindParam`, which edits the Wind node on the Tree (undoable graph edit, `windNodeParamId` maps keys to node ids) or, without one, the project settings. Tests: `tests/windControl.test.ts`.

@@ -46,3 +46,11 @@ export function resolveUTiles(i: UTileInput): number {
 export function uDensity(tiles: number, radius: number): number {
   return tiles / Math.max(1e-6, TWO_PI * radius);
 }
+
+/**
+ * U coordinate of a tube surface point: `fraction` (0..1 around the ring) x `tiles` + `uOffset`, sheared by `twist` along V.
+ * The single definition of the branch mapping; the tube mesher and the Knot generator (which must match it) both use it.
+ */
+export function tubeU(fraction: number, tiles: number, uOffset: number, twist: number, v: number): number {
+  return fraction * tiles + uOffset + twist * tiles * v;
+}

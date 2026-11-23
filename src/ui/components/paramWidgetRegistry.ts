@@ -264,7 +264,13 @@ export function registerBuiltinParamWidgets(): void {
   registerParamWidget('seed', (host, opts) => createSeedWidget(host, opts));
   registerParamWidget('asset', (host, opts) => createAssetWidget(host, opts));
   registerParamWidget('list', (host, opts) =>
-    opts.def.widget === 'materialSlots' ? createMaterialSlotList(host, opts) : opts.def.widget === 'barkMaterials' ? createBarkMaterialList(host, opts) : createListWidget(host, opts),
+    opts.def.widget === 'materialSlots'
+      ? createMaterialSlotList(host, opts)
+      : opts.def.widget === 'barkMaterials'
+        ? createBarkMaterialList(host, opts)
+        : opts.def.widget === 'knotMaterials'
+          ? createBarkMaterialList(host, opts, { alwaysPatch: true, placement: false })
+          : createListWidget(host, opts),
   );
 }
 

@@ -165,6 +165,39 @@ const UV_NOTES = [
   '',
 ].join('\n');
 
+const KNOT_NOTES = [
+  '### Knot geometry and UV (R17)',
+  '',
+  'Pure maths: `src/generators/knot/` (`knotMesh`, `segments`); parameter reader and the old-project migration: `src/nodes/generators/knotConfig.ts`; node: `src/nodes/generators/knot.ts`.',
+  '',
+  '* **Sections.** The knot is built in the tangent plane of the parent surface (x around the branch, y along it, centre = origin). *Size* is the outer radius; Inner starts at *Size %* of it and the Core at *Size %* of the Inner radius. Every ring is a smooth blend between the boundaries of its section; the boundaries are deformed by the *Noise > Shape* amounts (a seeded simplex noise, per-knot offset).',
+  '* **Heights** (metres along the parent surface normal). Outer rises from 0 at the weld to the rim `Offset + Lip` with a smoothstep (zero slope, so the weld has no crack and its normal equals the parent normal). Inner runs from the rim to the Core height `Offset + Core Offset` and adds `Curvature x sin(pi g)` of bulge (g = progress across the band). The Core is a cap with a dome of `Curvature`. *Noise > Offset* adds height noise (Outer fades in from the weld). *Overlap* extends the Inner under the Core.',
+  '* **Welding.** A plane point is projected onto the parent cone (axis point, ring frame, radius x polygon-sag scale, taper) of the spot the knot sits on, so the Outer boundary lies exactly on the parent skin. A knot wider than the branch wraps at most 0.95 pi to either side.',
+  '* **Outer UV** is exactly the parent mapping read from the skeleton (`uvTiles`, `uvUOffset`, `uvTwist`, `uvV`): `U = angle / 2pi x tiles + offset + twist x tiles x V`, `V = V(parent) + slope x distance along`. Inner / Core *Match trunk* use the same formula scaled about the knot centre (*Scale*, *U / V offset*). *Ring* maps Inner like a torus (U around, V across the band) and the Core as a flat disc (offsets ignored). A UV Area of the material row confines the coordinates to its rectangle (Match trunk tiles inside it).',
+  '* **Materials.** Outer always uses the material of the parent node. Inner and Core pick a row of their Material list by weight (Inherited / None = the parent material). Slots are merged per material over all knots.',
+  '* **Segments and LOD.** Rings are bands per section (Outer, Inner, Core) and *Slices* are shared; both are multiplied by *Resolution* and by the Dynamic LOD keep factor `(1 - reduction x 0.4)^lod` (separate *Ring segments* / *Slice segments*). *Weight* below 1 removes a seeded share `(1 - weight) x lod / 3` of the knots at lower detail. Knots count as decorations (visibility toggle, statistics group).',
+  '* **Old projects.** `knotRadius` (fraction of the parent radius) becomes *Size* = fraction x 0.1 m, `knotLength` x 0.25 becomes *Offset*, `knotCoreScale` x 100 becomes Inner *Size %*, `knotCurvature` x 2 becomes *Curvature*, the old material becomes the Inner and Core material.',
+  '',
+].join('\n');
+
+function knotTables(): string {
+  const def = getNodeDef('generator.knot');
+  if (!def) throw new Error('generator.knot');
+  const lines: string[] = [`## ${def.label} (\`generator.knot\`)`, '', def.description ?? '', ''];
+  const groups: string[] = [];
+  for (const p of def.params) if (!groups.includes(p.group)) groups.push(p.group);
+  for (const group of groups) {
+    lines.push(`### Tab: ${group}`, '', '| Section | Parameter | id | Range | Default | Var | Meaning |', '|---|---|---|---|---|---|---|');
+    for (const p of def.params.filter((d) => d.group === group)) {
+      const meaning = (p.tooltip ?? '').replace(/\|/g, '/');
+      const shown = p.kind === 'list' ? 'rows of Material / Weight / UV Area' : range(p);
+      lines.push(`| ${p.subgroup ?? ''} | ${p.label} | \`${p.id}\` | ${shown} | ${p.kind === 'list' ? 'one row' : fmt(p.default)} | ${p.variance ? 'yes' : ''} | ${meaning} |`);
+    }
+    lines.push('');
+  }
+  return lines.join('\n') + '\n' + KNOT_NOTES;
+}
+
 function leafTab(): string {
   const def = getNodeDef('generator.leaf');
   if (!def) throw new Error('generator.leaf');
@@ -196,8 +229,9 @@ describe('PARAMETERS.md', () => {
       '* Curves on a parameter are evaluated along the *parent* (0 = base, 1 = tip) for placement params, and along the *spine* for shape params.',
       '',
     ].join('\n');
-    const doc = [header, MODE_NOTES, COMMON_NOTES, ...['output.tree', 'generator.trunk', 'generator.branch', 'generator.spine'].map((type) => (type === 'generator.branch' ? `${table(type)}\n${UV_NOTES}` : table(type))), leafTab()].join('\n');
+    const doc = [header, MODE_NOTES, COMMON_NOTES, ...['output.tree', 'generator.trunk', 'generator.branch', 'generator.spine'].map((type) => (type === 'generator.branch' ? `${table(type)}\n${UV_NOTES}` : table(type))), leafTab(), knotTables()].join('\n');
     expect(doc).toContain('Tree placement');
+    expect(doc).toContain('Noise offset');
     expect(doc).toContain('Internode length');
     expect(doc).toContain('Force containers');
     expect(doc).toContain('Sensitivity → Parent');

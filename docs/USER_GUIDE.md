@@ -9,7 +9,7 @@
 
 ## Graph basics
 Children grow upward from the parent. `Tab` / double-click adds a node; drag from a port to connect; `Del` deletes; `Ctrl+C/V/D` copy/paste/duplicate branches; `F2` renames; `A` fits; `Space+drag` pans.
-Node types: **Trunk**, **Branch**, **Root**, **Spine**, **Split**, **Knot** (structure) · **Leaf**, **Frond**, **Cap**, **Cluster**, **Decoration**, **Mesh** (surface) · **Forces** · **Material** · **Wind**.
+Node types: **Trunk**, **Branch**, **Root**, **Spine**, **Split** (structure) · **Leaf**, **Frond**, **Cap**, **Cluster**, **Decoration**, **Knot**, **Mesh** (surface) · **Forces** · **Material** · **Wind**.
 
 ## Parameters
 Every row has: label (hover for help) · slider/number · optional `%` toggle (random variance) · optional curve button (vary along the parent). Orange bars mark modified values. A yellow `!` marks counts that will be slow.

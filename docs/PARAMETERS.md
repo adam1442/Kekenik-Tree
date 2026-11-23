@@ -1221,3 +1221,148 @@ Same tabs and parameters as Leaf (placement, orientation, type, deformation, res
 * **Section Variance** (Shape). Sections are painted in the cutout editor with the *Section [n]* paint tool (ids 1..8, 1 = default / unpainted) and read per vertex of the mapped mesh. Sections 2..8 get their own shift for Gravity, Fold, Curl and Roll: `Offset + Amount × random(-1..1)`, drawn once per frond and section. *Favor Outliers* maps the random value to its square root (sign kept), so extreme values are more likely than the median. Section 1 / unpainted vertices and plain ribbons keep the whole-mesh values. Each painted section is its own rib set, so section borders can show a step.
 * **Lighting.** Style Global reads the Tree lighting (Alignment / Spread are not part of it); Local uses the frond group: Smooth, Alignment (normals toward the growth direction of the parent spine), Spread (normals away from the spine), Parent puffiness (Anchor = the Leaf list plus *Origin*, Amount) and Adjustments (Up / Right / Out about the frond axes: X across, Y along, Z face; ± variance per frond). It reuses `applyLeafLighting`; order: Smooth → Parent puffiness → Alignment → Spread → Adjustments. Geometry never moves.
 * **Wind.** The per-vertex weights keep the existing layout `(level 0, level 1, level 2, phase)`; the frond starts from the parent weights at its base and adds its own bend on level 2. *Weight* = value × profile × `t^Bend power` (the profile's left end is the pivot and the weight is exactly 0 at the base, so the frond stays attached). *Cross* scales the motion from none at the spine to full at the edges. *Boost* adds an absolute weight (profile: left = base, right = tip), faded in over the first 10 % of the length. *Ribs › Apply branch wind* raises the level above the parent branch (generation − 1, at least the trunk level) for the vertices off the spine by *Ribs › Weight* × distance from the spine, also faded in over the first 10 %. Defaults reproduce the previous wind.
+
+## Knot (`generator.knot`)
+
+Surface details welded onto branches and trunks: knots, lumps and gashes with an Outer band (parent material), an Inner bridge and a Core.
+
+### Tab: Generation
+
+| Section | Parameter | id | Range | Default | Var | Meaning |
+|---|---|---|---|---|---|---|
+| Generation | Mode | `mode` | Absolute / Proportional / Absolute steps / Proportional steps / Phyllotaxy / Interval / Bifurcation / Flood / Parent / Density / Classic (legacy) | absolute |  | How children are placed on the parent: an exact number, proportional to its length, in steps (whorls), by phyllotaxy, at intervals, at bends, flooded along it or all at its origin. |
+| Absolute | Number | `number` | 0..100000 (slider 0..100) | 5 | yes | Exact number of nodes created on each parent. |
+| Absolute | Jumble | `jumble` | 0..1 | 0.35 |  | Randomises the order of spacing so children do not form a regular pattern. |
+| Absolute | Sweep | `sweep` | 0.01..1 (slider 0.01..1) | 1 |  | Fraction of the full circle the children are spread around the parent. |
+| Absolute | Roll | `roll` | -1..1 | 0 |  | Rotates children around the parent axis (−1…1 = a full turn each way). |
+| Absolute | Favor splits | `favorSplits` | -1..1 | 0 |  | Prefers (+) or avoids (−) placing children on split points. |
+| Absolute | Align style | `alignStyle` | Group / Individual / Spiral / Alternate / Opposite | group |  | How the rotation of consecutive children is arranged: group, individual, spiral, alternate or opposite. |
+| Density | Density | `density` | 0..100 (slider 0..10) /m | 1.5 |  | Children per metre of parent length (Density mode). |
+| Density | Jitter | `densityJitter` | 0..1 | 0.2 |  | Random variation of the spacing in Density mode. |
+| Proportional | Frequency | `proportionalCount` | 0..50 (slider 0..10) /m | 2.5 |  | Nodes per metre of parent length: longer parents get more nodes, spread at random along them. |
+| Steps | Steps | `whorlCount` | 1..128 | 5 |  | Number of steps (rings of nodes) along the parent. |
+| Steps | Steps | `stepsFrequency` | 0..20 (slider 0..5) /m | 0.5 |  | Steps per metre of parent length. |
+| Steps | Per step | `whorlPerStep` | 1..128 (slider 1..24) | 4 |  | Nodes in every step. |
+| Steps | Spread | `whorlSpread` | 0..1 | 0.03 |  | Lengthwise spacing of the nodes inside one step, as a fraction of the First..Last stretch. |
+| Steps | Roll | `whorlRoll` | -180..180 ° | 15 |  | Rotation of every step relative to the previous one. |
+| Steps | Balance | `stepsBalance` | 0..1 | 1 |  | How evenly the nodes of a step are spaced around the parent (1 = evenly, 0 = random). |
+| Phyllotaxy | Style | `phyllotaxyStyle` | Opposite (distichous) / Opposite (decussate) / Opposite (random orientation) / Alternating (distichous) / Alternating (random) / Whorled | alternating-distichous- |  | How the nodes of a group are arranged and how consecutive groups are turned against each other. |
+| Phyllotaxy | Internode length | `phyllotaxyInternode` | 0..50 (slider 0..2) m | 0.25 |  | Distance between groups, measured along the parent from Last towards First. 0 spreads Limit groups evenly instead. |
+| Phyllotaxy | Children per node | `phyllotaxyChildren` | 1..32 | 3 |  | Nodes in each whorled group. |
+| Phyllotaxy | Spread | `phyllotaxySpread` | 0..1 | 0 |  | Random lengthwise offset of every node inside its group (1 = up to the neighbouring group). |
+| Phyllotaxy | Spiral | `phyllotaxySpiral` | -180..180 ° | 0 |  | Extra rotation added for every group. |
+| Phyllotaxy | Limit | `phyllotaxyLimit` | 0..10000 (slider 0..100) | 0 |  | Maximum number of groups (0 = no limit). |
+| Phyllotaxy | Align style | `phyllotaxyAlignStyle` | Group / Individual | group |  | Group keeps the nodes of a group in their fixed layout; Individual turns every node on its own within its share of the circle. |
+| Interval | Frequency | `intervalStep` | 0.001..50 (slider 0.001..3) m | 0.6 |  | Distance between groups from Last towards First. The curve scales it along the parent: lower values pack groups tighter. |
+| Interval | Count | `perStep` | 1..64 (slider 1..16) | 1 |  | Nodes in every group. |
+| Interval | Spread | `intervalSpread` | 0..1 | 0 |  | Random lengthwise offset of every node inside its group (1 = up to the neighbouring group). |
+| Interval | Spiral | `intervalSpiral` | -180..180 ° | 0 |  | Extra rotation added for every group. |
+| Interval | Limit | `intervalLimit` | 0..10000 (slider 0..100) | 0 |  | Maximum number of groups (0 = no limit). |
+| Interval | Align style | `intervalAlignStyle` | Group / Individual | group |  | Group keeps the nodes of a group in their fixed layout; Individual turns every node on its own within its share of the circle. |
+| Interval | Balance | `intervalBalance` | 0..1 | 0 |  | Turns every other group so its nodes fill the gaps left by the previous group. |
+| Bifurcation | Count | `bifurcationCount` | 0..1000 (slider 0..32) | 4 |  | Maximum number of nodes; the strongest bends win. |
+| Bifurcation | Threshold | `bifurcationThreshold` | 0.5..90 ° | 6 |  | Smallest bend of the parent that gets a node. |
+| Bifurcation | Spread | `bifurcationSpread` | 0..1 | 0 |  | Random shift of every node along the parent (1 = 10 % of its length). |
+| Bifurcation | Min spacing | `bifurcationSpacing` | 0.01..0.9 | 0.12 |  | Smallest distance between two bends, as a fraction of the parent. |
+| Alignment | Align | `align` | bool | false |  | Rolls the new nodes so they face the sky. |
+| Boundaries | First | `first` | 0..1 | 0.1 |  | Lowest point on the parent where nodes occur (0 = base, 1 = tip). |
+| Boundaries | Last | `last` | 0..1 | 0.9 |  | Highest point on the parent where nodes occur (0 = base, 1 = tip). |
+| Boundaries | Distribution curve | `distributionCurve` | curve | curve |  | Maps normalized spacing [0..1] across [First..Last]. |
+| Boundaries | Clip | `clip` | 0..0.49 | 0 |  | With the checkbox on, nodes that Spread or Position push outside First..Last are removed instead of being held on the boundary. The value insets the range (fraction of First..Last). |
+| Boundaries | Clip enabled | `clipEnabled` | bool | false |  | Removes nodes that Spread or Position push outside First..Last. |
+| Common | Active | `active` | bool | true |  | Switches the generator on. With a curve over the level of detail (left = highest detail) it is active where the curve is above 0.5. |
+| Common | Pass | `pass` | 1..99 | 1 |  | Generators compute in pass order. A node cannot have a lower pass than any of its ancestors. |
+| Common | Rotation | `rotationOffset` | -180..180 ° | 0 | yes | Rotates all nodes around the parent spine as a group. Variance jumbles the rotation per parent. |
+| Common | Position | `positionOffset` | -0.5..0.5 | 0 | yes | Shifts all nodes along the parent (fraction of its length). Variance shifts every parent differently. |
+| Common | Sink | `sink` | -5..5 (slider -1..1) m | 0 | yes | Start offset of the nodes into (+) or out of (-) the parent; sinks trunks under the ground. |
+| Common | Pruning | `pruningCurve` | curve | curve |  | Runs over the parent from First (left) to Last (right). Nodes are removed where the curve is below 0.5. |
+| Common | Seed | `seed` | seed | 0 |  | Random seed. Change it to get a different variation of the same settings. |
+| Knockout | Amount | `knockout` | 0..1 | 0 |  | Randomly removes this share of the nodes after the mode has placed them. The curve varies it along the parent. |
+| Knockout | + Resolution | `knockoutResolution` | -1..1 | 0 |  | Added to the amount for every level of detail below the highest: positive removes more nodes at lower detail, negative fewer. |
+| Force containers | Include | `forceInclude` | rows of Material / Weight / UV Area | one row |  | Keeps only the nodes inside the volume of the named Force node (set a volume in the Force node). |
+| Force containers | Exclude | `forceExclude` | rows of Material / Weight / UV Area | one row |  | Removes the nodes inside the volume of the named Force node. |
+| More | Click place | `clickPlace` | Ready / None / Any / Number | ready |  | What a click in the viewport places. It is stored with the node and takes effect with Freehand mode. |
+| More | Size scalar | `sizeScalar` | 0.01..100 (slider 0.01..5) | 1 |  | Scales this node and every node below it. |
+| Masks | Mask | `genMasks` | rows of Material / Weight / UV Area | one row |  | Keeps a node only where every assigned mask (Masks panel) evaluates to 0.5 or more. |
+
+### Tab: Outer
+
+| Section | Parameter | id | Range | Default | Var | Meaning |
+|---|---|---|---|---|---|---|
+| Outer | Size | `outerSize` | 0.002..20 (slider 0.002..1) m | 0.12 | yes | Radius of the whole knot on the parent surface, measured along the branch. |
+| Outer | Offset | `outerOffset` | -2..2 (slider -0.3..0.3) m | 0.02 | yes | How far the knot is extruded from the parent surface. Negative values cut into it (gashes). |
+| Outer | Rotation | `outerRotation` | -180..180 ° | 0 | yes | Rolls the whole knot around its centre; Inner and Core follow. |
+| Outer | Scale | `outerScale` | 0.1..8 (slider 0.1..3) | 1 | yes | Width of the knot across the branch relative to its length. Combine with Rotation for non-circular knots. |
+| Outer | Lip | `outerLip` | -1..1 (slider -0.1..0.1) m | 0.01 | yes | Raises (or lowers) the edge between Outer and Inner above the Offset. |
+| Noise | Seed | `outerNoiseSeed` | seed | 0 |  | “Seed” in Outer › Noise. |
+| Noise shape | Amount | `outerShapeAmount` | 0..1 | 0.15 |  | Deforms the outline of the knot (fraction of its radius). |
+| Noise shape | Scale | `outerShapeScale` | 0.1..20 (slider 0.1..8) | 2 |  | Frequency of the outline noise: higher gives more, smaller bumps around the knot. |
+| Noise offset | Amount | `outerOffsetAmount` | 0..1 (slider 0..0.05) m | 0.004 |  | Height noise on the surface of the Outer band. |
+| Noise offset | Scale | `outerOffsetScale` | 0.1..40 (slider 0.1..12) | 4 |  | Frequency of the height noise. |
+
+### Tab: Inner
+
+| Section | Parameter | id | Range | Default | Var | Meaning |
+|---|---|---|---|---|---|---|
+| Inner | Size % | `innerSizePct` | 5..98 % | 60 | yes | Size of Inner and Core together as a percentage of the knot size. |
+| Inner | Scale | `innerScale` | 0.1..4 (slider 0.1..2) | 1 | yes | Width of Inner and Core relative to Outer. |
+| Inner | Curvature | `innerCurvature` | -2..4 (slider -1..2) | 0.5 | yes | Roundness of the Inner section: higher values puff it out, negative values pinch it in. |
+| Inner | Overlap | `innerOverlap` | 0..0.9 | 0 |  | How far the Inner section reaches under the Core. Hides gaps when the two use different materials. |
+| UV | Style | `innerUvStyle` | Match trunk / Ring | match-trunk |  | Match trunk continues the parent texture over the Inner. Ring maps it like a torus: U around the knot, V from outside to inside. |
+| UV | Scale | `innerUvScale` | 0.01..32 (slider 0.01..8) | 1 |  | Texture scale of the Inner section. |
+| UV | U offset | `innerUvOffsetU` | -10..10 (slider -1..1) | 0 |  | Shifts the Inner texture around the knot. |
+| UV | V offset | `innerUvOffsetV` | -10..10 (slider -1..1) | 0 |  | Shifts the Inner texture along the knot. |
+| Noise shape | Amount | `innerShapeAmount` | 0..1 | 0.1 |  | Deforms the boundary between Inner and Core (fraction of its radius). |
+| Noise shape | Scale | `innerShapeScale` | 0.1..20 (slider 0.1..8) | 2 |  | Frequency of the Inner outline noise. |
+
+### Tab: Core
+
+| Section | Parameter | id | Range | Default | Var | Meaning |
+|---|---|---|---|---|---|---|
+| Core | Size % | `coreSizePct` | 5..98 % | 50 | yes | Size of the Core as a percentage of the Inner size. |
+| Core | Offset | `coreOffset` | -2..2 (slider -0.2..0.2) m | -0.01 | yes | Moves the Core towards (negative) or away from (positive) the parent, relative to the knot Offset. |
+| UV | Style | `coreUvStyle` | Match trunk / Ring | match-trunk |  | Match trunk continues the parent texture over the Core. Ring maps the texture flat over the Core disc, like the end of a cut branch. |
+| UV | Scale | `coreUvScale` | 0.01..32 (slider 0.01..8) | 1 |  | Texture scale of the Core. |
+| UV | U offset | `coreUvOffsetU` | -10..10 (slider -1..1) | 0 |  | Shifts the Core texture around the knot. No effect with the Ring style. |
+| UV | V offset | `coreUvOffsetV` | -10..10 (slider -1..1) | 0 |  | Shifts the Core texture along the knot. No effect with the Ring style. |
+| Noise shape | Amount | `coreShapeAmount` | 0..1 | 0.1 |  | Deforms the outline of the Core (fraction of its radius). |
+| Noise shape | Scale | `coreShapeScale` | 0.1..20 (slider 0.1..8) | 2 |  | Frequency of the Core outline noise. |
+| Noise offset | Amount | `coreOffsetAmount` | 0..1 (slider 0..0.05) m | 0.003 |  | Height noise on the Core surface. |
+| Noise offset | Scale | `coreOffsetScale` | 0.1..40 (slider 0.1..12) | 4 |  | Frequency of the Core height noise. |
+
+### Tab: Material
+
+| Section | Parameter | id | Range | Default | Var | Meaning |
+|---|---|---|---|---|---|---|
+| Inner | Material | `innerMaterials` | rows of Material / Weight / UV Area | one row |  | Materials of the Inner section; each knot picks a row by weight. Inherited uses the parent material. The gear button on a row opens the UV Area. |
+| Core | Material | `coreMaterials` | rows of Material / Weight / UV Area | one row |  | Materials of the Core, usually a cut-branch material; each knot picks a row by weight. None or Inherited uses the parent material. |
+
+### Tab: Segments
+
+| Section | Parameter | id | Range | Default | Var | Meaning |
+|---|---|---|---|---|---|---|
+| Rings | Outer | `ringsOuter` | 1..24 | 3 |  | Rings of the Outer band, from the parent surface to the Inner edge. |
+| Rings | Inner | `ringsInner` | 1..24 | 3 |  | Rings of the Inner section. |
+| Rings | Core | `ringsCore` | 1..24 | 2 |  | Rings of the Core disc. |
+| Slices | Slices | `slices` | 4..128 (slider 4..48) | 16 |  | Segments around the knot; shared by Outer, Inner and Core. |
+| Resolution | Resolution | `knotResolution` | 0.1..4 (slider 0.1..2) | 1 |  | Multiplies the rings and slices at once. |
+
+### Tab: LOD
+
+| Section | Parameter | id | Range | Default | Var | Meaning |
+|---|---|---|---|---|---|---|
+| Dynamic LOD | Weight | `lodWeight` | 0..1 | 1 |  | Importance of the knots. Below 1, a share of them is removed as the level of detail drops (all of them at the lowest level for 0). |
+| Dynamic LOD | Ring segments | `lodRingSegments` | 0..1 | 0.5 |  | How strongly the rings are reduced per level of detail. |
+| Dynamic LOD | Slice segments | `lodSliceSegments` | 0..1 | 0.5 |  | How strongly the slices are reduced per level of detail. |
+
+### Knot geometry and UV (R17)
+
+Pure maths: `src/generators/knot/` (`knotMesh`, `segments`); parameter reader and the old-project migration: `src/nodes/generators/knotConfig.ts`; node: `src/nodes/generators/knot.ts`.
+
+* **Sections.** The knot is built in the tangent plane of the parent surface (x around the branch, y along it, centre = origin). *Size* is the outer radius; Inner starts at *Size %* of it and the Core at *Size %* of the Inner radius. Every ring is a smooth blend between the boundaries of its section; the boundaries are deformed by the *Noise > Shape* amounts (a seeded simplex noise, per-knot offset).
+* **Heights** (metres along the parent surface normal). Outer rises from 0 at the weld to the rim `Offset + Lip` with a smoothstep (zero slope, so the weld has no crack and its normal equals the parent normal). Inner runs from the rim to the Core height `Offset + Core Offset` and adds `Curvature x sin(pi g)` of bulge (g = progress across the band). The Core is a cap with a dome of `Curvature`. *Noise > Offset* adds height noise (Outer fades in from the weld). *Overlap* extends the Inner under the Core.
+* **Welding.** A plane point is projected onto the parent cone (axis point, ring frame, radius x polygon-sag scale, taper) of the spot the knot sits on, so the Outer boundary lies exactly on the parent skin. A knot wider than the branch wraps at most 0.95 pi to either side.
+* **Outer UV** is exactly the parent mapping read from the skeleton (`uvTiles`, `uvUOffset`, `uvTwist`, `uvV`): `U = angle / 2pi x tiles + offset + twist x tiles x V`, `V = V(parent) + slope x distance along`. Inner / Core *Match trunk* use the same formula scaled about the knot centre (*Scale*, *U / V offset*). *Ring* maps Inner like a torus (U around, V across the band) and the Core as a flat disc (offsets ignored). A UV Area of the material row confines the coordinates to its rectangle (Match trunk tiles inside it).
+* **Materials.** Outer always uses the material of the parent node. Inner and Core pick a row of their Material list by weight (Inherited / None = the parent material). Slots are merged per material over all knots.
+* **Segments and LOD.** Rings are bands per section (Outer, Inner, Core) and *Slices* are shared; both are multiplied by *Resolution* and by the Dynamic LOD keep factor `(1 - reduction x 0.4)^lod` (separate *Ring segments* / *Slice segments*). *Weight* below 1 removes a seeded share `(1 - weight) x lod / 3` of the knots at lower detail. Knots count as decorations (visibility toggle, statistics group).
+* **Old projects.** `knotRadius` (fraction of the parent radius) becomes *Size* = fraction x 0.1 m, `knotLength` x 0.25 becomes *Offset*, `knotCoreScale` x 100 becomes Inner *Size %*, `knotCurvature` x 2 becomes *Curvature*, the old material becomes the Inner and Core material.

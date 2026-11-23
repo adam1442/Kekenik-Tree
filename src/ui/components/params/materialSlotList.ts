@@ -46,9 +46,15 @@ export function createMaterialSlotList(host: HTMLElement, opts: ParamWidgetMount
  * `Inherited` (the parent's material). While Tiling is a 0-1 patches style a patch options button on every row reveals
  * its UV Area (Whole map / Any / a named UV Area of the material) and Placement (Anywhere / First ring).
  */
-export function createBarkMaterialList(host: HTMLElement, opts: ParamWidgetMountOptions<ListParamDef>): ParamWidgetInstance {
+export function createBarkMaterialList(
+  host: HTMLElement,
+  opts: ParamWidgetMountOptions<ListParamDef>,
+  variant: { alwaysPatch?: boolean; placement?: boolean } = {},
+): ParamWidgetInstance {
   const open = new Set<number>();
+  const showPlacement = variant.placement !== false;
   const patchMode = (): boolean => {
+    if (variant.alwaysPatch) return true;
     const params: NodeParams | undefined = opts.nodeParams?.();
     return params !== undefined && getString(params, 'uvTilingStyle', 'tiling') !== 'tiling';
   };
@@ -67,12 +73,13 @@ export function createBarkMaterialList(host: HTMLElement, opts: ParamWidgetMount
       return true;
     },
     rowHint: pickProbabilityHint,
-    fieldHidden: (fieldId, _item, index) => (fieldId === 'uvArea' || fieldId === 'placement') && !(patchMode() && open.has(index)),
+    fieldHidden: (fieldId, _item, index) =>
+      (fieldId === 'uvArea' || fieldId === 'placement') && (!(patchMode() && open.has(index)) || (fieldId === 'placement' && !showPlacement)),
     rowControl(_item, index, rerender) {
       if (!patchMode()) return null;
       const btn = iconButton(
         icon('gear', 14),
-        'Patch options: UV Area and Placement',
+        showPlacement ? 'Patch options: UV Area and Placement' : 'Patch options: UV Area',
         () => {
           if (open.has(index)) open.delete(index);
           else open.add(index);

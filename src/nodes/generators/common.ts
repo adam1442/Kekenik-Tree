@@ -56,7 +56,7 @@ export function lodSegmentKeep(lod: number, lodSegmentReduction: number): number
   return clamp(Math.pow(1 - clamp(lodSegmentReduction, 0, 0.9) * 0.4, Math.min(lod, 3)), 0.1, 1);
 }
 
-function barkRingColor(tint: readonly number[], generation: number, t: number): [number, number, number] {
+export function barkRingColor(tint: readonly number[], generation: number, t: number): [number, number, number] {
   const l = 0.11 - generation * 0.01 - t * 0.02;
   const rScale = (tint[0] ?? 0.36) / 0.36;
   const gScale = (tint[1] ?? 0.26) / 0.26;

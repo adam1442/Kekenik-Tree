@@ -1175,7 +1175,7 @@ export function handDrawnParams(): ParamDef[] {
   ];
 }
 
-// ---- Hierarchy structure helpers (Split / Knot) ------------------------------------------------------------------
+// ---- Hierarchy structure helpers (Split) ------------------------------------------------------------------
 
 export function splitHelperParams(): ParamDef[] {
   const g = section('Generation', 'Fork');
@@ -1196,35 +1196,6 @@ export function splitHelperParams(): ParamDef[] {
     s.float('noiseAmount', 'Gnarliness', 0.15, { min: 0, max: 3, curve: true }),
     s.float('noiseFrequency', 'Noise frequency', 1.2, { min: 0, max: 20 }),
     ...forcesParams(),
-    ...skinParams(false, 8),
-    ...uvParams(),
-    ...materialTabParams(),
-  ];
-}
-
-export function knotHelperParams(): ParamDef[] {
-  const kn = section('Shape', 'Knot');
-  return [
-    ...generationParams({ number: 5, first: 0.18, last: 0.82, jumble: 0.35, includeBranchExtended: true }),
-    kn.float('knotRadius', 'Outer size', 0.55, {
-      min: 0.05,
-      max: 2,
-      variance: 0.2,
-      curve: true,
-      tooltip: 'Knot base radius as a fraction of parent branch radius.',
-    }),
-    kn.float('knotLength', 'Extrusion offset', 0.12, {
-      min: 0.01,
-      max: 2,
-      softMax: 0.5,
-      unit: 'm',
-      variance: 0.25,
-      curve: true,
-    }),
-    kn.float('knotCoreScale', 'Core scale', 0.65, { min: 0.1, max: 1.2 }),
-    kn.float('knotCurvature', 'Curvature', 0.25, { min: -1, max: 1 }),
-    kn.float('spread', 'Angle', 82, { min: 15, max: 165, unit: '°', variance: 0.1 }),
-    kn.int('segments', 'Segments', 5, { min: 2, max: 32 }),
     ...skinParams(false, 8),
     ...uvParams(),
     ...materialTabParams(),

@@ -126,8 +126,11 @@ export interface AssetParamDef extends ParamBase {
 export type ListItem = Record<string, ParamScalar>;
 export interface ListParamDef extends ParamBase {
   kind: 'list';
-  /** `materialSlots`: the Material / Mesh / Weight list widget (`MaterialSlotList`). */
-  widget?: 'materialSlots' | 'barkMaterials';
+  /**
+   * `materialSlots`: the Material / Mesh / Weight list widget (`MaterialSlotList`). `barkMaterials`: Material / Weight rows with
+   * patch options while Tiling uses patches. `knotMaterials`: the same rows, patch options (UV Area only) always available.
+   */
+  widget?: 'materialSlots' | 'barkMaterials' | 'knotMaterials';
   /** Fields of one row (scalar-valued kinds only: float/int/bool/enum/string/asset). */
   fields: ParamDef[];
   default: ListItem[];

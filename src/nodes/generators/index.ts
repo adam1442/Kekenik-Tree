@@ -12,7 +12,10 @@ import { decorationParams } from './decorationParams';
 import { decorationDependencyKey, evaluateDecoration } from './decoration';
 import { displacementDependencyKey, warnDisplacement } from './displacement';
 import { evaluateCap, evaluateCluster, evaluateMeshInstances } from './instanceNodes';
-import { evaluateKnot, evaluateSpine, evaluateSplit } from './helpers';
+import { evaluateSpine, evaluateSplit } from './helpers';
+import { evaluateKnot } from './knot';
+import { knotParams } from './knotParams';
+import { migrateKnotParams } from './knotConfig';
 import {
   animationParams,
   capParams,
@@ -23,7 +26,6 @@ import {
   generationParams,
   passAndSizeParams,
   handDrawnParams,
-  knotHelperParams,
   leafMaterialParams,
   leafSkinParams,
   meshGeneratorParams,
@@ -59,7 +61,8 @@ import { evaluateTrunk } from './trunk';
 export { evaluateTrunk } from './trunk';
 export { evaluateBranch } from './branch';
 export { evaluateRoot } from './root';
-export { evaluateSplit, evaluateKnot, evaluateSpine } from './helpers';
+export { evaluateSplit, evaluateSpine } from './helpers';
+export { evaluateKnot } from './knot';
 export {
   registerExternalForceEvaluator,
   getExternalForceEvaluator,
@@ -219,10 +222,12 @@ const baseNodeDefs: NodeDef[] = [
     label: 'Knot',
     icon: 'nodeKnot',
     color: 'var(--kt-node-cap)',
-    description: 'Broken-branch stubs, burls, and knot structures grown along parent stems.',
-    statsGroup: 'caps',
+    description: 'Surface details welded onto branches and trunks: knots, lumps and gashes with an Outer band (parent material), an Inner bridge and a Core.',
+    statsGroup: 'decorations',
     ports: withChildren,
-    params: knotHelperParams(),
+    version: 2,
+    migrate: withGenerationMigration((params) => migrateKnotParams(params)),
+    params: knotParams(),
     evaluate: withLineage(evaluateKnot),
   },
   {

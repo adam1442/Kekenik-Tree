@@ -26,6 +26,11 @@ const COUPLED_PARENT_SECTION: Record<string, string> = {
   'Skin/Split smooth': 'Splits>Smooth',
   'UV/Fractional': 'U>Fractional',
   'UV/Twist': 'U>Twist',
+  'Outer/Noise shape': 'Noise>Shape',
+  'Outer/Noise offset': 'Noise>Offset',
+  'Inner/Noise shape': 'Noise>Shape',
+  'Core/Noise shape': 'Noise>Shape',
+  'Core/Noise offset': 'Noise>Offset',
 };
 
 export interface InspectorParamEntry {
