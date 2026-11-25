@@ -3,24 +3,20 @@ import { CancellationSource } from '@/contracts/nodes';
 import { emptySkeleton, type Skeleton } from '@/contracts/skeleton';
 import { asExtendType, extensionPositions } from '@/generators/common/extend';
 import {
-  DEFAULT_SPLIT_SETTINGS,
   EXTENSION_ATTR,
   SPLIT_ATTR,
-  SPLIT_SIDE_RINGS,
   SplitFlag,
   applyExtensionSpread,
   collectOpenEnds,
-  computeSplit,
   extensionRadiusFactor,
   extensionSpreadAngle,
   selectsOpenEnd,
   splitFlags,
-  splitPlaneDirection,
-  splitRadii,
 } from '@/generators/split';
 import { GraphEvaluator, snapshotGraph } from '@/graph/engine';
 import { getNodeDef, registerDiscoveredNodes } from '@/graph/registry';
 import { buildInspectorSections } from '@/ui/panels/properties/inspectorState';
+import { splitHalves } from './helpers/splitHalves';
 import { buildGraph, type NodeSpec } from './helpers/graphSpec';
 
 beforeAll(() => registerDiscoveredNodes());
@@ -35,77 +31,10 @@ const angleBetween = (a: readonly number[], b: readonly number[]): number => {
   return Math.acos(Math.min(1, Math.max(-1, d / (Math.hypot(a[0]!, a[1]!, a[2]!) * Math.hypot(b[0]!, b[1]!, b[2]!)))));
 };
 
-describe('split math', () => {
-  it('keeps the cross-section area: r1^2 + r2^2 = R^2 at Expand 1', () => {
-    for (const balance of [0.1, 0.35, 0.5, 0.7, 0.9]) {
-      const [a, b] = splitRadii(0.2, balance);
-      expect(a * a + b * b).toBeCloseTo(0.04, 6);
-    }
-  });
-
-  it('Balance 0.5 gives equal radii and shifts radius toward Side 1 above 0.5', () => {
-    const [a, b] = splitRadii(0.2, 0.5);
-    expect(a).toBeCloseTo(b, 9);
-    const [c, d] = splitRadii(0.2, 0.8);
-    expect(c).toBeGreaterThan(d);
-    const [e, f] = splitRadii(0.2, 0.2);
-    expect(e).toBeLessThan(f);
-  });
-
-  it('Expand scales each side on its own', () => {
-    const [a, b] = splitRadii(0.2, 0.5, 1.5, 0.5);
-    const [a0, b0] = splitRadii(0.2, 0.5);
-    expect(a / a0).toBeCloseTo(1.5, 6);
-    expect(b / b0).toBeCloseTo(0.5, 6);
-  });
-
-  it('produces two open ends at the requested angles, Side 1 away from the tree centre', () => {
-    const [s1, s2] = computeSplit({
-      tip: [4, 0, 3],
-      radius: 0.1,
-      tangent: [0, 0, 1],
-      away: [1, 0, 0],
-      settings: { ...DEFAULT_SPLIT_SETTINGS, spread1Deg: 30, spread2Deg: 50, smoothOuter: 0 },
-    });
-    expect(s1.positions.length).toBe(SPLIT_SIDE_RINGS * 3);
-    expect(angleBetween(s1.openEnd.direction, [0, 0, 1])).toBeCloseTo((30 * Math.PI) / 180, 5);
-    expect(angleBetween(s2.openEnd.direction, [0, 0, 1])).toBeCloseTo((50 * Math.PI) / 180, 5);
-    expect(s1.openEnd.direction[0]).toBeGreaterThan(0);
-    expect(s2.openEnd.direction[0]).toBeLessThan(0);
-    expect(s1.openEnd.side).toBe(1);
-    expect(s2.openEnd.side).toBe(2);
-  });
-
-  it('smooth outer eases the bend: the first segment follows the parent direction', () => {
-    const hard = computeSplit({ tip: [0, 0, 0], radius: 0.1, tangent: [0, 0, 1], away: [1, 0, 0], settings: { ...DEFAULT_SPLIT_SETTINGS, smoothOuter: 0 } })[0];
-    const soft = computeSplit({ tip: [0, 0, 0], radius: 0.1, tangent: [0, 0, 1], away: [1, 0, 0], settings: { ...DEFAULT_SPLIT_SETTINGS, smoothOuter: 1 } })[0];
-    const seg = (p: Float32Array): number[] => [p[3]! - p[0]!, p[4]! - p[1]!, p[5]! - p[2]!];
-    expect(angleBetween(seg(soft.positions), [0, 0, 1])).toBeLessThan(angleBetween(seg(hard.positions), [0, 0, 1]));
-  });
-
-  it('smooth inner moves the sides together: 1 starts both on the parent axis, 0 leaves a crease offset', () => {
-    const at = (inner: number) =>
-      computeSplit({ tip: [0, 0, 0], radius: 0.1, tangent: [0, 0, 1], away: [1, 0, 0], settings: { ...DEFAULT_SPLIT_SETTINGS, smoothInner: inner } });
-    const [a1, a2] = at(1);
-    expect(Math.hypot(a1.positions[0]!, a1.positions[1]!)).toBeCloseTo(0, 9);
-    expect(Math.hypot(a2.positions[0]!, a2.positions[1]!)).toBeCloseTo(0, 9);
-    const [b1, b2] = at(0);
-    expect(Math.abs(b1.positions[0]! - b2.positions[0]!)).toBeGreaterThan(0.02);
-  });
-
-  it('plane direction is perpendicular to the tangent and handles a degenerate "away"', () => {
-    const d = splitPlaneDirection([0, 0, 1], [3, 0, 5]);
-    expect(d[0]).toBeCloseTo(1, 9);
-    expect(d[2]).toBeCloseTo(0, 9);
-    const f = splitPlaneDirection([0, 0, 1], [0, 0, 0]);
-    expect(Math.abs(f[0] * 0 + f[2])).toBeLessThan(1e-9);
-    expect(Math.hypot(f[0], f[1], f[2])).toBeCloseTo(1, 9);
-  });
-});
-
 describe('open end selection', () => {
-  const side1Fat = splitFlags(computeSplit({ tip: [0, 0, 0], radius: 0.1, tangent: [0, 0, 1], away: [1, 0, 0], settings: { ...DEFAULT_SPLIT_SETTINGS, balance: 0.8 } })[0]);
-  const side2Skinny = splitFlags(computeSplit({ tip: [0, 0, 0], radius: 0.1, tangent: [0, 0, 1], away: [1, 0, 0], settings: { ...DEFAULT_SPLIT_SETTINGS, balance: 0.8 } })[1]);
+  const sides = splitHalves(0.8);
+  const side1Fat = splitFlags(sides[0]!);
+  const side2Skinny = splitFlags(sides[1]!);
 
   it('picks sides by number and by thickness', () => {
     expect(selectsOpenEnd('split-1', side1Fat, false)).toBe(true);
@@ -118,12 +47,12 @@ describe('open end selection', () => {
   });
 
   it('flips fat / skinny with Balance and treats equal radii as Side 1 fat', () => {
-    const flipped = computeSplit({ tip: [0, 0, 0], radius: 0.1, tangent: [0, 0, 1], away: [1, 0, 0], settings: { ...DEFAULT_SPLIT_SETTINGS, balance: 0.2 } });
-    expect(flipped[0].fat).toBe(false);
-    expect(flipped[1].fat).toBe(true);
-    const equal = computeSplit({ tip: [0, 0, 0], radius: 0.1, tangent: [0, 0, 1], away: [1, 0, 0], settings: DEFAULT_SPLIT_SETTINGS });
-    expect(equal[0].fat).toBe(true);
-    expect(equal[1].fat).toBe(false);
+    const flipped = splitHalves(0.2);
+    expect(flipped[0]!.fat).toBe(false);
+    expect(flipped[1]!.fat).toBe(true);
+    const equal = splitHalves(0.5);
+    expect(equal[0]!.fat).toBe(true);
+    expect(equal[1]!.fat).toBe(false);
   });
 
   it('a branch that splits is not an open end; Breaks only ignores split sides', () => {
@@ -341,7 +270,7 @@ describe('Splits and Extensions parameters', () => {
     const sections = buildInspectorSections(def.params, 'Skin');
     const splits = sections.find((s) => s.title === 'Splits')!;
     expect(splits).toBeDefined();
-    expect(splits.blocks.map((b) => b.subhead)).toEqual([null, 'Spread', 'Expand', 'Smooth']);
+    expect(splits.blocks.map((b) => b.subhead)).toEqual([null, 'Spread', 'Expand', 'Smooth', 'Advanced']);
   });
 
   it('Branch has the Extensions groups; Cap has no Extend parent Count', () => {

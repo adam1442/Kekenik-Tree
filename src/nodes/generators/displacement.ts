@@ -1,14 +1,27 @@
-import type { Curve } from '@/contracts/curve';
+import { curveToLUT, type Curve } from '@/contracts/curve';
 import type { DisplacementDef } from '@/contracts/material';
 import type { MeshData } from '@/contracts/mesh';
 import type { NodeContext } from '@/contracts/nodes';
 import { getBool, getNumber, getString, type NodeParams } from '@/contracts/params';
 import type { Skeleton } from '@/contracts/skeleton';
-import { displaceMeshData, createTubeDisplacer, type DisplaceDirection } from '@/geometry/displaceMesh';
+import { displaceMeshData, createTubeDisplacer, lodDisplacementFactor, type DisplaceDirection } from '@/geometry/displaceMesh';
 import type { TubeOptions } from '@/geometry/tubeMesher';
 import { Rng } from '@/core/rng';
-import { createBranchDisplacer, sharpnessLut, type BranchDisplaceSpec, type DisplaceMapping, type DisplaceSource } from '@/generators/displace';
-import { createDisplacementDef, displacementStamp, getHeightMips, hasDisplacementSource, type HeightField } from '@/materials/displacement';
+import {
+  BARK_STYLES,
+  barkActive,
+  barkGrid,
+  barkSpacing,
+  createBranchDisplacer,
+  creviceLut,
+  sharpnessLut,
+  type BarkSpec,
+  type BarkStyle,
+  type BranchDisplaceSpec,
+  type DisplaceMapping,
+  type DisplaceSource,
+} from '@/generators/displace';
+import { createDisplacementDef, displacementStamp, getHeightMips, hasDisplacementSource, sourceAlphaVaries, type HeightField } from '@/materials/displacement';
 import { getMaterialSource, resolveMaterialRef } from '@/materials/materialSource';
 import { primaryMaterialRef } from './uvConfig';
 
@@ -49,7 +62,7 @@ export function displacementDependencyKey(params: NodeParams): string {
 /** Source of the Displacement > Main height values (Trunk / Branch / Root). Nodes without the parameter read as 'noise' (all amounts 0, nothing moves). */
 export function readSource(params: NodeParams): DisplaceSource {
   const v = getString(params, 'displaceSource', '');
-  return v === 'material' ? 'material' : v === 'displacement' ? 'displacement' : 'noise';
+  return v === 'material' ? 'material' : v === 'displacement' ? 'displacement' : v === 'bark' ? 'bark' : 'noise';
 }
 
 /** Height-map definitions of a material (or of every member of a material set) referenced by the node's Material property. */
@@ -67,7 +80,12 @@ function materialHeightDefs(ref: string): DisplacementDef[] {
   for (const id of ids) {
     const mat = materials.find((m) => m.id === id);
     const assetId = mat?.slots.height?.texture?.assetId;
+    const normalId = mat?.slots.normal?.texture?.assetId;
     if (mat && assetId) out.push({ ...createDisplacementDef(`material-height:${mat.id}`, mat.name), assetId, normalize: false });
+    // Bark sets keep the height in the alpha channel of the normal map: used when there is no separate Height map.
+    else if (mat && normalId && sourceAlphaVaries(normalId) !== false) {
+      out.push({ ...createDisplacementDef(`material-height:${mat.id}`, mat.name), assetId: normalId, channel: 'a', normalize: false });
+    }
   }
   return out;
 }
@@ -125,6 +143,35 @@ const curveOf = (p: NodeParams, id: string): Curve | null => {
   return v && typeof v === 'object' && 'points' in v && Array.isArray((v as Curve).points) ? (v as Curve) : null;
 };
 
+/** Per-branch vertex cap of auto-subdivision for the Bark source (Subdivision > Max vertices). */
+export const DEFAULT_BARK_MAX_VERTICES = 40000;
+
+const barkStyleOf = (p: NodeParams): BarkStyle => {
+  const v = getString(p, 'barkStyle', 'furrowed');
+  return (BARK_STYLES as readonly string[]).includes(v) ? (v as BarkStyle) : 'furrowed';
+};
+
+/** Bark spec read from a node's parameters (all depths 0 = off). */
+export function barkSpecOf(params: NodeParams): BarkSpec {
+  const mCurve = curveOf(params, 'barkMaturityCurve');
+  return {
+    style: barkStyleOf(params),
+    depth: getNumber(params, 'barkDepth', 0),
+    scale: Math.max(0.002, getNumber(params, 'barkScale', 0.08)),
+    stretch: Math.max(0.1, getNumber(params, 'barkStretch', 4)),
+    warp: Math.max(0, getNumber(params, 'barkWarp', 0.5)),
+    crevice: creviceLut(getNumber(params, 'barkCrevice', 0.5)),
+    maturity: {
+      amount: getNumber(params, 'barkMaturity', 0),
+      rMin: getNumber(params, 'barkMaturityMin', 0.01),
+      rMax: getNumber(params, 'barkMaturityMax', 0.15),
+      curve: mCurve ? curveToLUT(mCurve, 256) : null,
+    },
+    seed: Math.round(getNumber(params, 'barkSeed', 0)),
+    maxVertices: Math.max(500, Math.round(getNumber(params, 'displaceMaxVertices', DEFAULT_BARK_MAX_VERTICES))),
+  };
+}
+
 /** Spec of the new Displacement tab (Main / Fine / Shape / Flares) read from a node's parameters. */
 export function branchDisplaceSpec(params: NodeParams, lod: number, chain: readonly HeightField[] | null): BranchDisplaceSpec {
   return {
@@ -160,6 +207,7 @@ export function branchDisplaceSpec(params: NodeParams, lod: number, chain: reado
     fadeTip: getNumber(params, 'displaceFadeTip', 1),
     lod,
     lodFade: getBool(params, 'displaceLodFade', true),
+    ...(readSource(params) === 'bark' ? { bark: barkSpecOf(params) } : {}),
   };
 }
 
@@ -170,7 +218,8 @@ export function branchDisplaceSpec(params: NodeParams, lod: number, chain: reado
 export function tubeDisplacementOptions(params: NodeParams, lod: number, skeleton: Skeleton | null, materialId = ''): Partial<TubeOptions> {
   const out: Partial<TubeOptions> = {};
   const height = resolveHeightSource(params, materialId);
-  const field = createBranchDisplacer(branchDisplaceSpec(params, lod, height.chain));
+  const spec = branchDisplaceSpec(params, lod, height.chain);
+  const field = createBranchDisplacer(spec);
   if (field) {
     out.displaceField = field;
     out.displaceDirection = direction(params);
@@ -201,16 +250,58 @@ export function tubeDisplacementOptions(params: NodeParams, lod: number, skeleto
     }
   }
   if ((out.displace || out.displaceField) && getBool(params, 'displaceAutoSubdivide', true)) {
-    let spacing = Math.max(0.002, getNumber(params, 'displaceDetail', 0.03));
-    if (skeleton) spacing = budgetedSpacing(skeleton, spacing, DISPLACE_VERTEX_BUDGET);
-    out.maxSegmentLength = spacing;
+    const bark = barkActive(spec) ? spec.bark : undefined;
+    if (bark) {
+      // Bark picks its density from the feature size; nothing is subdivided where the LOD fade has removed the relief.
+      if (!spec.lodFade || lodDisplacementFactor(lod) > 0) Object.assign(out, barkSubdivision(bark, skeleton, Math.round(getNumber(params, 'displaceMinSides', 16)), 1 + lod));
+    } else {
+      let spacing = Math.max(0.002, getNumber(params, 'displaceDetail', 0.03));
+      if (skeleton) spacing = budgetedSpacing(skeleton, spacing, DISPLACE_VERTEX_BUDGET);
+      out.maxSegmentLength = spacing;
+    }
   }
   return out;
 }
 
-/** Number of ring sides that gives quads of about `spacing` metres around a tube of `radius`, clamped to [minSides, 128]. */
-export const displacedSides = (radius: number, spacing: number, minSides: number): number =>
-  Math.min(128, Math.max(minSides, Math.ceil((2 * Math.PI * radius) / Math.max(1e-4, spacing))));
+/** Number of ring sides that gives quads of about `spacing` metres around a tube of `radius`, clamped to [minSides, maxSides (128)]. */
+export const displacedSides = (radius: number, spacing: number, minSides: number, maxSides = 128): number =>
+  Math.min(maxSides, Math.max(minSides, Math.ceil((2 * Math.PI * radius) / Math.max(1e-4, spacing))));
+
+/** Most sides around a bark branch. */
+export const BARK_MAX_SIDES = 256;
+/** Most rings along a bark branch. */
+export const BARK_MAX_RINGS = 2000;
+
+/**
+ * Ring / side density of the Bark source: >= 4 vertices across the narrowest feature (`coarsen` multiplies the spacings for LOD),
+ * then both spacings grow together until no branch exceeds `maxVertices` and the whole skeleton fits `DISPLACE_VERTEX_BUDGET`.
+ */
+export function barkSubdivision(bark: BarkSpec, sk: Skeleton | null, minSides: number, coarsen = 1): Partial<TubeOptions> {
+  const base = barkSpacing(bark);
+  let k = Math.max(1, coarsen);
+  if (sk) {
+    for (let iter = 0; iter < 12; iter++) {
+      let worst = 0;
+      let total = 0;
+      for (const b of sk.branches) {
+        let rMax = 0;
+        for (let i = 0; i < b.count; i++) rMax = Math.max(rMax, sk.radius[b.start + i] as number);
+        const g = barkGrid(b.length, rMax, base.around * k, base.along * k, minSides, BARK_MAX_SIDES, BARK_MAX_RINGS);
+        worst = Math.max(worst, g.rings * g.sides);
+        total += g.rings * g.sides;
+      }
+      const over = Math.max(worst / bark.maxVertices, total / DISPLACE_VERTEX_BUDGET);
+      if (over <= 1) break;
+      k *= Math.max(1.05, Math.sqrt(over));
+    }
+  }
+  return {
+    maxSegmentLength: base.along * k,
+    displaceSideSpacing: base.around * k,
+    displaceMaxSides: BARK_MAX_SIDES,
+    displaceMaxRings: BARK_MAX_RINGS,
+  };
+}
 
 /** Increases the spacing until the estimated vertex count of the whole skeleton fits the budget. */
 export function budgetedSpacing(sk: Skeleton, spacing: number, budget: number): number {

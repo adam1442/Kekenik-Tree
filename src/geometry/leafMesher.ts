@@ -1,11 +1,13 @@
 import type { CutoutMesh, LodLevel } from '@/contracts/material';
 import type { LeafLightingSettings } from '@/contracts/lighting';
-import type { MeshData } from '@/contracts/mesh';
+import { windPhase1Of, type MeshData } from '@/contracts/mesh';
+import { windPhase1OfTuple, type WindTuple } from './windAttributes';
 import { buildCutoutGeometry } from '@/materials/cutouts/buildCutoutGeometry';
 import { anchorFrameInPose, baseFrameInPose, buildCutoutFrame, cardPoseFor, placedMetric, type ResolvedAnchor } from '@/materials/cutouts/frame';
 import type { Frame } from './rigid';
 import { cross, dot, len, mul, norm, perpendicular, rotate, sub, type V3 } from './math3';
 import { deformFrame, deformWorldVertex, isDeformActive, leafLocalFrame, subdivisionPasses, type LeafDeform } from './leafDeform';
+import type { ItemColorFn } from './vertexColor';
 import { MeshAccumulator, newVertex, type VertexAttrs } from './meshAccumulator';
 import { applyLeafLighting, isLightingActive, type LightingGroup } from './leafLighting';
 import type { LeafSpan } from './batchedLeaf';
@@ -47,13 +49,17 @@ export interface LeafCard {
   segWidth: number;
   outline: LeafOutline;
   color: V3;
+  /** Per-card random tint 0..1 (Kekenik packing R channel). */
+  tint?: number;
+  /** Material > Vertex Color > Mode: the card colour at 0 (base) .. 1 (tip) along the axis; absent = the plain colour. */
+  colorAt?: ItemColorFn;
   ao: number;
   /** UV0 rectangle [u0, v0, u1, v1] inside the atlas. */
   atlas: [number, number, number, number];
   materialId: string;
   /** Wind pivot (leaf base) and weights (hierarchy 0..2, phase). */
   pivot: V3;
-  wind: [number, number, number, number];
+  wind: WindTuple;
   /** Optional authored CutoutMesh. When present, emits tight cutout geometry instead of a quad grid. */
   cutout?: CutoutMesh | null;
   /** LOD level 0..3 or an explicit mesh LOD slot for cutout LOD selection. */
@@ -172,6 +178,17 @@ function deformCard(acc: MeshAccumulator, card: LeafCard, first: number, firstIn
   acc.recomputeNormalsFrom(first, firstIndex);
 }
 
+/** Card colour at `t` along the blade: Material > Vertex Color > Mode applied to `base` (plain `base` when neutral). */
+function cardColor(c: LeafCard, base: V3, t: number): V3 {
+  return c.colorAt ? c.colorAt(base, t) : base;
+}
+
+/** 0 (base) .. 1 (tip) position of a world point along the card axis. */
+function alongCard(c: LeafCard, x: number, y: number, z: number): number {
+  const t = ((x - c.origin[0]) * c.axis[0] + (y - c.origin[1]) * c.axis[1] + (z - c.origin[2]) * c.axis[2]) / Math.max(1e-9, c.length);
+  return t < 0 ? 0 : t > 1 ? 1 : t;
+}
+
 function emitCard(acc: MeshAccumulator, c: LeafCard, index: number, cells: number): void {
   if (c.cutout) {
     const cm = buildCutoutGeometry(c.cutout, c.lod ?? 0, {
@@ -213,9 +230,12 @@ function emitCard(acc: MeshAccumulator, c: LeafCard, index: number, cells: numbe
         vx.u1 = cm.uv1 ? (cm.uv1[i * 2] as number) : vx.u;
         vx.v1 = cm.uv1 ? (cm.uv1[i * 2 + 1] as number) : vx.v;
         vx.ao = cm.ao ? (cm.ao[i] as number) : c.ao;
-        vx.r = cm.colors ? (cm.colors[i * 4] as number) : c.color[0] * c.ao;
-        vx.g = cm.colors ? (cm.colors[i * 4 + 1] as number) : c.color[1] * c.ao;
-        vx.b = cm.colors ? (cm.colors[i * 4 + 2] as number) : c.color[2] * c.ao;
+        const col = cardColor(c, cm.colors ? [cm.colors[i * 4] as number, cm.colors[i * 4 + 1] as number, cm.colors[i * 4 + 2] as number] : c.color, alongCard(c, vx.px, vx.py, vx.pz));
+        const shade = cm.colors ? 1 : c.ao;
+        vx.r = col[0] * shade;
+        vx.g = col[1] * shade;
+        vx.b = col[2] * shade;
+        vx.bt = c.tint ?? -1;
         vx.pvx = c.pivot[0];
         vx.pvy = c.pivot[1];
         vx.pvz = c.pivot[2];
@@ -223,6 +243,7 @@ function emitCard(acc: MeshAccumulator, c: LeafCard, index: number, cells: numbe
         vx.w1 = cm.wind ? (cm.wind.weights[i * 4 + 1] as number) : c.wind[1];
         vx.w2 = cm.wind ? (cm.wind.weights[i * 4 + 2] as number) : c.wind[2];
         vx.w3 = cm.wind ? (cm.wind.weights[i * 4 + 3] as number) : c.wind[3];
+        vx.w4 = cm.wind ? windPhase1Of(cm.wind, i) : windPhase1OfTuple(c.wind);
         acc.addVertex(vx);
       }
       for (let t = 0; t < cm.indices.length; t += 3) {
@@ -302,11 +323,14 @@ function emitCard(acc: MeshAccumulator, c: LeafCard, index: number, cells: numbe
       vx.v1 = (cy + a) / cells;
       const ao = c.ao * (0.85 + 0.15 * a);
       vx.ao = ao;
-      vx.r = c.color[0] * ao; vx.g = c.color[1] * ao; vx.b = c.color[2] * ao;
+      const col = cardColor(c, c.color, a);
+      vx.r = col[0] * ao; vx.g = col[1] * ao; vx.b = col[2] * ao;
+      vx.bt = c.tint ?? -1;
       vx.pvx = c.pivot[0]; vx.pvy = c.pivot[1]; vx.pvz = c.pivot[2];
       vx.w0 = c.wind[0]; vx.w1 = c.wind[1];
       vx.w2 = c.wind[2] + (1 - c.wind[2]) * a * 0.8;
       vx.w3 = c.wind[3];
+      vx.w4 = windPhase1OfTuple(c.wind);
       acc.addVertex(vx);
     }
   }

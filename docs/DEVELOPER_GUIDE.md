@@ -16,8 +16,11 @@ Create `src/nodes/<family>/index.ts` exporting `nodeDefs: NodeDef[]` (auto-disco
 ## Add a force / exporter
 Forces: `src/forces/registry.ts` + a `ForceDef` node in `src/nodes/forces`. Exporters: a writer in `src/export/writers/`, then a format option in `src/export/types.ts` and `exportService.ts`.
 
-## Add a species preset
-Append a `SpeciesDef` to `src/presets/species.ts` (nodes + params + `MaterialSpec`s + `WindSpec`). `tests/presets.test.ts` builds, round-trips, evaluates at LOD 0 and 3 and checks material ids. Bump `BUILTIN_REVISION` in `presets/catalog.ts` to refresh cached thumbnails. Placeholder maps come from `presets/procTextures.ts`.
+## Add a sample project
+Save the project as `.ktree` (File ▸ Save), copy it into `public/Sample Projects/` and add one row (`id`, `file`, `name`, `category`, `description`, `tags`) to `SAMPLES` in `src/presets/samples.ts`. Vite copies the folder to `dist/Sample Projects/`; the file is fetched when the sample is opened or its thumbnail is rendered. `tests/presets.test.ts` loads every sample, round-trips it and evaluates it at LOD 0 and 3 (add the id to `SAMPLE_IDS` automatically through `SAMPLES`). Bump `BUILTIN_REVISION` in `presets/catalog.ts` when a sample file changes so cached thumbnails refresh.
+
+## The empty default project
+`defaultGraph()` (`src/app/project/defaultGraph.ts`) returns the Tree node and nothing else; it is used at startup, by File ▸ New and when the last document is closed. Tests that need a small complete tree use `tests/fixtures/starterGraph.ts`.
 
 ## Add a command / shortcut
 `app.commands.register({ id, label, shortcut, run })` in `app/appCommands.ts`; reference it from `app/menus.ts` with `c('id')`. The cheat sheet (`?`) is generated from the registry.
@@ -33,3 +36,6 @@ Every UI class is a `kt-*` name styled in `src/ui/theme/*.css` (all imported by 
 
 ## Testing & profiling
 `npm test` (vitest, jsdom for DOM tests). `Alt+P` toggles the evaluation profiler overlay. Long-run leak check: load every preset repeatedly (`Library`), watch `renderer.info` in the viewport stats.
+
+## Realism QA harness
+`src/qa/` holds pure metrics (no DOM, no three.js): `surfaceMetrics` (dihedral angles, softness index, normal variance per 10 cm patch, edge lengths, vertices per metre), `profileMetrics` (circularity, radius roughness, silhouette deviation of the trunk and the two largest branches), `forkMetrics` (7 cross-section stations per split: waist ratio, pipe-model area, valley curvature, simple outlines, ring 0 normal jump, open-end regularity) and `windSeamMetrics` (re-export of `auditWindSeams`). Run the whole-species report with `QA_REPORT=1 npx vitest run tests/qa --maxWorkers=2` (no npm script; it writes `qa/realism-report.md`, `qa/baseline.json` and the git-ignored `qa/out/` OBJ / SVG dumps; without the variable the report test is skipped). The metric definitions, the targets and the baseline are in `docs/REALISM_TARGETS.md`. Regenerate and commit `qa/baseline.json` whenever a task intentionally changes the geometry.

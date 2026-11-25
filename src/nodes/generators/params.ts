@@ -1,7 +1,9 @@
 import { flatCurve, type Curve } from '@/contracts/curve';
+import { dynamicLodGeneratorParams, lightmapGeneratorParams } from './dynamicLodParams';
 import type { Condition, ListParamDef, ParamDef } from '@/contracts/params';
 import { getCurvePreset } from '@/core/curve';
 import { section } from '../shared/builders';
+import { seasonTimingParams } from './seasonParams';
 
 /**
  * Parameter catalogues of the generator nodes, grouped by inspector tab (`group`) and section (`subgroup`).
@@ -18,7 +20,7 @@ export interface GenerationDefaults {
   includeBranchExtended?: boolean;
   /** First-generation capable: adds the `Tree placement` section (distribution inside the Tree disc). */
   placement?: boolean;
-  /** Adds the `Extend parent` section (Branch, Cap, Leaf, Batched leaf: valid under a Branch or Trunk parent). */
+  /** Adds the `Extend parent` section (Branch, Root, Cap, Leaf, Batched leaf: valid under a Branch, Trunk or Root parent). */
   extend?: boolean;
   /** Hides `Extend parent > Count` (the Cap closes every open end it takes, one cap each). */
   extendNoCount?: boolean;
@@ -57,7 +59,7 @@ function namedList(id: string, label: string, subgroup: string, field: string, f
   };
 }
 
-/** Pass and Size scalar only, for generators with their own Generation tab (Frond, Decoration). */
+/** Pass and Size scalar only, for generators with their own Generation tab (Frond). */
 export function passAndSizeParams(): ParamDef[] {
   const c = section('Generation', 'Common');
   const mo = section('Generation', 'More');
@@ -271,7 +273,7 @@ export function generationParams(d: GenerationDefaults): ParamDef[] {
   if (d.extend) {
     list.push(
       ex.enumOf('extendParent', 'Type', 'None', ['None', 'Any', 'Split 1', 'Split 2', 'Skinny', 'Fat', 'Breaks only', 'Bottom'], {
-        tooltip: 'Continues an open end of the parent instead of starting a new branch. Valid only under a Branch or Trunk parent. Any = every open end (the two sides of a split count, the split branch itself does not), Split 1 / Split 2 = that side, Skinny / Fat = the thinner / thicker side, Breaks only = branches that broke, Bottom = the base of the parent.',
+        tooltip: 'Continues an open end of the parent instead of starting a new branch. Valid only under a Branch, Trunk or Root parent. On a Root generator Bottom continues the base ring of the trunk (roots never start on split halves). Any = every open end (the two sides of a split count, the split branch itself does not), Split 1 / Split 2 = that side, Skinny / Fat = the thinner / thicker side, Breaks only = branches that broke, Bottom = the base of the parent.',
       }),
       ...(d.extendNoCount ? [] : [ex.int('extendCount', 'Count', 1, { min: 1, max: 8, visibleIf: extendActive, tooltip: 'Extensions created per open end (several extensions on one end separate by Extensions > Spread).' })]),
     );
@@ -519,13 +521,8 @@ export function spineParams(
     bk.float('breakSpot', 'Spot', 0.68, { min: 0.02, max: 0.99, variance: 0.15, tooltip: 'Where along the spine the break happens (1 = at the tip).' }),
     bk.seed('breakSeed', 'Seed'),
 
-    // Splits & Termination / Break
-    tm.enumOf('termination', 'Tip behavior', 'Taper', ['Taper', 'Blunt', 'Broken', 'Fork']),
-    tm.float('splitChance', 'Split chance', isRoot ? 0.3 : 0, { min: 0, max: 1 }),
-    tm.float('splitSpread', 'Split spread', isRoot ? 30 : 25, { min: 2, max: 85, unit: '°' }),
-    tm.float('splitBalance', 'Split balance', 0.5, { min: 0.15, max: 0.85 }),
-    tm.float('splitStart', 'Split position', 0.58, { min: 0.15, max: 0.9 }),
-    tm.int('splitMaxDepth', 'Max split depth', 1, { min: 1, max: 3 }),
+    // Termination (splits live in Skin > Splits: one engine for Trunk, Branch and Root)
+    tm.enumOf('termination', 'Tip behavior', 'Taper', ['Taper', 'Blunt', 'Broken']),
   ];
 
   if (isRoot) {
@@ -549,8 +546,8 @@ export function spineParams(
   if (opts.kind === 'branch') {
     const ex = section('Spine', 'Extensions');
     out.push(
-      ex.float('extensionLengthScale', 'Length scale', 1, { min: 0.05, max: 8, softMax: 3, tooltip: 'Scales the spine length of the extensions made by this node (see Generation > Extend parent).' }),
-      ex.float('extensionSpread', 'Spread', 15, {
+      ex.float('extensionLengthScale', 'Length scale', 1, { min: 0.1, max: 3, tooltip: 'Scales the spine length of the extensions made by this node (see Generation > Extend parent).' }),
+      ex.float('extensionSpread', 'Spread', 0, {
         min: 0,
         max: 90,
         unit: '°',
@@ -578,6 +575,7 @@ export function forcesParams(): ParamDef[] {
     i.float('forceInfluence', 'Influence', 1, { min: 0, max: 10, softMax: 2, curve: true }),
     i.float('forceStiffness', 'Stiffness', 0.5, { min: 0, max: 1, curve: true }),
     i.float('forceFalloff', 'Falloff', 0, { min: 0, max: 1 }),
+    i.float('forceAlign', 'Align', 1, { min: 0, max: 2, softMax: 1, tooltip: 'Scalar for the Align strength of every attached force: how much the forces influence the initial orientation (first segment) of this generator\'s branches. 1 = as set on each force, 0 = branches keep their initial orientation.' }),
   ];
 }
 
@@ -585,20 +583,30 @@ export function shapeParams(defaultFlareRadius = 0, defaultFlareHeight = 0.14): 
   const c = section('Shape', 'Cross section');
   const f = section('Shape', 'Flare');
   const b = section('Shape', 'Bulge');
+  const bt = section('Shape', 'Buttress');
   return [
     c.float('sectionAspect', 'Aspect', 1, { min: 0.1, max: 4, curve: true }),
     c.float('sectionRoundness', 'Roundness', 1, { min: 0, max: 1 }),
-    c.enumOf('sectionShape', 'Profile', 'Round', ['Round', 'Ridged', 'Lobed', 'Noise']),
+    c.enumOf('sectionShape', 'Profile', 'Round', ['Round', 'Ridged', 'Lobed', 'Noise', 'Organic'], {
+      tooltip: 'Round, Ridged, Lobed, Noise, or Organic: an oval plus lobes whose strength, phase and orientation drift slowly along the trunk (and can spiral).',
+    }),
     c.int('sectionLobes', 'Lobes', 5, { min: 1, max: 32 }),
     c.float('sectionDepth', 'Depth', 0.12, { min: 0, max: 1 }),
     c.float('sectionSpiral', 'Spiral', 0, { min: -6, max: 6, unit: 'rad/m' }),
     c.float('sectionNoiseFrequency', 'Noise frequency', 2, { min: 0.1, max: 20 }),
+    c.float('sectionOval', 'Oval (organic)', 0.1, { min: 0, max: 0.6, tooltip: 'Organic profile: how far the section is stretched into an oval (fraction of the radius). The long axis turns slowly along the trunk.' }),
+    c.float('sectionDrift', 'Drift length (organic)', 2, { min: 0.05, max: 50, softMax: 10, unit: 'm', tooltip: 'Organic profile: metres of trunk for one full change of the oval, the lobe strength and their phase. Small values change quickly.' }),
+    c.float('grainTwist', 'Grain twist (organic)', 0, { min: -360, max: 360, softMax: 90, unit: '°/m', tooltip: 'Organic profile: degrees per metre the lobes spiral up the trunk (spiral grain, fluting). Added to Spiral for the lobes only.' }),
     f.float('flareRadius', 'Radius', defaultFlareRadius, { min: 0, max: 5, softMax: 1.5, curve: true }),
     f.float('flareHeight', 'Height', defaultFlareHeight, { min: 0.01, max: 1 }),
     f.int('flareLobes', 'Buttress lobes', 5, { min: 0, max: 16 }),
     f.float('flareNoise', 'Noise', 0, { min: 0, max: 1 }),
     b.float('bulgeAmount', 'Amount', 0, { min: 0, max: 2, curve: true }),
     b.float('bulgeFrequency', 'Frequency', 1, { min: 0.1, max: 20 }),
+    bt.int('buttressCount', 'Count', 0, { min: 0, max: 16, tooltip: 'Number of tall, thin fins that radiate from the base of the trunk (tropical and old trees). 0 = off. Use at least 8 radial sides per fin.' }),
+    bt.float('buttressHeight', 'Height', 1.5, { min: 0.05, max: 30, softMax: 6, unit: 'm', tooltip: 'How far up the trunk the fins climb. The top edge is a concave ridge that runs out into the trunk.' }),
+    bt.float('buttressLength', 'Length', 1, { min: 0, max: 5, softMax: 3, tooltip: 'How far a fin sticks out at the ground, as a multiple of the trunk radius.' }),
+    bt.float('buttressThickness', 'Thickness', 0.3, { min: 0.02, max: 1, tooltip: 'Width of the flat ridge of a fin relative to the space between two fins. Thin fins have concave sides.' }),
   ];
 }
 
@@ -748,6 +756,7 @@ function skinShapeParams(radius: SkinRadiusKind, defaultSpineOnly: boolean): Par
   const r = section('Skin', 'Radius');
   const cl = section('Skin', 'Clamp');
   const sq = section('Skin', 'Squash');
+  const ir = section('Skin', 'Irregularity');
   const squashed = { param: 'squashAmount', op: 'gt', value: 0 } as const;
   const skinType = ty.enumOf('skinType', 'Type', defaultSpineOnly ? 'Spine only' : 'Polygons', ['Polygons', 'Spine only', 'SubD surface (rectangular attachments)', 'SubD surface (arbitrary attachments)'], {
     tooltip: 'Polygons builds the tube mesh. Spine only builds no mesh: the spine stays available for children such as fronds and leaves. The SubD surface types are not available yet.',
@@ -773,6 +782,20 @@ function skinShapeParams(radius: SkinRadiusKind, defaultSpineOnly: boolean): Par
           r.float('skinLengthKill', 'Length kill ratio', 0, { min: 0, max: 10000, softMax: 500, tooltip: 'Removes branches whose length divided by radius is above this value (very long, thin whips). 0 = off.' }),
         ]
       : []),
+    ...(radius !== 'none'
+      ? [
+          ir.float('radiusNoiseAmount', 'Amount', 0, {
+            min: 0,
+            max: 0.6,
+            softMax: 0.3,
+            curve: true,
+            tooltip: 'Irregularity of the radius: slow swells and pinches along the branch, as a fraction of the radius (RMS). 0 = a clean taper. The curve runs along the branch (left = base, right = tip).',
+          }),
+          ir.float('radiusNoiseScale', 'Scale', 1.5, { min: 0.05, max: 50, softMax: 10, unit: 'm', tooltip: 'Wavelength of the swells in metres (a second octave at 3x the frequency and 0.4 of the amplitude adds detail).' }),
+          ir.seed('radiusNoiseSeed', 'Seed'),
+          ir.float('radiusNoiseParent', 'Along parent', 1, { min: 0, max: 1, softMax: 1, curve: true, tooltip: 'Multiplies the irregularity of a child by this curve along its parent (left = parent base, right = parent tip).' }),
+        ]
+      : []),
     r.float('seamReduction', 'Light seam reduction', 0, {
       min: 0,
       max: 1,
@@ -796,25 +819,66 @@ function skinShapeParams(radius: SkinRadiusKind, defaultSpineOnly: boolean): Par
  * `radius` adds the generator-level Radius / Clamp options.
  */
 /** Skin > Splits: the branch ends in two fused open ends (Extend parent / Cap continue them). */
-export function splitParams(): ParamDef[] {
+export function splitParams(rootDefaults = false): ParamDef[] {
   const s = section('Skin', 'Splits');
   const sp = section('Skin', 'Split spread');
   const ex = section('Skin', 'Split expand');
   const sm = section('Skin', 'Split smooth');
+  const adv = section('Skin', 'Split advanced');
+  const shape = section('Skin', 'Split shape');
   return [
-    s.float('splitsChance', 'Chance', 0, {
+    s.float('splitsChance', 'Chance', rootDefaults ? 0.3 : 0, {
+      variance: 0,
       min: 0,
       max: 1,
-      tooltip: 'Probability that the branch divides into two open ends at its tip. Needs a bark texture with at least two U tiles around the tube.',
+      tooltip: 'Probability that the branch divides into two open ends at its tip. The U tile count around the branch must be even (at least 2): an odd count is raised to the next even number when the branch splits, and the node reports it as a warning.',
     }),
-    s.float('splitsBalance', 'Balance', 0.5, { min: 0, max: 1, tooltip: '0.5 gives both sides the same radius; lower or higher moves radius from Side 1 to Side 2 (the cross-section area is kept).' }),
+    s.float('splitsBalance', 'Balance', 0.5, { variance: 0, min: 0, max: 1, tooltip: '0.5 gives both sides the same radius; lower or higher moves radius from Side 1 to Side 2 (the cross-section area is kept).' }),
     s.seed('splitsSeed', 'Seed'),
-    sp.float('splitsSpread1', 'Side 1', 25, { min: 0, max: 85, unit: '°', tooltip: 'Angle of Side 1 away from the centre of the tree.' }),
-    sp.float('splitsSpread2', 'Side 2', 25, { min: 0, max: 85, unit: '°', tooltip: 'Angle of Side 2 toward the centre of the tree.' }),
-    ex.float('splitsExpand1', 'Side 1', 1, { min: 0.25, max: 3, tooltip: 'Scales the cross-section of Side 1 from its default (1).' }),
-    ex.float('splitsExpand2', 'Side 2', 1, { min: 0.25, max: 3, tooltip: 'Scales the cross-section of Side 2 from its default (1).' }),
-    sm.float('splitsSmoothInner', 'Inner', 0.25, { min: 0, max: 1, tooltip: '0 = hard crease between the two sides, 1 = no crease.' }),
-    sm.float('splitsSmoothOuter', 'Outer', 0.5, { min: 0, max: 1, tooltip: 'Smoothness of the outer bend where the split occurs (0 = hard corner).' }),
+    s.enumOf('splitsMode', 'Fork type', 'Y', ['Y', 'Lateral'], {
+      tooltip: 'Y = a symmetric fork (two lobes, Balance and the two Spread angles). Lateral = the branch keeps going with a slight kink and a clearly thinner side branch leaves at the Spread angle from a swelling (the branch-like fork of old oaks); the neck swell, ridge and valley fillet of the junction are applied automatically.',
+    }),
+    s.float('splitsDominance', 'Dominance', 0, {
+      variance: 0,
+      min: 0,
+      max: 1,
+      tooltip: 'Dominant leader. 0 = Balance only. Towards 1 the fat half continues the direction of the branch almost unchanged (its deviation shrinks down to 25 % of its Spread) while the skinny half leaves at its full Spread with a smaller radius. r1^e + r2^e = R^e still holds. Extend parent Fat / Skinny keep working.',
+    }),
+    s.float('splitsLateralChance', 'Lateral chance', 0, {
+      variance: 0,
+      min: 0,
+      max: 1,
+      tooltip: 'Fork type Y only: probability that a fork is a lateral (one-sided) one instead, drawn per fork from the Splits seed, so one tree mixes Y and lateral forks.',
+    }),
+    sp.float('splitsSpread1', 'Side 1', rootDefaults ? 30 : 22, { variance: 0, min: 0, max: 80, unit: '°', tooltip: 'Angle of Side 1 away from the centre of the tree.' }),
+    sp.float('splitsSpread2', 'Side 2', rootDefaults ? 30 : 22, { variance: 0, min: 0, max: 80, unit: '°', tooltip: 'Angle of Side 2 toward the centre of the tree.' }),
+    ex.float('splitsExpand1', 'Side 1', 1, { variance: 0, min: 0.5, max: 2, tooltip: 'Scales the cross-section of Side 1 from its default (1).' }),
+    ex.float('splitsExpand2', 'Side 2', 1, { variance: 0, min: 0.5, max: 2, tooltip: 'Scales the cross-section of Side 2 from its default (1).' }),
+    sm.float('splitsSmoothInner', 'Inner', 0.25, { variance: 0, min: 0, max: 1, tooltip: '0 = hard crease between the two sides, 1 = no crease.' }),
+    sm.float('splitsSmoothOuter', 'Outer', 0.5, { variance: 0, min: 0, max: 1, tooltip: 'Smoothness of the outer bend where the split occurs (0 = hard corner).' }),
+    adv.float('splitsAreaExponent', 'Area exponent', rootDefaults ? 2.3 : 2, {
+      min: 1.5,
+      max: 3,
+      tooltip: 'Pipe-model exponent e of r1^e + r2^e = parent radius^e. 2 keeps the cross-section area of the parent; higher values make both halves thicker.',
+    }),
+    adv.float('splitsDownBias', 'Down bias', rootDefaults ? 0.4 : 0, {
+      min: 0,
+      max: 1,
+      tooltip: 'Turns both halves toward gravity after the sides are balanced (roots default to 0.4). A half never points higher than the branch it leaves.',
+    }),
+    shape.float('splitsWaist', 'Waist', 1, { min: 0.2, max: 1, tooltip: 'Width of the neck at the middle of the transition relative to the narrower lobe. 1 = the former outline, 0.6 = a pronounced figure-8 (peanut) that pinches and then separates.' }),
+    shape.float('splitsNeckSwell', 'Neck swell', 0, { min: 0, max: 0.5, tooltip: 'The parent swells by up to this fraction of its radius just before the fork. The swell is paid from the area reservoir of the lobes: the open ends keep r1^e + r2^e = R^e.' }),
+    shape.float('splitsValleyRadius', 'Valley radius', 0, { min: 0, max: 1, tooltip: 'Fillet radius of the valley between the lobes as a fraction of the smaller lobe radius. 0 = the former crease (Smooth > Inner still mixes crease and no crease); the radius fades to 0 at the open ends.' }),
+    shape.float('splitsRidge', 'Ridge', 0, { min: 0, max: 1, tooltip: 'Raised bark ridge along the pinch axis from the valley down to the crotch point; height as a fraction of the smaller lobe radius, width about the valley radius.' }),
+    shape.float('splitsRidgeLength', 'Ridge length', 2, { min: 0.25, max: 8, unit: 'R', tooltip: 'Length over which the ridge blends into the parent, in parent radii counted back from the crotch.' }),
+    shape.float('splitsStretch', 'Stretch', 1, { min: 0.8, max: 1.6, tooltip: 'Elongates the section along the divergence axis early in the transition (ovalisation before the pinch). 1 = none.' }),
+    shape.float('splitsIncludedBark', 'Included bark', 0, {
+      variance: 0,
+      min: 0,
+      max: 1,
+      tooltip: 'Codominant stems with included bark: deepens the valley into a narrow, dark, V-shaped crevice with a bark ridge (smaller valley radius, narrower neck, a ridge, stronger ambient occlusion). 0 = off.',
+    }),
+    shape.float('splitsEase', 'Ease', 0, { min: 0, max: 1, tooltip: 'Easing of the separation along the transition: 0 = smoothstep as before, 1 = the lobes stay merged longer and then pinch off suddenly.' }),
   ];
 }
 
@@ -822,25 +886,28 @@ export function splitParams(): ParamDef[] {
 function extensionSkinParams(): ParamDef[] {
   const ex = section('Skin', 'Extensions');
   return [
-    ex.float('extensionRadius', 'Radius', 1, {
+    ex.float('extensionRadius', 'Radius', 0, {
       min: 0,
       max: 1,
       curve: true,
       tooltip: 'How much of the profile curve is used. The curve is the radius along the extension relative to the radius the branch would have there (it starts at the parent radius).',
     }),
     ex.float('extensionNormalSmooth', 'Normal smooth', 0.5, { min: 0, max: 1, tooltip: 'Smooths the normals at the base of extensions to hide seams between several extensions.' }),
-    ex.float('extensionDisplaceScale', 'Displacement scale', 1, { min: 0, max: 8, softMax: 3, tooltip: 'Scales the displacement on the extensions made by this node.' }),
+    ex.float('extensionDisplaceScale', 'Displacement scale', 1, { min: 0, max: 2, tooltip: 'Scales the displacement on the extensions made by this node.' }),
+    ex.float('extensionBlendLength', 'Blend length', 2, { min: 0.5, max: 8, tooltip: 'Length, in parent radii, over which an extension blends from its parent material to its own. Has no effect while the extension material is Inherited.' }),
+    ex.float('extensionBlendContrast', 'Contrast', 0.35, { min: 0, max: 1, tooltip: '0 = soft material transition, 1 = hard edge.' }),
+    ex.float('extensionBlendNoise', 'Noise', 0.3, { min: 0, max: 1, tooltip: 'Makes the blend line around the extension irregular.' }),
   ];
 }
 
-export function skinParams(defaultSpineOnly = false, sides?: number, welding = false, radius: SkinRadiusKind = 'none', extensions = false): ParamDef[] {
+export function skinParams(defaultSpineOnly = false, sides?: number, welding = false, radius: SkinRadiusKind = 'none', extensions = false, rootSplitDefaults = false): ParamDef[] {
   const g = section('Skin', 'Geometry');
   const n = section('Skin', 'Normals');
   const c = section('Skin', 'Vertex color');
   const j = section('Skin', 'Junction');
   return [
     ...skinShapeParams(radius, defaultSpineOnly),
-    ...(radius !== 'none' ? splitParams() : []),
+    ...(radius !== 'none' ? splitParams(rootSplitDefaults) : []),
     ...(extensions ? extensionSkinParams() : []),
     ...(sides !== undefined ? [g.int('sides', 'Sides', sides, { min: 3, max: 64 })] : []),
     g.bool('capEnd', 'Close end', true),
@@ -849,12 +916,45 @@ export function skinParams(defaultSpineOnly = false, sides?: number, welding = f
     g.float('skinTwist', 'Twist', 0, { min: -720, max: 720, unit: '°/m' }),
     j.float('collarAmount', 'Collar', 0.3, { min: 0, max: 2, tooltip: 'Radius flare where a branch leaves its parent.' }),
     j.float('collarLength', 'Collar length', 1.5, { min: 0.1, max: 10, tooltip: 'Length of the flare in branch radii.' }),
+    j.float('collarSwell', 'Collar swell', 0, { min: 0, max: 1, tooltip: 'Raised shoulder where the branch meets its parent: the skin around the junction is pushed out by this fraction of the branch radius in a smooth bump (length: Collar length x radius). 0 = off. Not used where Welding is on (Spread does that job).' }),
     ...(welding ? weldingParams() : []),
     n.float('smoothing', 'Smoothing', 1, { min: 0, max: 1, tooltip: 'Below 0.5 the tube is faceted (unwelded quads).' }),
     n.float('flatten', 'Flatten', 0, { min: 0, max: 1 }),
     c.color('tint', 'Tint', [0.36, 0.26, 0.18, 1]),
     c.float('tintVariance', 'Variance', 0.1, { min: 0, max: 1 }),
     c.float('aoStrength', 'AO strength', 0.6, { min: 0, max: 1 }),
+    ...vertexColorParams(),
+  ];
+}
+
+/**
+ * Generator "Vertex Color" properties: how this generator's vertex colour relates to the colour it inherits from its parent.
+ * One builder for every generator: tube generators (Branch / Trunk / Root / Knot) get it under Skin > Vertex color with their
+ * own Variance; items (Leaf / Frond / Decal / Fin / Cluster) get it appended to Material > Vertex Color, where the existing
+ * Variance already randomises each item, so only Mode / Color / Seamless / Profile / Parent curve are added there.
+ */
+export function vertexColorParams(items = false): ParamDef[] {
+  const c = items ? section('Material', 'Vertex Color') : section('Skin', 'Vertex color');
+  const active = { param: 'vcMode', op: 'ne', value: 'inherit' } as const;
+  const where = items ? 'along the item (left: base, right: tip)' : 'along this branch (left: base, right: tip)';
+  const parentHelp = items
+    ? 'Strength of the Mode by the position of the attach point on the parent (left: parent base, right: parent tip); a frond runs along its parent, so it follows the curve along it. Ignored without a parent.'
+    : 'Strength of the Mode by the position of the attach point on the parent (left: parent base, right: parent tip). Ignored without a parent.';
+  return [
+    c.enumOf('vcMode', 'Mode', 'Inherit', ['Inherit', 'Multiply', 'Set', 'Add'], {
+      tooltip: items
+        ? 'Inherit: keep the colour (Color x Variance, earlier behaviour). Multiply: tint it by Mode color. Set: replace it with Mode color. Add: brighten it by Mode color. Profile and Parent curve control where the change applies.'
+        : 'Inherit: the colour is the bark colour blended with the parent at the junction (earlier behaviour). Multiply: tint it by Color. Set: replace it with Color. Add: brighten it by Color. Profile and Parent curve control where along the branch and along the parent the change applies.',
+    }),
+    c.color('vcColor', items ? 'Mode color' : 'Color', [1, 1, 1, 1], { tooltip: 'Linear colour used by Multiply, Set and Add.', visibleIf: active }),
+    ...(items ? [] : [c.float('vcVariance', 'Variance', 0, { min: 0, max: 1, tooltip: 'Per-branch brightness variation (+-), deterministic from the seed. 0 = none.' })]),
+    c.bool('vcSeamless', 'Seamless', false, {
+      tooltip: items
+        ? 'The colour at the attach point equals the parent colour exactly and blends into the item\'s own colour over its first quarter (needs the parent to be meshed first; falls back to the own colour otherwise).'
+        : 'The colour at the attach point equals the parent colour exactly and blends into this generator\'s own colour along the collar (needs the parent to be meshed first; falls back to the bark colour otherwise).',
+    }),
+    c.curve('vcProfile', 'Profile', flatCurve(1), { tooltip: `Strength of the Mode ${where}. 1 = full effect, 0 = the inherited colour. Use it for lighter young twigs, darker trunk bases or leaf tips.`, visibleIf: active }),
+    c.curve('vcParentCurve', 'Parent curve', flatCurve(1), { tooltip: parentHelp, visibleIf: active }),
   ];
 }
 
@@ -874,7 +974,7 @@ export function uvParams(extensions = false): ParamDef[] {
     ...(extensions
       ? [
           m.enumOf('extensionUvStyle', 'Extension style', 'Automatic', ['Automatic', 'Manual (match)', 'Manual (match u only)', 'Manual (full control)'], {
-            tooltip: 'How an extension maps its texture next to the branch it extends. Automatic continues the parent (tiles around, V, twist, offset). Manual (match) uses its own settings but the parent tile count and a V that starts where the parent ends. Manual (match u only) only copies the tile count. Manual (full control) ignores the parent.',
+            tooltip: 'How an extension maps its texture next to the branch it extends. Automatic continues the parent (tiles around, V, twist, offset). Manual (match) copies the parent tile count and V; your own U and V offsets are added to those of the parent. Manual (match u only) copies only the tile count; the U offset is added to that of the parent, V is your own. Manual (full control) ignores the parent.',
           }),
         ]
       : []),
@@ -952,6 +1052,7 @@ export function uvParams(extensions = false): ParamDef[] {
       : []),
     t.bool('uvOptimize', 'Optimize segments', false, { tooltip: 'Avoids rings that are very close together near a patch seam (or a whole V number): the seam moves onto a ring within the V tolerance instead of adding one.' }),
     t.float('uvVTolerance', 'V tolerance', 0.1, { min: 0, max: 0.5, step: 0.01, tooltip: 'How close (in V) a ring must be to a whole number to be moved onto it while Optimize segments is on.' }),
+    t.bool('uvCreateSeams', 'Create seams', false, { tooltip: 'Cuts real geometry (doubled ring vertices) at every whole U tile border so each tile around the branch is its own UV island: the branch texture can then sit in an atlas without resolution loss. Positions and normals stay continuous across the cut (the mesh is still watertight when welded).' }),
     ...(extensions ? [t.seed('uvTilingSeed', 'Seed')] : []),
   ];
 }
@@ -965,6 +1066,8 @@ export function lodParams(): ParamDef[] {
     r.float('lodCull', 'Cull amount', 0, { min: 0, max: 1 }),
     d.float('lodFadeStart', 'Fade start', 0.5, { min: 0, max: 1 }),
     d.float('lodFadeEnd', 'Fade end', 1, { min: 0, max: 1 }),
+    ...dynamicLodGeneratorParams('LOD', 'Dynamic LOD', true, true),
+    ...lightmapGeneratorParams(1),
   ];
 }
 
@@ -978,6 +1081,7 @@ export function structureDisplacementParams(): ParamDef[] {
   const fi = section('Displacement', 'Fine');
   const sh = section('Displacement', 'Shape');
   const fl = section('Displacement', 'Flares');
+  const bk = section('Displacement', 'Bark');
   const f = section('Displacement', 'Fade');
   const sd = section('Displacement', 'Subdivision');
   const la = section('Displacement', 'Asset amount (legacy)');
@@ -987,9 +1091,10 @@ export function structureDisplacementParams(): ParamDef[] {
   const legacy: Condition = { any: [{ param: 'displaceAmount', op: 'ne', value: 0 }, { param: 'displaceRadiusAmount', op: 'ne', value: 0 }] };
   const assetVisible: Condition = { any: [usesAsset, ...(legacy as { any: Condition[] }).any] };
   const lin = getCurvePreset('linear');
+  const isBark = { param: 'displaceSource', value: 'bark' } as const;
   return [
-    m.enumOf('displaceSource', 'Source', 'Noise', ['Noise', 'Material', 'Displacement'], {
-      tooltip: 'Where the height values come from: built-in noise, the Height map of the assigned material, or a named asset from the Displacements panel.',
+    m.enumOf('displaceSource', 'Source', 'Noise', ['Noise', 'Material', 'Displacement', 'Bark'], {
+      tooltip: 'Where the height values come from: built-in noise, the Height map of the assigned material, a named asset from the Displacements panel, or procedural Bark relief (see the Bark section).',
     }),
     {
       kind: 'enum',
@@ -1053,11 +1158,58 @@ export function structureDisplacementParams(): ParamDef[] {
     fl.float('displaceFlareAngle', 'Angle', 0, { min: -180, max: 180, unit: '°', tooltip: 'Rotates the flares around the spine.' }),
     fl.seed('displaceFlareSeed', 'Seed'),
 
+    bk.enumOf('barkStyle', 'Style', 'Furrowed', ['Furrowed', 'Plated', 'Fibrous', 'Lenticel', 'Rings', 'Scaly'], {
+      visibleIf: isBark,
+      tooltip:
+        'Furrowed: long ridges and V-shaped crevices (oak, pine, elm). Plated: blocky plates between cracks (redwood, old bark). Fibrous: thin parallel fibres (cedar). Lenticel: smooth bark with short horizontal slits (cherry, birch). Rings: regular horizontal rings (palm, bamboo). Scaly: overlapping scales (cypress).',
+    }),
+    bk.float('barkDepth', 'Depth', 0, {
+      min: 0, max: 1, softMax: 0.3, step: 0.005, visibleIf: isBark,
+      tooltip: 'Relief from crevice bottom to ridge top as a fraction of the local radius, so thick trunks get deep furrows. 0 turns the bark relief off.',
+    }),
+    bk.float('barkScale', 'Scale', 0.08, {
+      min: 0.005, max: 5, softMax: 0.5, step: 0.005, unit: 'm', visibleIf: isBark,
+      tooltip: 'Feature size in metres (furrow spacing, plate width, ring spacing). Independent of UV tiling and of the number of rings.',
+    }),
+    bk.float('barkStretch', 'Stretch', 4, {
+      min: 0.1, max: 40, softMax: 12, visibleIf: isBark,
+      tooltip: 'Feature length along the spine compared with its width (furrows, plates, fibres, scales). Lenticel: slit width across the trunk. Rings: not used.',
+    }),
+    bk.float('barkWarp', 'Warp', 0.5, {
+      min: 0, max: 2, visibleIf: isBark,
+      tooltip: 'Domain warp strength: how much the furrows, cracks and rings meander instead of running straight.',
+    }),
+    bk.float('barkCrevice', 'Crevice', 0.5, {
+      min: 0, max: 1, visibleIf: isBark,
+      tooltip: 'Crevice profile: 1 = narrow V-shaped crevices with wide tops, 0.5 = linear, 0 = wide flat-bottomed troughs. Works like the Main Sharpness curve and stacks with it.',
+    }),
+    bk.float('barkMaturity', 'Maturity', 0, {
+      min: 0, max: 1, visibleIf: isBark,
+      tooltip: 'How strongly the depth follows the branch radius: 0 = every branch has the same relief, 1 = young thin twigs are smooth and old thick trunks get the full depth.',
+    }),
+    bk.float('barkMaturityMin', 'Smooth up to radius', 0.01, {
+      min: 0, max: 5, softMax: 0.3, step: 0.001, unit: 'm', visibleIf: isBark,
+      tooltip: 'Radius at and below which the bark is smooth (Maturity > 0). A smoothstep leads to the full depth at the next radius.',
+    }),
+    bk.float('barkMaturityMax', 'Full depth at radius', 0.15, {
+      min: 0.001, max: 5, softMax: 0.5, step: 0.001, unit: 'm', visibleIf: isBark,
+      tooltip: 'Radius from which the bark has its full depth (Maturity > 0).',
+    }),
+    bk.curve('barkMaturityCurve', 'Maturity along branch', flatCurve(1), {
+      visibleIf: isBark,
+      tooltip: 'Depth multiplier from the base (left) to the tip (right) of each branch. A flat line at 1 leaves the depth unchanged.',
+    }),
+    { ...bk.seed('barkSeed', 'Seed'), visibleIf: isBark, tooltip: 'Random seed of the bark pattern. Every branch lineage also gets its own pattern.' },
+
     f.float('displaceFadeBase', 'Fade at junctions', 1.5, { min: 0, max: 10, tooltip: 'Fade-in length (in radii) past the weld / junction rings: prevents cracks where a branch leaves its parent.' }),
     f.float('displaceFadeTip', 'Fade at tips', 1, { min: 0, max: 10, tooltip: 'Fade-out length (in radii) toward the tip / cap.' }),
     f.bool('displaceLodFade', 'LOD fade', true, { tooltip: 'Fade the displacement out between LOD 1 and 3.' }),
     sd.bool('displaceAutoSubdivide', 'Auto-subdivide', true, { tooltip: 'Add rings and sides so the mesh has enough vertices to carry the displacement.' }),
     sd.float('displaceDetail', 'Detail size', 0.03, { min: 0.002, max: 1, softMax: 0.2, unit: 'm', tooltip: 'Target quad size when auto-subdividing (smaller = more detail, more triangles).' }),
+    sd.int('displaceMaxVertices', 'Max vertices', 40000, {
+      min: 500, max: 1000000, softMax: 200000, step: 500, visibleIf: isBark,
+      tooltip: 'Bark: most vertices auto-subdivision may create for one branch, so a small Scale cannot freeze the browser. Features coarsen when the cap is reached.',
+    }),
     sd.int('displaceMinSides', 'Min sides', 16, { min: 3, max: 128, tooltip: 'Fewest sides around a displaced branch.' }),
 
     la.float('displaceAmount', 'Amount', 0, { min: -5, max: 5, softMin: 0, softMax: 0.2, unit: 'm', curve: true, visibleIf: legacy, tooltip: 'Older asset displacement in metres at full height. The curve scales it along the branch length.' }),
@@ -1184,6 +1336,7 @@ export function splitHelperParams(): ParamDef[] {
     g.int('forkCount', 'Fork branches', 2, { min: 2, max: 5 }),
     g.float('splitAt', 'Position along parent', 1, { min: 0.1, max: 1 }),
     g.float('roll', 'Roll', 0, { min: -1, max: 1, variance: 0.2 }),
+    g.bool('splitParentsOnly', 'Split parents only', false, { tooltip: 'Forks only the parents that already split (Skin > Splits). A split counts as one spine; its two halves are never forked.' }),
     g.bool('active', 'Active', true),
     g.seed('seed', 'Seed'),
     s.float('length', 'Length', 2.4, { min: 0.05, max: 100, softMax: 12, unit: 'm', variance: 0.12, curve: true }),
@@ -1281,8 +1434,7 @@ export function leafMaterialParams(): ParamDef[] {
   const l = section('Material', 'Lightmap');
   return [
     type,
-    s.float('seasonStartOffset', 'Start offset', 0, { min: -1, max: 1, softMin: -1, softMax: 1, curve: true }),
-    s.float('seasonTimeScale', 'Time scale', 1, { min: 0, max: 10, softMax: 2, curve: true }),
+    ...seasonTimingParams(),
     s.float('seasonDropTime', 'Drop time', 1, { min: 0, max: 1, variance: 0.1, curve: true }),
     s.float('seasonDroop', 'Droop', 0.1, { min: 0, max: 1, curve: true }),
     s.float('seasonSize', 'Size', 0, { min: -1, max: 1, curve: true }),
@@ -1296,6 +1448,7 @@ export function leafMaterialParams(): ParamDef[] {
     v.color('vertexColor', 'Color', [1, 1, 1, 1]),
     v.float('vertexColorVariance', 'Variance', 0.1, { min: 0, max: 1 }),
     v.float('vertexColorGradient', 'Gradient', 0, { min: -1, max: 1 }),
+    ...vertexColorParams(true),
     l.bool('lightmap', 'Enabled', false),
     l.int('lightmapResolution', 'Resolution', 64, { min: 4, max: 4096 }),
   ];
@@ -1328,6 +1481,18 @@ export function postParams(): ParamDef[] {
     s.float('postScale', 'Scale', 1, { min: 0.001, max: 100, softMax: 5, variance: 0, curve: true }),
     o.vec3('postOffset', 'Offset', [0, 0, 0], { step: 0.01 }),
     o.float('postRotate', 'Rotate', 0, { min: -180, max: 180, unit: '°' }),
+  ];
+}
+
+/** Leaf / Batched leaf Post > Collision: who wins a leaf collision and what happens to the loser (Tree > Collision enables the pass). */
+export function leafCollisionParams(): ParamDef[] {
+  const c = section('Post', 'Collision');
+  return [
+    c.float('collisionPriority', 'Priority', 1, { min: 0, max: 100, softMax: 10, curve: true, tooltip: 'Weight of this generator\'s leaves in a collision: the higher one is kept (ties: the earlier leaf wins). The curve runs along the parent branch.' }),
+    c.float('collisionSphereThreshold', 'Sphere threshold', 1, { min: 0.1, max: 2, tooltip: 'Scales the test sphere of a leaf (Low, or spherical tests). Below 1 keeps more leaves, above 1 removes more.' }),
+    c.enumOf('collisionAction', 'On collision', 'Remove', ['Remove', 'Shrink', 'Move'], { tooltip: 'What happens to a leaf that loses: Remove it, Shrink it until it fits (removed when it still collides), or Move it away along its normal.' }),
+    c.enumOf('collisionTestAgainst', 'Test against', 'All', ['All', 'Same generator', 'Other generators'], { tooltip: 'Which kept leaves this generator\'s leaves are tested against.' }),
+    c.enumOf('collisionParent', 'Parent', 'Keep parent', ['Keep parent', 'Remove parent'], { tooltip: 'Remove parent: a twig whose leaves were all removed is reported (statistics); Keep parent leaves it alone.' }),
   ];
 }
 

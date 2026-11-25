@@ -30,12 +30,12 @@ describe('inspector tabs', () => {
     }
   });
 
-  it('Tree shows All | Gen | Shape | LOD | Collision | Lighting', () => {
+  it('Tree shows All | Gen | Shape | LOD | Collision | Color | Lighting | Lightmap', () => {
     const tabs = getInspectorTabSpecs('output.tree', getNodeDef('output.tree')!.params);
-    expect(tabs.map((t) => t.label)).toEqual(['All', 'Gen', 'Shape', 'LOD', 'Collision', 'Lighting']);
+    expect(tabs.map((t) => t.label)).toEqual(['All', 'Gen', 'Shape', 'LOD', 'Collision', 'Color', 'Lighting', 'Lightmap']);
     expect(tabs.find((t) => t.label === 'Lighting')?.disabled).toBeFalsy();
     expect(tabs.find((t) => t.label === 'Shape')?.disabled).toBeFalsy();
-    expect(tabs.find((t) => t.label === 'Collision')?.disabled).toBe(true);
+    expect(tabs.find((t) => t.label === 'Collision')?.disabled).toBeFalsy();
   });
 
   it('Spine tab sections follow the expected order', () => {

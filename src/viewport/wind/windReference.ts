@@ -1,7 +1,7 @@
 import type { WindParams } from './windParams';
 
 /**
- * CPU reference of the translation part (trunk + branch levels, low quality) of `ktWindLocal` in `windShader.ts`.
+ * CPU reference of the translation part (trunk + branch levels, low quality; level-1 terms use `phase1`) of `ktWindLocal` in `windShader.ts`.
  * It exists so the anchoring rules can be unit-tested without a GPU; keep it in sync with the GLSL.
  */
 export const smoothstep = (e0: number, e1: number, x: number): number => {
@@ -21,6 +21,8 @@ export interface WindVertex {
   position: readonly [number, number, number];
   /** (trunk, branch, leaf, phase) as stored in `windWeights`. */
   weights: readonly [number, number, number, number];
+  /** Phase of the level-1 ancestor (`windPhase1`); absent (old data) = `weights[3]`. */
+  phase1?: number;
 }
 
 /** World displacement of one vertex at time `t` (seconds * speed) and tree height `H`. */
@@ -37,7 +39,8 @@ export function windDisplacement(p: WindParams, v: WindVertex, t: number, H: num
   const freqK = 1 + p.stiffness * 1.5;
   const ampK = 1 / (1 + p.stiffness * 3);
   const osc = 1 - p.damping;
-  const phase = ph * Math.PI * 2;
+  // Level-1 terms (branch sway) use the level-1 ancestor's phase; the level-2 / leaf phase (`ph`) is not part of this translation reference.
+  const phase = (v.phase1 ?? ph) * Math.PI * 2;
   const ga = (v.position[0] * dx + v.position[1] * dy) * 0.12 - t * 0.9 * p.gustFrequency;
   const gust = 0.5 + 0.5 * (Math.sin(ga) * 0.6 + Math.sin(ga * 2.31 + 1.7) * 0.4);
   const A = Math.max(0, strength * (1 + p.gustStrength * (gust * 2 - 1)));

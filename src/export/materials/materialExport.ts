@@ -1,10 +1,23 @@
 import type { MaterialDef, MaterialSlotValue, TextureSlot } from '@/contracts/material';
 import type { RGBA } from '@/contracts/params';
 import { detectOpacityChannel } from '@/textures/alphaCoverage';
-import { fitSize, hasTransparency, mergeOpacity, packOrm, resizeImage, dilateColor, type RGBAImage } from '../images/imageOps';
+import { createImage, fitSize, hasTransparency, mergeOpacity, packOrm, resizeImage, dilateColor, type RGBAImage } from '../images/imageOps';
 import type { ExportFile, ExportSettings, ImageFormat } from '../types';
 import type { GltfImage, GltfMaterial, GltfTextureRef } from '../writers/gltf';
 import type { ObjMaterial } from '../writers/simpleFormats';
+import { getPacker } from '../packing/presets';
+import { encodeDds } from '../images/ddsWriter';
+import { runPacker } from '../packing/packer';
+import type { PackInputs, PackSource } from '../packing/types';
+
+/** Packed textures of one material (see `src/export/packing`): encoded files + the constants of the channels that stayed solid. */
+export interface PackedMaterialOutput {
+  materialId: string;
+  name: string;
+  packer: string;
+  files: { suffix: string; label: string; file: string; mime: string; data: Uint8Array; width: number; height: number; forced: boolean; mipLevels: number }[];
+  constants: Record<string, [number, number, number, number]>;
+}
 
 /** Source of material data and pixels (browser implementation in `materialContext.ts`, fakes in tests). */
 export interface MaterialExportContext {
@@ -36,6 +49,8 @@ export interface MaterialExportResult {
   textureBytes: number;
   /** Final base-colour pixels (colour + opacity merged) per material id, for the impostor renderer. */
   albedo: Map<string, RGBAImage>;
+  /** Output of the selected packer (empty with the `legacy` packer). */
+  packed: PackedMaterialOutput[];
 }
 
 const srgbToLinear = (c: number): number => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
@@ -46,7 +61,7 @@ const safe = (s: string): string => s.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/
 const EXTRA_SLOTS: TextureSlot[] = ['specular', 'subsurface', 'subsurfacePercent', 'height', 'custom', 'custom2'];
 
 export async function exportMaterials(ids: readonly string[], ctx: MaterialExportContext, settings: ExportSettings, isCancelled: () => boolean): Promise<MaterialExportResult> {
-  const out: MaterialExportResult = { materials: [], materialIndex: new Map(), images: [], obj: new Map(), records: [], warnings: [], textureBytes: 0, albedo: new Map() };
+  const out: MaterialExportResult = { materials: [], materialIndex: new Map(), images: [], obj: new Map(), records: [], warnings: [], textureBytes: 0, albedo: new Map(), packed: [] };
   const tex = settings.textures;
   const cache = new Map<string, Promise<RGBAImage | null>>();
   const imageCache = new Map<string, number>();
@@ -134,6 +149,38 @@ export async function exportMaterials(ids: readonly string[], ctx: MaterialExpor
     const glossImg = await slotImage('gloss');
     const metalImg = await slotImage('metallic');
     const aoImg = await slotImage('ao');
+
+    const packerDef = tex.packer === 'legacy' ? undefined : getPacker(tex.packer);
+    if (packerDef) {
+      const images: PackInputs['images'] = {};
+      if (colorImg) images.color = colorImg;
+      if (opacityImg) {
+        const ch = detectOpacityChannel(opacityImg.data);
+        const idx = { r: 0, g: 1, b: 2, a: 3 }[ch];
+        const mask = createImage(opacityImg.width, opacityImg.height);
+        for (let i = 0; i < mask.width * mask.height; i++) mask.data[i * 4] = opacityImg.data[i * 4 + idx] as number;
+        images.opacity = mask;
+      } else if (colorImg && hasTransparency(colorImg)) {
+        const mask = createImage(colorImg.width, colorImg.height);
+        for (let i = 0; i < mask.width * mask.height; i++) mask.data[i * 4] = colorImg.data[i * 4 + 3] as number;
+        images.opacity = mask;
+      }
+      if (normalImg) images.normal = normalImg;
+      if (aoImg) images.ao = aoImg;
+      if (glossImg) images.gloss = glossImg;
+      if (metalImg) images.metallic = metalImg;
+      const heightImg = await slotImage('height');
+      if (heightImg) images.height = heightImg;
+      const scalars: Partial<Record<PackSource, number>> = { ao: aoScalar, gloss: glossScalar ?? (glossImg ? 1 : 0.3), metallic: metalScalar ?? (metalImg ? 1 : 0) };
+      const packed = runPacker(packerDef, { images, scalars }, { forceTextures: tex.forceTextures, alphaCutoff: ctx.alphaThreshold, maxSize: maxEdge });
+      const files: PackedMaterialOutput['files'] = [];
+      for (const t of packed.textures) {
+        const dds = tex.packedFormat === 'dds';
+        const enc = dds ? null : await ctx.encode(t.image, 'png', 1);
+        files.push({ suffix: t.suffix, label: t.label, file: `textures/${safe(def.name)}_${t.suffix}.${dds ? 'dds' : 'png'}`, mime: enc ? enc.mime : 'image/vnd-ms.dds', data: enc ? enc.data : encodeDds(t.mips), width: t.image.width, height: t.image.height, forced: t.forced, mipLevels: dds ? t.mips.length : 1 });
+      }
+      out.packed.push({ materialId: def.id, name: def.name, packer: packerDef.id, files, constants: packed.constants });
+    }
 
     let metallicRoughness: GltfTextureRef | undefined;
     let occlusion: (GltfTextureRef & { strength: number }) | undefined;

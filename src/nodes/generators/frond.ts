@@ -1,4 +1,5 @@
 import { getBool, getNumber, getString, type NodeParams, type ParamState } from '@/contracts/params';
+import { lodLengthFactor, readGeneratorLod } from './dynamicLodParams';
 import type { NodeContext, NodeInputs, NodeOutputs } from '@/contracts/nodes';
 import type { CutoutMesh } from '@/contracts/material';
 import type { Lineage } from '@/contracts/ports';
@@ -32,7 +33,9 @@ import { resamplePath, ribbonWidthFactor, type TipShape } from '@/geometry/ribbo
 import { buildCutoutGeometry } from '@/materials/cutouts/buildCutoutGeometry';
 import { resolveUvAreaRect } from '@/materials/materialSource';
 import { displaceFromParams, resolveDisplacement } from './displacement';
-import { atlasRect, emptyFoliage, foliageOutput, isActive, parentOf, parentWind, pickLeafType, leafTint, varied } from './foliageCommon';
+import { createSeasonSampler } from '@/seasons';
+import { atlasRect, emptyFoliage, foliageOutput, isActive, itemVertexColor, parentOf, parentWind, pickLeafType, leafTint, readVertexColorOptions, varied } from './foliageCommon';
+import { splitHalfIds } from './fusedParent';
 import { materialHeightSampler } from './leafDeformParams';
 import { resolveFrondLighting, type FrondLightingResolved } from './frondLightingParams';
 
@@ -154,7 +157,7 @@ export interface FrondConfig {
 }
 
 const TIPS: Record<string, TipShape> = { pointed: 'pointed', rounded: 'rounded', blunt: 'blunt' };
-const lodKeep = (p: NodeParams, lod: number): number => Math.pow(1 - Math.min(0.9, Math.max(0, getNumber(p, 'lodSegments', 0.5))) * 0.4, Math.min(Math.max(lod, 0), 3));
+const lodKeep = (p: NodeParams, lod: number): number => Math.pow(1 - Math.min(0.9, Math.max(0, getNumber(p, 'lodSegments', 0.5))) * 0.4, Math.min(Math.max(lod, 0), 3)) * lodLengthFactor(readGeneratorLod(p), lod);
 
 export function readFrondConfig(p: NodeParams, lod: number): FrondConfig {
   const keep = lodKeep(p, lod);
@@ -255,6 +258,7 @@ export function buildFrondSpecs(ctx: NodeContext, parent: Skeleton, p: NodeParam
   const foldCurve = profile(p, 'frondFold');
   const curlCurve = profile(p, 'frondCurlAngle');
   const gravityCurve = profile(p, 'frondGravity');
+  const seasons = createSeasonSampler(p);
   const lighting = resolveFrondLighting(p, globalLighting);
   const lit = isLightingActive(lighting.settings, { frond: lighting.extras });
   const specs: FrondSpec[] = [];
@@ -262,10 +266,13 @@ export function buildFrondSpecs(ctx: NodeContext, parent: Skeleton, p: NodeParam
   const unitCache = new Map<string, UnitMesh | null>();
   const heightCache = new Map<string, ((u: number, v: number) => number) | null>();
   const heightOffset = getNumber(p, 'frondHeightOffset', 0);
+  const vertexColor = readVertexColorOptions(p);
   let index = 0;
+  // A split is one logical spine: one frond for it, none for the two fused halves
+  const fusedHalves = splitHalfIds(parent);
   for (let bi = 0; bi < parent.branches.length; bi++) {
     const b = parent.branches[bi] as Branch;
-    if (b.count < 2) continue;
+    if (b.count < 2 || fusedHalves.has(b.id)) continue;
     if (specs.length >= MAX_FRONDS) break;
     ctx.cancel.throwIfCancelled();
     const rng = ctx.rng.fork(`fr:${b.id}`);
@@ -277,7 +284,7 @@ export function buildFrondSpecs(ctx: NodeContext, parent: Skeleton, p: NodeParam
     const fold = varied(rng, p, 'frondFold', 0);
     const curl = varied(rng, p, 'frondCurlAngle', 0);
     const roll = varied(rng, p, 'frondRoll', 0);
-    const type = pickLeafType(rng, p, 'leaf');
+    const type = pickLeafType(rng, p, 'leaf', seasons.value(rng));
     const atlas = resolveUvAreaRect(type.materialId, 'frond', rng) ?? atlasRect(p, rng, index);
     const color = leafTint(rng, p);
     const flipDraw = rng.next();
@@ -348,6 +355,7 @@ export function buildFrondSpecs(ctx: NodeContext, parent: Skeleton, p: NodeParam
         atlas,
         color,
         colorGradient: getNumber(p, 'vertexColorGradient', 0),
+        ...itemVertexColor({ options: vertexColor, parent, point: b.start + Math.round(cfg.start * (b.count - 1)), at: [cfg.start, Math.max(cfg.start, cfg.end)] }, b.id, ctx.seed),
         ao: getNumber(p, 'aoStrength', 0.5),
         wind,
         windPower: cfg.windPower,

@@ -13,6 +13,7 @@ import { defaultWindSettings } from '@/contracts/material';
 import type { NodeParams } from '@/contracts/params';
 import { migrateProject, PROJECT_VERSION, type AssetEntry, type GraphJSON, type ProjectFile, type ProjectSettings } from '@/contracts/project';
 import { migrateNodeParams, nodeVersion } from '@/graph/registry';
+import { removeRetiredNodes } from './retiredNodes';
 
 export const FILE_EXTENSION = '.ktree';
 export const TEMPLATE_EXTENSION = '.kttemplate';
@@ -75,7 +76,8 @@ export function createProjectFile(args: { name: string; graph: GraphJSON; meta: 
 }
 
 /** Per-node param migration (NodeDef.migrate hooks). Returns a new graph; unknown types are left untouched. */
-export function migrateGraphNodes(graph: GraphJSON, nodeVersions: Record<string, number> | undefined): GraphJSON {
+export function migrateGraphNodes(graphIn: GraphJSON, nodeVersions: Record<string, number> | undefined): GraphJSON {
+  const graph = removeRetiredNodes(graphIn);
   return {
     ...graph,
     nodes: graph.nodes.map((n) => {

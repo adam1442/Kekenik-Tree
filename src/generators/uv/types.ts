@@ -50,6 +50,8 @@ export interface UvMapping {
   /** V distance from a whole number inside which a ring is moved onto it. */
   vTolerance: number;
   tilingSeed: number;
+  /** Cut real geometry (doubled ring vertices) at every whole U tile border so each tile is its own UV island (UV seams). */
+  createSeams: boolean;
 }
 
 export const DEFAULT_UV_MAPPING: UvMapping = {
@@ -74,6 +76,7 @@ export const DEFAULT_UV_MAPPING: UvMapping = {
   optimizeSegments: false,
   vTolerance: 0.1,
   tilingSeed: 0,
+  createSeams: false,
 };
 
 /** Skeleton attributes written by the tube mesher so children / extensions can continue the parent's mapping. */

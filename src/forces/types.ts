@@ -20,6 +20,10 @@ export interface FieldPoint {
   dx: number;
   dy: number;
   dz: number;
+  /** Undeformed unit direction of the segment (carried by the rotation inherited from the parent). */
+  ox: number;
+  oy: number;
+  oz: number;
   /** Normalised arc length along the branch, 0..1. */
   t: number;
   radius: number;
@@ -38,6 +42,10 @@ export interface ForceTypeDef {
   loadExponent: number;
   /** Build the field function once per `applyForces` call. */
   compile(params: import('@/contracts/params').NodeParams): FieldFn;
+  /** Inert types never bend geometry (Knockout acts on node placement, read by the generators). */
+  inert?: boolean;
+  /** Optional hard constraint (geometry force collide behaviour) applied to the finished chains. */
+  collider?(params: import('@/contracts/params').NodeParams): import('./geometry/collide').ForceCollider | null;
 }
 
 export interface ForceContext {
@@ -46,6 +54,8 @@ export interface ForceContext {
   influence?: (t: number) => number;
   /** Generator-level stiffness multiplier along the branch length. */
   stiffness?: (t: number) => number;
+  /** Generator-level alignment scalar (`forceAlign`): multiplies every force's Align strength on the first segment. */
+  align?: number;
   /** Max rotation of a single segment in radians (default 0.5). */
   maxSegmentAngle?: number;
   /** Max total deflection of a segment from its undeformed direction in radians (default 110 deg). */

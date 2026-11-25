@@ -1,5 +1,5 @@
 import { beforeAll, afterEach, describe, expect, it } from 'vitest';
-import { defaultGraph } from '@/app/project/defaultGraph';
+import { starterGraph } from './fixtures/starterGraph';
 import { CancellationSource, type NodeContext, type NodeInputs } from '@/contracts/nodes';
 import { defaultParamState, defaultParams, evalCondition, type NodeParams } from '@/contracts/params';
 import type { MaskDef } from '@/contracts/material';
@@ -187,7 +187,7 @@ describe('Pass', () => {
 
   it('shows an error badge in the evaluation and orders siblings by pass', async () => {
     const m = new GraphModel();
-    m.load(defaultGraph());
+    m.load(starterGraph());
     m.setParam('trunk', 'pass', { value: 2 });
     const result = await new GraphEvaluator().evaluate(snapshotGraph(m), { seed: 1, lod: 0, token: new CancellationSource().token });
     const badge = result.diagnostics.get('big');
@@ -219,18 +219,21 @@ describe('Extend parent', () => {
     expect(extensionPositions('breaks-only', 2, true)).toEqual([1, 1]);
   });
 
-  it('is valid only for a Branch or Trunk parent and Branch / Cap / Leaf / Batched leaf children', () => {
+  it('is valid only for a Branch, Trunk or Root parent and Branch / Root / Cap / Leaf / Batched leaf children', () => {
     expect(extendIsValid('generator.leaf', 'generator.branch')).toBe(true);
     expect(extendIsValid('generator.cap', 'generator.branch')).toBe(true);
     expect(extendIsValid('generator.leaf', 'generator.trunk')).toBe(true);
     expect(extendIsValid('generator.trunk', 'generator.branch')).toBe(false);
-    expect(extendIsValid('generator.leaf', 'generator.root')).toBe(false);
+    // S7: a Root is an Extend child (Bottom = its base ring) and its open ends can be extended / capped
+    expect(extendIsValid('generator.leaf', 'generator.root')).toBe(true);
+    expect(extendIsValid('generator.root', 'generator.trunk')).toBe(true);
+    expect(extendIsValid('generator.leaf', 'generator.spine')).toBe(false);
   });
 
-  it('only Branch, Cap, Leaf and Batched leaf show the section', () => {
+  it('only Branch, Root, Cap, Leaf and Batched leaf show the section', () => {
     const has = (type: string): boolean => (getNodeDef(type)?.params ?? []).some((p) => p.id === 'extendParent');
-    expect(['generator.branch', 'generator.cap', 'generator.leaf', 'generator.batchedLeaf'].every(has)).toBe(true);
-    expect(['generator.trunk', 'generator.root', 'generator.spine'].some(has)).toBe(false);
+    expect(['generator.branch', 'generator.root', 'generator.cap', 'generator.leaf', 'generator.batchedLeaf'].every(has)).toBe(true);
+    expect(['generator.trunk', 'generator.spine'].some(has)).toBe(false);
   });
 });
 
@@ -321,7 +324,7 @@ describe('node integration', () => {
     if (!def) throw new Error(type);
     const p: NodeParams = {};
     for (const d of def.params) p[d.id] = defaultParamState(d);
-    for (const [k, v] of Object.entries({ splitChance: 0, jumble: 0, ...over })) if (p[k]) p[k] = { ...(p[k] as NodeParams[string]), value: v as never };
+    for (const [k, v] of Object.entries({ splitsChance: 0, jumble: 0, ...over })) if (p[k]) p[k] = { ...(p[k] as NodeParams[string]), value: v as never };
     const seed = opts.seed ?? 3;
     const ctx: NodeContext = {
       nodeId: type,
@@ -370,7 +373,7 @@ describe('node integration', () => {
     if (!def) throw new Error('branch');
     const p: NodeParams = {};
     for (const d of def.params) p[d.id] = defaultParamState(d);
-    for (const [k, v] of Object.entries({ splitChance: 0, jumble: 0, ...over })) if (p[k]) p[k] = { ...(p[k] as NodeParams[string]), value: v as never };
+    for (const [k, v] of Object.entries({ splitsChance: 0, jumble: 0, ...over })) if (p[k]) p[k] = { ...(p[k] as NodeParams[string]), value: v as never };
     p.pruningCurve = { value: curve as never };
     const ctx: NodeContext = { nodeId: 'b', name: 'b', rng: new Rng(3), seed: 3, cancel: new CancellationSource().token, lod: 0, logger: createLogger('dev', 'error') };
     const out = def.evaluate(ctx, { parent: [{ kind: 'Structure', value: { skeleton: trunk() } }] }, p) as Record<string, { value: { skeleton: Skeleton } }>;
@@ -415,11 +418,12 @@ describe('node integration', () => {
 
   it('Extend parent adds tip / base extensions under a Branch parent', () => {
     const any = grow('generator.branch', { ...BASE, number: 3, extendParent: 'any', extendCount: 2 }, { parentType: 'generator.branch' });
-    expect(direct(any)).toHaveLength(5);
+    // 3 ordinary children + Count 2 as a virtual split (S5): one fused stub directly on the parent, the two halves hang below it
+    expect(direct(any)).toHaveLength(4);
     const bottom = grow('generator.branch', { ...BASE, number: 0, extendParent: 'bottom', extendCount: 1 }, { parentType: 'generator.branch' });
     expect(direct(bottom)).toHaveLength(1);
     expect(direct(bottom)[0]?.parentPoint).toBe(0);
-    const wrongParent = grow('generator.branch', { ...BASE, number: 3, extendParent: 'any' }, { parentType: 'generator.root' });
+    const wrongParent = grow('generator.branch', { ...BASE, number: 3, extendParent: 'any' }, { parentType: 'generator.spine' });
     expect(direct(wrongParent)).toHaveLength(3);
     const none = grow('generator.branch', { ...BASE, number: 3, extendParent: 'none' }, { parentType: 'generator.branch' });
     expect(direct(none)).toHaveLength(3);

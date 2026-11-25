@@ -1,4 +1,5 @@
 import { linearCurve, linearPoint, type Curve } from '@/contracts/curve';
+import { dynamicLodGeneratorParams, lightmapGeneratorParams } from './dynamicLodParams';
 import { getNumber, type NodeParams, type ParamDef } from '@/contracts/params';
 import { deg2rad } from '@/core/math';
 import { createSimplex, type SimplexNoise } from '@/core/noise';
@@ -67,6 +68,8 @@ export function leafDeformParams(): ParamDef[] {
       max: 2,
       tooltip: 'Shifts the chosen mesh LOD toward lower (+) or higher (−) detail. Needs at least two mesh LOD slots filled: with one, it is ignored.',
     }),
+    ...dynamicLodGeneratorParams(RESOLUTION_TAB, 'Dynamic LOD'),
+    ...lightmapGeneratorParams(0, RESOLUTION_TAB),
   ];
 }
 

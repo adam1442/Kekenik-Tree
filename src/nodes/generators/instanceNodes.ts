@@ -3,10 +3,11 @@ import type { NodeContext, NodeInputs, NodeOutputs } from '@/contracts/nodes';
 import { getBool, getNumber, getString, type NodeParams } from '@/contracts/params';
 import { emptySkeleton, SkeletonBuilder, type Skeleton } from '@/contracts/skeleton';
 import { asExtendType } from '@/generators/common/extend';
-import { collectOpenEnds } from '@/generators/split';
+import { EXTENSION_ATTR, collectOpenEnds, isEndClaimed, type OpenEndFrame, type SkeletonOpenEnd } from '@/generators/split';
+import { StructureSkeletonBuilder } from './skeletonBuild';
 import { deg2rad } from '@/core/math';
 import { AttachmentBuilder } from '@/geometry/attachments';
-import { composeMatrix, placeMeshes } from '@/geometry/instancing';
+import { composeMatrix, placeMeshes, WIND_INSTANCE_STRIDE } from '@/geometry/instancing';
 import { bladeBasis } from '@/geometry/leafMesher';
 import { instanceKey } from '@/instances/keys';
 import type { CutoutMesh } from '@/contracts/material';
@@ -15,6 +16,7 @@ import { loadMeshAsset } from '@/geometry/meshAssets';
 import { buildPrimitive, type PrimitiveKind } from '@/geometry/primitives';
 import { buildCutoutGeometry } from '@/materials/cutouts/buildCutoutGeometry';
 import { getMaterialSource } from '@/materials/materialSource';
+import { createSeasonSampler } from '@/seasons';
 import { pickMaterialMesh, readMaterialSlots, type PickedMaterialMesh } from '@/materials/meshSelection';
 import { mergeMeshData } from '@/contracts/mesh';
 import { emitStructureOutput, extractParentSkeleton, isGeneratorActive } from './common';
@@ -25,12 +27,14 @@ import {
   emptyFoliage,
   foliageOutput,
   isActive,
+  itemVertexColor,
   LOD_FOLIAGE_DETAIL,
   outwardAt,
   parentOf,
   parentWind,
   pickLeafType,
   postTransform,
+  readVertexColorOptions,
   varied,
 } from './foliageCommon';
 
@@ -104,6 +108,7 @@ export function evaluateCluster(ctx: NodeContext, inputs: NodeInputs, p: NodePar
   const post = postTransform(p);
   const baseColor: V3 = kind === 'cone' ? [0.42, 0.26, 0.12] : kind === 'sphere' ? [0.55, 0.12, 0.1] : [1, 1, 1];
   const tint = tintOf(p, 'vertexColor');
+  const vertexColor = readVertexColorOptions(p);
   const matrices: number[] = [];
   const tints: number[] = [];
   const winds: number[] = [];
@@ -113,7 +118,7 @@ export function evaluateCluster(ctx: NodeContext, inputs: NodeInputs, p: NodePar
   for (const pl of placements) {
     const s = pl.sample;
     const radius = getNumber(p, 'clusterRadius', 0.1) * curveFactor(p, 'clusterRadius', s.u);
-    const wind = parentWind(parent, s.parentPoint, pl.index * 5);
+    const wind = parentWind(parent, s.parentPoint, pl.index * 5, s.position);
     for (let k = 0; k < count && matrices.length < 16 * 20000; k++) {
       const rng = pl.rng.fork(`it:${k}`);
       const a = rng.range(0, Math.PI * 2);
@@ -128,8 +133,12 @@ export function evaluateCluster(ctx: NodeContext, inputs: NodeInputs, p: NodePar
       composeMatrix(o, x, y, z, size, m, 0);
       matrices.push(...m);
       const v = 0.8 + rng.range(-0.2, 0.2);
-      tints.push(baseColor[0] * tint[0] * v, baseColor[1] * tint[1] * v, baseColor[2] * tint[2] * v);
-      winds.push(wind[0], wind[1], wind[2], wind[3]);
+      const own: V3 = [baseColor[0] * tint[0] * v, baseColor[1] * tint[1] * v, baseColor[2] * tint[2] * v];
+      // Mode / Profile along the cluster (first body 0 .. last body 1) / Parent curve at the attach point.
+      const modified = itemVertexColor({ options: vertexColor, parent, point: s.parentPoint, at: s.u }, pl.index * 5 + k, ctx.seed).colorAt;
+      const col = modified ? modified(own, count > 1 ? k / (count - 1) : 0) : own;
+      tints.push(col[0], col[1], col[2]);
+      winds.push(wind[0], wind[1], wind[2], wind[3], wind[4]);
       pushBranch(sb, pl.branch.id, s.parentPoint, gen, o, dir, size);
     }
   }
@@ -165,6 +174,7 @@ export function evaluateMeshInstances(ctx: NodeContext, inputs: NodeInputs, p: N
     }
     return { key, base };
   };
+  const seasons = createSeasonSampler(p);
   const instanceBase: string[] = [];
   const post = postTransform(p);
   const dirMode = getString(p, 'meshDirection', 'outward');
@@ -172,14 +182,14 @@ export function evaluateMeshInstances(ctx: NodeContext, inputs: NodeInputs, p: N
   const tintVar = getNumber(p, 'meshTintVariance', 0.1);
   const matrices = new Float32Array(placements.length * 16);
   const tints = new Float32Array(placements.length * 3);
-  const winds = new Float32Array(placements.length * 4);
+  const winds = new Float32Array(placements.length * WIND_INSTANCE_STRIDE);
   const sb = new SkeletonBuilder();
   const att = new AttachmentBuilder(ctx.nodeId);
   const gen = (parent.branches[0]?.generation ?? -1) + 1;
   placements.forEach((pl, i) => {
     const s = pl.sample;
     const rng = pl.rng;
-    const picked = baseFor(pickMaterialMesh(materialRows, { rng: rng.fork('mat'), fallbackMaterial: 'leaf' }));
+    const picked = baseFor(pickMaterialMesh(materialRows, { rng: rng.fork('mat'), fallbackMaterial: 'leaf', ...seasonPick(seasons.value(rng, s.u)) }));
     instanceBase.push(picked.key);
     const cutout = picked.base.cutout;
     const az = pl.placement.azimuthRad + (getNumber(p, 'meshYaw', 0) > 0 ? rng.range(-1, 1) * Math.PI * getNumber(p, 'meshYaw', 0) : 0);
@@ -228,8 +238,8 @@ export function evaluateMeshInstances(ctx: NodeContext, inputs: NodeInputs, p: N
     composeMatrix(o, x, y, z, scale, matrices, i * 16);
     const v = 1 + rng.range(-tintVar, tintVar);
     tints.set([tint[0] * v, tint[1] * v, tint[2] * v], i * 3);
-    const wind0 = parentWind(parent, s.parentPoint, pl.index * 3);
-    winds.set(pl.anchor ? anchorWind(wind0, pl.anchor.frame.axisT) : wind0, i * 4);
+    const wind0 = parentWind(parent, s.parentPoint, pl.index * 3, s.position);
+    winds.set(pl.anchor ? anchorWind(wind0, pl.anchor.frame.axisT) : wind0, i * WIND_INSTANCE_STRIDE);
     pushBranch(sb, pl.branch.id, s.parentPoint, gen, o, growth, scale);
     if (cutout) {
       const ia = rigidInstanceAttachment(cutout, o, x, y, z, scale);
@@ -264,11 +274,11 @@ export function evaluateMeshInstances(ctx: NodeContext, inputs: NodeInputs, p: N
       if (idx.length === 0) continue;
       const m = new Float32Array(idx.length * 16);
       const t = new Float32Array(idx.length * 3);
-      const w = new Float32Array(idx.length * 4);
+      const w = new Float32Array(idx.length * WIND_INSTANCE_STRIDE);
       idx.forEach((src, j) => {
         m.set(matrices.subarray(src * 16, src * 16 + 16), j * 16);
         t.set(tints.subarray(src * 3, src * 3 + 3), j * 3);
-        w.set(winds.subarray(src * 4, src * 4 + 4), j * 4);
+        w.set(winds.subarray(src * WIND_INSTANCE_STRIDE, (src + 1) * WIND_INSTANCE_STRIDE), j * WIND_INSTANCE_STRIDE);
       });
       parts.push(placeMeshes(entry.mesh, m, idx.length, { tints: t, wind: w }));
     }
@@ -277,47 +287,66 @@ export function evaluateMeshInstances(ctx: NodeContext, inputs: NodeInputs, p: N
   return foliageOutput(sk, parent, geometry, n, ctx.seed, att.build());
 }
 
-/** Cap: closes the end of every parent branch with a rounded disc. */
+/**
+ * Cap: closes the open ends the parent exposes (breaks and both kinds of split sides, selected by Extend parent). Each cap is an
+ * extension of its end: it takes the end's radial count, ring frame and radius (Radius scale 1 = the exact end ring), continues the
+ * parent's UV (U tiles halved after a split) and adds neither a buried ring nor a collar.
+ * Ends that a sibling generator already extends are skipped (`ctx.endClaims`).
+ */
 export function evaluateCap(ctx: NodeContext, inputs: NodeInputs, p: NodeParams): NodeOutputs {
   const parent = extractParentSkeleton(inputs);
   if (!isGeneratorActive(p, ctx.lod) || parent.count === 0) return emptyCapOutput(ctx, p, parent);
   const scale = getNumber(p, 'capRadiusScale', 1);
   const thickness = Math.max(0.002, getNumber(p, 'capThickness', 0.01));
-  const sb = new SkeletonBuilder();
+  const sb = new StructureSkeletonBuilder(256);
   const gen = (parent.branches[0]?.generation ?? -1) + 1;
-  // A cap closes open ends (broken branches, split sides). Extend parent narrows them down; Bottom caps the base of every branch.
   const type = asExtendType(getString(p, 'extendParent', 'none'));
-  const ends: CapEnd[] =
+  // Ends another generator already extends stay free (unless this Cap names exactly that type, see `isEndClaimed`)
+  const claims = ctx.endClaims ?? [];
+  const ends: SkeletonOpenEnd[] =
     type === 'bottom'
       ? baseEnds(parent)
-      : collectOpenEnds(parent, type === 'none' ? 'any' : type).map((e) => ({ branchId: e.branchId, pointIndex: e.pointIndex, position: e.position, direction: e.direction, radius: e.radius }));
+      : collectOpenEnds(parent, type === 'none' ? 'any' : type)
+          .filter((e) => !isEndClaimed(claims, type, e))
+          .map(capEndOf);
   for (const end of ends) {
     ctx.cancel.throwIfCancelled();
     const o = end.position;
     const d = end.direction;
     const r = Math.max(end.radius * scale, 0.002);
     const h = thickness + r * 0.4;
-    sb.beginBranch(end.branchId, end.pointIndex, gen);
-    sb.addPoint(o[0], o[1], o[2], r);
-    sb.addPoint(o[0] + d[0] * h * 0.5, o[1] + d[1] * h * 0.5, o[2] + d[2] * h * 0.5, r * 0.85);
-    sb.addPoint(o[0] + d[0] * h, o[1] + d[1] * h, o[2] + d[2] * h, r * 0.35);
-    sb.endBranch();
+    const added = sb.addPolylineBranch({
+      parentBranch: end.branchId,
+      parentPoint: end.pointIndex,
+      generation: gen,
+      count: 3,
+      positions: [o[0], o[1], o[2], o[0] + d[0] * h * 0.5, o[1] + d[1] * h * 0.5, o[2] + d[2] * h * 0.5, o[0] + d[0] * h, o[1] + d[1] * h, o[2] + d[2] * h],
+      radii: [r, r * 0.85, r * 0.35],
+      ...(end.frame ? { initialNormalHint: [end.frame.normal[0], end.frame.normal[1], end.frame.normal[2]] as [number, number, number] } : {}),
+      ...(end.radialSides >= 3 ? { radialSides: end.radialSides } : {}),
+    });
+    if (added.branchId >= 0) sb.setBranchExtra(added.branchId, EXTENSION_ATTR, 1);
   }
   const capParams: NodeParams = { ...p, tipRings: { value: getNumber(p, 'capRings', 2) }, collarAmount: { value: 0 } };
   return emitStructureOutput(sb.build(), capParams, ctx.lod, 'bark', undefined, parent, ctx.seed);
 }
 
-interface CapEnd {
-  branchId: number;
-  pointIndex: number;
-  position: readonly [number, number, number];
-  direction: readonly [number, number, number];
-  radius: number;
-}
+/**
+ * The ring a Cap / extension must continue: a split half ends in a ring of N / 2 vertices (the parent's N arcs split in two), any
+ * other open end in N. Same `SkeletonOpenEnd` the Break / Extend parent / Root code reads; only the ring count is adapted.
+ */
+const capEndOf = (e: SkeletonOpenEnd): SkeletonOpenEnd => ({
+  ...e,
+  radialSides: e.side === 1 || e.side === 2 ? Math.round(e.radialSides / 2) : e.radialSides,
+});
 
 /** The first point of every branch, pointing back out of the base (Extend parent > Bottom). */
-function baseEnds(parent: Skeleton): CapEnd[] {
-  const out: CapEnd[] = [];
+function baseEnds(parent: Skeleton): SkeletonOpenEnd[] {
+  const out: SkeletonOpenEnd[] = [];
+  const nx = parent.attributes.get('rmfNormalX');
+  const ny = parent.attributes.get('rmfNormalY');
+  const nz = parent.attributes.get('rmfNormalZ');
+  const sides = parent.attributes.get('radialSides');
   for (const b of parent.branches) {
     if (b.count < 2) continue;
     const i = b.start;
@@ -331,11 +360,29 @@ function baseEnds(parent: Skeleton): CapEnd[] {
       position: [parent.position[i * 3] as number, parent.position[i * 3 + 1] as number, parent.position[i * 3 + 2] as number],
       direction: [dx / l, dy / l, dz / l],
       radius: parent.radius[i] as number,
+      side: 0,
+      fat: true,
+      flags: 0,
+      broken: false,
+      radialSides: sides && sides.length === parent.count ? Math.round(sides[i] as number) : 0,
+      ...(nx && ny && nz && nx.length === parent.count ? { frame: baseFrame([dx / l, dy / l, dz / l], [nx[i] as number, ny[i] as number, nz[i] as number]) } : {}),
     });
   }
   return out;
 }
 
+/** Ring frame of a base end: the stored normal projected off the (backwards) direction. */
+function baseFrame(d: readonly [number, number, number], hint: readonly [number, number, number]): OpenEndFrame {
+  const k = d[0] * hint[0] + d[1] * hint[1] + d[2] * hint[2];
+  const raw: [number, number, number] = [hint[0] - d[0] * k, hint[1] - d[1] * k, hint[2] - d[2] * k];
+  const l = Math.hypot(raw[0], raw[1], raw[2]) || 1;
+  const n: [number, number, number] = [raw[0] / l, raw[1] / l, raw[2] / l];
+  return { normal: n, binormal: [d[1] * n[2] - d[2] * n[1], d[2] * n[0] - d[0] * n[2], d[0] * n[1] - d[1] * n[0]] };
+}
+
 function emptyCapOutput(ctx: NodeContext, p: NodeParams, parent: Skeleton): NodeOutputs {
   return emitStructureOutput(emptySkeleton(), p, ctx.lod, 'bark', 0, parent, ctx.seed);
 }
+
+/** `PickContext` season field for a transition value (nothing without a Tree above the node). */
+const seasonPick = (t: number | undefined): { season?: number } => (t === undefined ? {} : { season: t });

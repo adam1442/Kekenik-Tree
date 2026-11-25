@@ -29,7 +29,7 @@ Sections **Boundaries / Common / Extend parent / Knockout / Force containers / M
 
 * **Boundaries.** *First* / *Last* = lowest / highest point on the parent where nodes occur. *Clip* (checkbox; the value insets the range as a fraction of First..Last): nodes that Spread or Position push outside First..Last are removed instead of being held on the boundary.
 * **Common.** *Active* (curve over the level of detail, left = highest detail: active where the curve is above 0.5). *Pass* (integer >= 1): generators compute in pass order; a node whose pass is lower than an ancestor's gets an error badge. *Rotation* turns all nodes of a parent around it as a group (variance jumbles it per parent). *Position* shifts all nodes along the parent (variance per parent). *Sink* moves the start of the nodes into (+) or out of (-) the parent (variance per node). *Pruning* curve runs from First (left) to Last (right); nodes are removed where it is below 0.5.
-* **Extend parent** (Branch, Cap, Leaf, Batched leaf; valid under a Branch parent). *Type*: None, Any (tip), Bottom (base), Breaks only (tip of parents that end in a break; detected from the thick tip of the parent), Split 1 / Split 2 / Skinny / Fat (kept as entries, behave like Any until the split data exists). *Count* = extensions per parent.
+* **Extend parent** (Branch, Cap, Leaf, Batched leaf; valid under a Branch parent). *Type*: None, Any (tip), Bottom (base), Breaks only (tip of parents that end in a break; detected from the thick tip of the parent), Split 1 / Split 2 / Skinny / Fat (choose one open end of a split; the end is the parent's real open end, see docs/SPLITS.md). *Count* = extensions per open end (2 = a fused Y fork, 3+ = a bundle that follows the pipe model; Extensions group). The Type / Count rows are disabled under a parent that is not a Branch generator.
 * **Knockout.** *Amount* = share of nodes removed at random after the mode ran (curve along the parent). *+ Resolution* is added to the amount for every level of detail below the highest (negative = fewer removed).
 * **Force containers.** *Include* / *Exclude* list Force nodes by name. Give a Force node a volume in its *Volume* section (Shape None / Sphere / Box + Center, Radius or Size). Include keeps only nodes inside at least one named volume, Exclude removes nodes inside any. Unknown names are ignored. The volume works whether or not the force is Active. Nodes are tested where they leave the parent surface.
 * **More.** *Click place* (Ready / None / Any / Number) is stored and takes effect with Freehand mode. *Mesh alignment* (Leaf, Batched leaf): when the parent is a Mesh Instance, the leaf grows along the parent Tangent / Binormal, a parent axis (X = normal, Y = tangent, Z = their cross product) or a world axis. *Size scalar* scales the node (length, radius, leaf / mesh scale ...) and is multiplied into the scalar handed to every node below it; the Tree node's *Size scalar* is the start value.
@@ -47,7 +47,9 @@ Root of the plant. Its Shape defines the ground disc in which first-generation n
 |---|---|---|---|---|---|---|---|
 | More | Size scalar | `scale` | 0.01..100 (slider 0.01..5) | 1 |  |  | Scales every node of the plant (each generator multiplies its own Size scalar into this value). |
 | More | Ground offset | `groundOffset` | -10..10 m | 0 |  |  | Moves the whole plant up or down relative to the ground. |
-| Season | Season | `season` | 0..1 | 0 |  |  | Season response: position on the 0…1 season timeline. |
+| Season | Season | `season` | 0..1 | 0 |  |  | Season slider (also on the viewport toolbar). Every generator turns it into its own transition value; Material Set members are picked by weight x Season curve at that value. The model is regenerated on every change. |
+| Season | Show dropped leaves | `showDroppedLeaves` | bool | false |  |  | Leaves that finished their life (transition value reached Drop time) leave the branch and lie on the ground (z = 0), swept along the Season wind arrows. |
+| Season | Export dropped leaves | `exportDroppedLeaves` | bool | false |  |  | Include the dropped leaves on the ground in the export. Off = they are only a viewport aid. |
 
 ### Tab: Shape
 
@@ -61,9 +63,34 @@ Root of the plant. Its Shape defines the ground disc in which first-generation n
 | Shape | Roll | `treeRoll` | -360..360 (slider -180..180) ° | 0 |  |  | Rotates the whole placement pattern around the vertical axis. |
 | Shape | Unify child orientation | `unifyChildOrientation` | bool | false |  |  | Give all children the same orientation instead of a random one. |
 
-### Tab: LOD _(not implemented yet - shown disabled)_
+### Tab: LOD
 
-### Tab: Collision _(not implemented yet - shown disabled)_
+| Section | Parameter | id | Range | Default | Var | Curve | Meaning |
+|---|---|---|---|---|---|---|---|
+| Dynamic LOD | Enable | `lodEnabled` | bool | false |  |  | Dynamic LOD: the model shrinks smoothly as the LOD value rises. Parts hidden in the interior are removed first; a part that will be removed shrinks until it is invisible (branches shrink to their spine, leaves to their attachment point) while the leaves that stay grow to keep the silhouette. Needs no re-generation: the viewport applies it live (toolbar LOD). |
+| Dynamic LOD | Mode | `lodMode` | Manual / Screen area | manual |  |  | Manual: the LOD value below (or the toolbar slider) is used. Screen area: the value follows the camera distance and the bounding sphere of the tree. |
+| Dynamic LOD | LOD value | `lodValue` | 0..1 | 0 |  |  | Manual LOD value: 0 = full detail (the unmodified mesh), 1 = lowest detail. |
+| Dynamic LOD | Levels | `lodLevels` | 2..8 | 4 |  |  | Number of discrete levels written on export. Level k uses the Dynamic LOD value k / (levels - 1); the billboard impostor stays the last level. |
+| Reduction curves | Branches | `lodBranches` | curve | curve |  |  | Share of the branches kept over the whole transition. X: LOD value, Y: 1 = all, 0 = none. Thin and interior branches go first; they shrink to their spine before they are removed. |
+| Reduction curves | Leaves | `lodLeaves` | curve | curve |  |  | Share of the leaves kept over the whole transition. X: LOD value, Y: 1 = all, 0 = none. Interior leaves go first; they shrink away before they are removed. |
+| Reduction curves | Fronds | `lodFronds` | curve | curve |  |  | Share of the fronds / fins kept over the whole transition. X: LOD value, Y: 1 = all, 0 = none. |
+| Reduction curves | Decorations | `lodDecorations` | curve | curve |  |  | Share of the decorations / knots / meshes kept over the whole transition. X: LOD value, Y: 1 = all, 0 = none. |
+| Reduction curves | Grow scale | `lodGrowScale` | curve | curve |  |  | How much of the leaf area lost by the removal the surviving leaves and fronds win back by growing (up to 3x). X: LOD value, Y: 0 = no growth, 1 = keep the covered area. |
+
+### Tab: Collision
+
+| Section | Parameter | id | Range | Default | Var | Curve | Meaning |
+|---|---|---|---|---|---|---|---|
+| Leaf collision | Leaf collision removal | `leafCollision` | None / Low / Medium / High | none |  |  | Removes leaves that overlap other leaves or branches. None = off. Low = leaf against leaf only (spheres, fastest). Medium = all collisions with a rough (box / capsule) intersection. High = exact triangle intersection (slowest). Runs as a background pass: the plain tree shows first and the result pops in when it is done. At a coarser LOD the tests are one step cheaper. |
+| Leaf collision | Use spherical tests on leaves | `leafCollisionSpherical` | bool | false |  |  | Test every leaf as a sphere (see the leaf generator Sphere threshold) instead of its box / triangles: faster and keeps more leaves. |
+| Leaf collision | Cluster plane overlapping | `clusterPlaneOverlap` | None / Low / Medium / High | none |  |  | The same tests for Batched leaf (cluster) cards, but only in the top-down XY plane: removes cards that overlap when seen from above. None = off. |
+
+### Tab: Color
+
+| Section | Parameter | id | Range | Default | Var | Curve | Meaning |
+|---|---|---|---|---|---|---|---|
+| Vertex colors | Compute | `vertexColorCompute` | bool | true |  |  | Compute and keep vertex colours. Off: nothing is exported in COLOR_0 / colour columns and the Vertex Colors view is white. On (default) is the behaviour of earlier versions. |
+| Vertex colors | Packing | `vertexColorPacking` | Legacy / Kekenik | legacy |  |  | What the vertex colour channels hold in the Vertex Colors view and in exports. Legacy: RGB = baked albedo tint x ambient occlusion (earlier behaviour). Kekenik: R = per-branch random tint, G = height along the plant (0 base .. 1 top), B = ambient occlusion (the baked one when the export bakes AO, otherwise the analytic one). Leaves and other meshes without a branch have R = 0.5. |
 
 ### Tab: Lighting
 
@@ -206,12 +233,7 @@ Main stem with crown height, buttress flare, lean, gnarliness, and profile curve
 | Break | Chance | `breakChance` | 0..1 | 0 |  |  | Probability that a node breaks and ends in an open end (a Cap can close it). |
 | Break | Spot | `breakSpot` | 0.02..0.99 | 0.68 | yes |  | Where along the spine the break happens (1 = at the tip). |
 | Break | Seed | `breakSeed` | seed | 0 |  |  | Random seed of which nodes break and where; nothing else changes. |
-| Splits & Termination | Tip behavior | `termination` | Taper / Blunt / Broken / Fork | taper |  |  | How the tip ends: taper, blunt, broken or forked. |
-| Splits & Termination | Split chance | `splitChance` | 0..1 | 0 |  |  | Probability that the spine forks into two. |
-| Splits & Termination | Split spread | `splitSpread` | 2..85 ° | 25 |  |  | Angle between the two forks (degrees). |
-| Splits & Termination | Split balance | `splitBalance` | 0.15..0.85 | 0.5 |  |  | Share of the radius that goes to the main fork. |
-| Splits & Termination | Split position | `splitStart` | 0.15..0.9 | 0.58 |  |  | Position along the spine from which forks may occur. |
-| Splits & Termination | Max split depth | `splitMaxDepth` | 1..3 | 1 |  |  | Maximum number of successive forks. |
+| Splits & Termination | Tip behavior | `termination` | Taper / Blunt / Broken | taper |  |  | How the tip ends: taper, blunt or broken. Forks are made by Skin > Splits. |
 
 ### Tab: Forces
 
@@ -221,6 +243,7 @@ Main stem with crown height, buttress flare, lean, gnarliness, and profile curve
 | Influence | Influence | `forceInfluence` | 0..10 (slider 0..2) | 1 |  | yes | Global multiplier for all forces on this node. |
 | Influence | Stiffness | `forceStiffness` | 0..1 | 0.5 |  | yes | Resistance against forces; stiff branches bend less. |
 | Influence | Falloff | `forceFalloff` | 0..1 | 0 |  |  | How the force fades from the base to the tip. |
+| Influence | Align | `forceAlign` | 0..2 (slider 0..1) | 1 |  |  | Scalar for the Align strength of every attached force: how much the forces influence the initial orientation (first segment) of this generator's branches. 1 = as set on each force, 0 = branches keep their initial orientation. |
 
 ### Tab: Shape
 
@@ -228,17 +251,24 @@ Main stem with crown height, buttress flare, lean, gnarliness, and profile curve
 |---|---|---|---|---|---|---|---|
 | Cross section | Aspect | `sectionAspect` | 0.1..4 | 1 |  | yes | Width / height ratio of the cross-section (1 = round). |
 | Cross section | Roundness | `sectionRoundness` | 0..1 | 1 |  |  | Blend between a round and an angular cross-section. |
-| Cross section | Profile | `sectionShape` | Round / Ridged / Lobed / Noise | round |  |  | Profile of the cross-section: round, ridged, lobed or noisy. |
+| Cross section | Profile | `sectionShape` | Round / Ridged / Lobed / Noise / Organic | round |  |  | Round, Ridged, Lobed, Noise, or Organic: an oval plus lobes whose strength, phase and orientation drift slowly along the trunk (and can spiral). |
 | Cross section | Lobes | `sectionLobes` | 1..32 | 5 |  |  | Number of ribs / lobes in the cross-section. |
 | Cross section | Depth | `sectionDepth` | 0..1 | 0.12 |  |  | How deep the ribs cut into the cross-section. |
 | Cross section | Spiral | `sectionSpiral` | -6..6 rad/m | 0 |  |  | Twists the ribs around the stem. |
 | Cross section | Noise frequency | `sectionNoiseFrequency` | 0.1..20 | 2 |  |  | Frequency of the noise in the cross-section. |
+| Cross section | Oval (organic) | `sectionOval` | 0..0.6 | 0.1 |  |  | Organic profile: how far the section is stretched into an oval (fraction of the radius). The long axis turns slowly along the trunk. |
+| Cross section | Drift length (organic) | `sectionDrift` | 0.05..50 (slider 0.05..10) m | 2 |  |  | Organic profile: metres of trunk for one full change of the oval, the lobe strength and their phase. Small values change quickly. |
+| Cross section | Grain twist (organic) | `grainTwist` | -360..360 (slider -360..90) °/m | 0 |  |  | Organic profile: degrees per metre the lobes spiral up the trunk (spiral grain, fluting). Added to Spiral for the lobes only. |
 | Flare | Radius | `flareRadius` | 0..5 (slider 0..1.5) | 0.28 |  | yes | Extra radius of the root flare at the base (metres). |
 | Flare | Height | `flareHeight` | 0.01..1 | 0.14 |  |  | Height of the root flare as a fraction of the length. |
 | Flare | Buttress lobes | `flareLobes` | 0..16 | 5 |  |  | Number of buttress lobes in the flare. |
 | Flare | Noise | `flareNoise` | 0..1 | 0 |  |  | Random irregularity of the flare. |
 | Bulge | Amount | `bulgeAmount` | 0..2 | 0 |  | yes | Strength of the periodic swelling of the radius. |
 | Bulge | Frequency | `bulgeFrequency` | 0.1..20 | 1 |  |  | Number of swellings along the length. |
+| Buttress | Count | `buttressCount` | 0..16 | 0 |  |  | Number of tall, thin fins that radiate from the base of the trunk (tropical and old trees). 0 = off. Use at least 8 radial sides per fin. |
+| Buttress | Height | `buttressHeight` | 0.05..30 (slider 0.05..6) m | 1.5 |  |  | How far up the trunk the fins climb. The top edge is a concave ridge that runs out into the trunk. |
+| Buttress | Length | `buttressLength` | 0..5 (slider 0..3) | 1 |  |  | How far a fin sticks out at the ground, as a multiple of the trunk radius. |
+| Buttress | Thickness | `buttressThickness` | 0.02..1 | 0.3 |  |  | Width of the flat ridge of a fin relative to the space between two fins. Thin fins have concave sides. |
 
 ### Tab: Skin
 
@@ -250,6 +280,10 @@ Main stem with crown height, buttress flare, lean, gnarliness, and profile curve
 | Radius | Absolute | `skinRadiusAbsolute` | 0..10 (slider 0..0.5) m | 0 |  |  | Radius in metres added to the base radius of every branch. |
 | Radius | Length compensation | `skinLengthCompensation` | 0..1 | 0 |  |  | Enlarges the tip radius of branches that thin out to a point too fast: 1 keeps up to half of the base radius at the tip. |
 | Radius | Length kill ratio | `skinLengthKill` | 0..10000 (slider 0..500) | 0 |  |  | Removes branches whose length divided by radius is above this value (very long, thin whips). 0 = off. |
+| Irregularity | Amount | `radiusNoiseAmount` | 0..0.6 (slider 0..0.3) | 0 |  | yes | Irregularity of the radius: slow swells and pinches along the branch, as a fraction of the radius (RMS). 0 = a clean taper. The curve runs along the branch (left = base, right = tip). |
+| Irregularity | Scale | `radiusNoiseScale` | 0.05..50 (slider 0.05..10) m | 1.5 |  |  | Wavelength of the swells in metres (a second octave at 3x the frequency and 0.4 of the amplitude adds detail). |
+| Irregularity | Seed | `radiusNoiseSeed` | seed | 0 |  |  | Random seed of the radius irregularity only; nothing else changes. |
+| Irregularity | Along parent | `radiusNoiseParent` | 0..1 (slider 0..1) | 1 |  | yes | Multiplies the irregularity of a child by this curve along its parent (left = parent base, right = parent tip). |
 | Radius | Light seam reduction | `seamReduction` | 0..1 | 0 |  |  | Bends the normals toward the spine direction, strongest at the base of a branch where lighting seams show at the junction. |
 | Radius | Roll | `skinRoll` | -180..180 ° | 0 |  |  | Rotates the skin around the spine without changing its shape (rotates the section, the squash and the texture). |
 | Radius | Smooth | `skinSmooth` | 0..1 | 0 |  |  | Pushes the vertices out on the inner side of bends so the tube does not pinch. |
@@ -257,26 +291,46 @@ Main stem with crown height, buttress flare, lean, gnarliness, and profile curve
 | Clamp | Max | `skinRadiusMax` | 0..10 (slider 0..1) m | 0 |  |  | Largest radius of any point. 0 = off. |
 | Squash | Amount | `squashAmount` | 0..1 | 0 |  |  | Reduces the radius on one side: the section becomes an ellipse (1 = flat). Welds follow the squashed profile. |
 | Squash | Rotate | `squashRotate` | -180..180 ° | 0 |  |  | Direction of the flattened side around the spine. |
-| Splits | Chance | `splitsChance` | 0..1 | 0 |  |  | Probability that the branch divides into two open ends at its tip. Needs a bark texture with at least two U tiles around the tube. |
-| Splits | Balance | `splitsBalance` | 0..1 | 0.5 |  |  | 0.5 gives both sides the same radius; lower or higher moves radius from Side 1 to Side 2 (the cross-section area is kept). |
+| Splits | Chance | `splitsChance` | 0..1 | 0 | yes |  | Probability that the branch divides into two open ends at its tip. The U tile count around the branch must be even (at least 2): an odd count is raised to the next even number when the branch splits, and the node reports it as a warning. |
+| Splits | Balance | `splitsBalance` | 0..1 | 0.5 | yes |  | 0.5 gives both sides the same radius; lower or higher moves radius from Side 1 to Side 2 (the cross-section area is kept). |
 | Splits | Seed | `splitsSeed` | seed | 0 |  |  | Seed of the split decision: changes which branches split without changing anything else. |
-| Split spread | Side 1 | `splitsSpread1` | 0..85 ° | 25 |  |  | Angle of Side 1 away from the centre of the tree. |
-| Split spread | Side 2 | `splitsSpread2` | 0..85 ° | 25 |  |  | Angle of Side 2 toward the centre of the tree. |
-| Split expand | Side 1 | `splitsExpand1` | 0.25..3 | 1 |  |  | Scales the cross-section of Side 1 from its default (1). |
-| Split expand | Side 2 | `splitsExpand2` | 0.25..3 | 1 |  |  | Scales the cross-section of Side 2 from its default (1). |
-| Split smooth | Inner | `splitsSmoothInner` | 0..1 | 0.25 |  |  | 0 = hard crease between the two sides, 1 = no crease. |
-| Split smooth | Outer | `splitsSmoothOuter` | 0..1 | 0.5 |  |  | Smoothness of the outer bend where the split occurs (0 = hard corner). |
+| Splits | Fork type | `splitsMode` | Y / Lateral | y |  |  | Y = a symmetric fork (two lobes, Balance and the two Spread angles). Lateral = the branch keeps going with a slight kink and a clearly thinner side branch leaves at the Spread angle from a swelling (the branch-like fork of old oaks); the neck swell, ridge and valley fillet of the junction are applied automatically. |
+| Splits | Dominance | `splitsDominance` | 0..1 | 0 | yes |  | Dominant leader. 0 = Balance only. Towards 1 the fat half continues the direction of the branch almost unchanged (its deviation shrinks down to 25 % of its Spread) while the skinny half leaves at its full Spread with a smaller radius. r1^e + r2^e = R^e still holds. Extend parent Fat / Skinny keep working. |
+| Splits | Lateral chance | `splitsLateralChance` | 0..1 | 0 | yes |  | Fork type Y only: probability that a fork is a lateral (one-sided) one instead, drawn per fork from the Splits seed, so one tree mixes Y and lateral forks. |
+| Split spread | Side 1 | `splitsSpread1` | 0..80 ° | 22 | yes |  | Angle of Side 1 away from the centre of the tree. |
+| Split spread | Side 2 | `splitsSpread2` | 0..80 ° | 22 | yes |  | Angle of Side 2 toward the centre of the tree. |
+| Split expand | Side 1 | `splitsExpand1` | 0.5..2 | 1 | yes |  | Scales the cross-section of Side 1 from its default (1). |
+| Split expand | Side 2 | `splitsExpand2` | 0.5..2 | 1 | yes |  | Scales the cross-section of Side 2 from its default (1). |
+| Split smooth | Inner | `splitsSmoothInner` | 0..1 | 0.25 | yes |  | 0 = hard crease between the two sides, 1 = no crease. |
+| Split smooth | Outer | `splitsSmoothOuter` | 0..1 | 0.5 | yes |  | Smoothness of the outer bend where the split occurs (0 = hard corner). |
+| Split advanced | Area exponent | `splitsAreaExponent` | 1.5..3 | 2 |  |  | Pipe-model exponent e of r1^e + r2^e = parent radius^e. 2 keeps the cross-section area of the parent; higher values make both halves thicker. |
+| Split advanced | Down bias | `splitsDownBias` | 0..1 | 0 |  |  | Turns both halves toward gravity after the sides are balanced (roots default to 0.4). A half never points higher than the branch it leaves. |
+| Split shape | Waist | `splitsWaist` | 0.2..1 | 1 |  |  | Width of the neck at the middle of the transition relative to the narrower lobe. 1 = the former outline, 0.6 = a pronounced figure-8 (peanut) that pinches and then separates. |
+| Split shape | Neck swell | `splitsNeckSwell` | 0..0.5 | 0 |  |  | The parent swells by up to this fraction of its radius just before the fork. The swell is paid from the area reservoir of the lobes: the open ends keep r1^e + r2^e = R^e. |
+| Split shape | Valley radius | `splitsValleyRadius` | 0..1 | 0 |  |  | Fillet radius of the valley between the lobes as a fraction of the smaller lobe radius. 0 = the former crease (Smooth > Inner still mixes crease and no crease); the radius fades to 0 at the open ends. |
+| Split shape | Ridge | `splitsRidge` | 0..1 | 0 |  |  | Raised bark ridge along the pinch axis from the valley down to the crotch point; height as a fraction of the smaller lobe radius, width about the valley radius. |
+| Split shape | Ridge length | `splitsRidgeLength` | 0.25..8 R | 2 |  |  | Length over which the ridge blends into the parent, in parent radii counted back from the crotch. |
+| Split shape | Stretch | `splitsStretch` | 0.8..1.6 | 1 |  |  | Elongates the section along the divergence axis early in the transition (ovalisation before the pinch). 1 = none. |
+| Split shape | Included bark | `splitsIncludedBark` | 0..1 | 0 | yes |  | Codominant stems with included bark: deepens the valley into a narrow, dark, V-shaped crevice with a bark ridge (smaller valley radius, narrower neck, a ridge, stronger ambient occlusion). 0 = off. |
+| Split shape | Ease | `splitsEase` | 0..1 | 0 |  |  | Easing of the separation along the transition: 0 = smoothstep as before, 1 = the lobes stay merged longer and then pinch off suddenly. |
 | Geometry | Close end | `capEnd` | bool | true |  |  | Closes the tip of the tube with a cap. |
 | Geometry | Tip rings | `tipRings` | 1..8 | 2 |  |  | Rings of the rounded tip cap. |
 | Geometry | Close base | `capBase` | Auto / Yes / No | auto |  |  | Auto closes branches that do not grow from a parent. |
 | Geometry | Twist | `skinTwist` | -720..720 °/m | 0 |  |  | Twists the surface texture and geometry around the axis. |
 | Junction | Collar | `collarAmount` | 0..2 | 0.3 |  |  | Radius flare where a branch leaves its parent. |
 | Junction | Collar length | `collarLength` | 0.1..10 | 1.5 |  |  | Length of the flare in branch radii. |
+| Junction | Collar swell | `collarSwell` | 0..1 | 0 |  |  | Raised shoulder where the branch meets its parent: the skin around the junction is pushed out by this fraction of the branch radius in a smooth bump (length: Collar length x radius). 0 = off. Not used where Welding is on (Spread does that job). |
 | Normals | Smoothing | `smoothing` | 0..1 | 1 |  |  | Below 0.5 the tube is faceted (unwelded quads). |
 | Normals | Flatten | `flatten` | 0..1 | 0 |  |  | Flattens normals towards the axis to soften the shading. |
 | Vertex color | Tint | `tint` | color | [0.36, 0.26, 0.18, 1] |  |  | Vertex colour multiplied onto the material. |
 | Vertex color | Variance | `tintVariance` | 0..1 | 0.1 |  |  | Random variation of the vertex colour per instance. |
 | Vertex color | AO strength | `aoStrength` | 0..1 | 0.6 |  |  | Strength of the baked vertex ambient occlusion. |
+| Vertex color | Mode | `vcMode` | Inherit / Multiply / Set / Add | inherit |  |  | Inherit: the colour is the bark colour blended with the parent at the junction (earlier behaviour). Multiply: tint it by Color. Set: replace it with Color. Add: brighten it by Color. Profile and Parent curve control where along the branch and along the parent the change applies. |
+| Vertex color | Color | `vcColor` | color | [1, 1, 1, 1] |  |  | Linear colour used by Multiply, Set and Add. |
+| Vertex color | Variance | `vcVariance` | 0..1 | 0 |  |  | Per-branch brightness variation (+-), deterministic from the seed. 0 = none. |
+| Vertex color | Seamless | `vcSeamless` | bool | false |  |  | The colour at the attach point equals the parent colour exactly and blends into this generator's own colour along the collar (needs the parent to be meshed first; falls back to the bark colour otherwise). |
+| Vertex color | Profile | `vcProfile` | curve | curve |  |  | Strength of the Mode along this branch (left: base, right: tip). 1 = full effect, 0 = the inherited colour. Use it for lighter young twigs, darker trunk bases or leaf tips. |
+| Vertex color | Parent curve | `vcParentCurve` | curve | curve |  |  | Strength of the Mode by the position of the attach point on the parent (left: parent base, right: parent tip). Ignored without a parent. |
 
 ### Tab: UV Mapping
 
@@ -300,6 +354,7 @@ Main stem with crown height, buttress flare, lean, gnarliness, and profile curve
 | V | Offset | `uvOffsetV` | -10..10 | 0 | yes |  | Moves the texture along the branch (in copies). The variance starts every branch at a random V. |
 | Tiling | Optimize segments | `uvOptimize` | bool | false |  |  | Avoids rings that are very close together near a patch seam (or a whole V number): the seam moves onto a ring within the V tolerance instead of adding one. |
 | Tiling | V tolerance | `uvVTolerance` | 0..0.5 | 0.1 |  |  | How close (in V) a ring must be to a whole number to be moved onto it while Optimize segments is on. |
+| Tiling | Create seams | `uvCreateSeams` | bool | false |  |  | Cuts real geometry (doubled ring vertices) at every whole U tile border so each tile around the branch is its own UV island: the branch texture can then sit in an atlas without resolution loss. Positions and normals stay continuous across the cut (the mesh is still watertight when welded). |
 
 ### Tab: LOD
 
@@ -310,12 +365,17 @@ Main stem with crown height, buttress flare, lean, gnarliness, and profile curve
 | Reduction | Cull amount | `lodCull` | 0..1 | 0 |  |  | Fraction of small children removed at lower LODs. |
 | Distance | Fade start | `lodFadeStart` | 0..1 | 0.5 |  |  | Distance where this node starts fading out. |
 | Distance | Fade end | `lodFadeEnd` | 0..1 | 1 |  |  | Distance where this node has completely faded. |
+| Dynamic LOD | Weight | `lodWeight` | 0..1 | 0.5 |  |  | Priority to survive when Tree > Dynamic LOD removes pieces of the same type (branches, leaves, fronds, decorations): pieces of a generator with a higher Weight are removed later. 0.5 = neutral; equal weights never change the ranking. |
+| Dynamic LOD | Optimization | `lodOptimization` | 0..45 ° | 0 |  |  | Degrees added to the straight-section merge angle (Segments > Optimization) for every LOD step: lower levels merge nearly straight length segments more aggressively. 0 = unchanged. |
+| Dynamic LOD | Length segments | `lodLengthSegments` | 0.1..1 | 1 |  |  | Scalar applied to the number of length segments once per LOD step (LOD 1 = x, LOD 2 = x², LOD 3 = x³). 1 = no extra reduction. |
+| Dynamic LOD | Radial segments | `lodRadialSegments` | 0.1..1 | 1 |  |  | Scalar applied to the number of radial (or width) segments once per LOD step (LOD 1 = x, LOD 2 = x², LOD 3 = x³). 1 = no extra reduction. |
+| Lightmap | Lightmap weight | `lightmapWeight` | 0..4 | 1 |  |  | Relative texel density of this generator in the lightmap UVs (Tree > Lightmap, export). 1 = the same density as the other generators, 2 = twice the density, 0 = one texel per piece (a leaf gets a single texel). Leaves start at 0; the "Reset lightmap" command restores the defaults. |
 
 ### Tab: Displacement
 
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
-| Main | Source | `displaceSource` | Noise / Material / Displacement | noise |  |  | Where the height values come from: built-in noise, the Height map of the assigned material, or a named asset from the Displacements panel. |
+| Main | Source | `displaceSource` | Noise / Material / Displacement / Bark | noise |  |  | Where the height values come from: built-in noise, the Height map of the assigned material, a named asset from the Displacements panel, or procedural Bark relief (see the Bark section). |
 | Main | Displacement | `displacement` | None |  |  |  | Height map from the Displacements panel. A warning badge shows on the node when the map is missing or not loaded. |
 | Main | Radial amount | `displaceRadial` | -5..5 (slider -0.3..0.3) m | 0 |  |  | Largest move away from (positive) or toward (negative) the spine, in metres. |
 | Main | Length amount | `displaceLength` | -5..5 (slider -0.3..0.3) m | 0 |  |  | Largest move along the spine, in metres. Vertices that share a V coordinate no longer sit in one plane. |
@@ -337,11 +397,23 @@ Main stem with crown height, buttress flare, lean, gnarliness, and profile curve
 | Flares | Pinch | `displaceFlarePinch` | 0..1 | 0 |  |  | Pulls the flares toward the center spine. At 1 the lobes are thin ridges and nothing spreads at the base. |
 | Flares | Angle | `displaceFlareAngle` | -180..180 ° | 0 |  |  | Rotates the flares around the spine. |
 | Flares | Seed | `displaceFlareSeed` | seed | 0 |  |  | Displacement setting (height-map driven surface detail). “Seed” in Displacement › Flares. |
+| Bark | Style | `barkStyle` | Furrowed / Plated / Fibrous / Lenticel / Rings / Scaly | furrowed |  |  | Furrowed: long ridges and V-shaped crevices (oak, pine, elm). Plated: blocky plates between cracks (redwood, old bark). Fibrous: thin parallel fibres (cedar). Lenticel: smooth bark with short horizontal slits (cherry, birch). Rings: regular horizontal rings (palm, bamboo). Scaly: overlapping scales (cypress). |
+| Bark | Depth | `barkDepth` | 0..1 (slider 0..0.3) | 0 |  |  | Relief from crevice bottom to ridge top as a fraction of the local radius, so thick trunks get deep furrows. 0 turns the bark relief off. |
+| Bark | Scale | `barkScale` | 0.005..5 (slider 0.005..0.5) m | 0.08 |  |  | Feature size in metres (furrow spacing, plate width, ring spacing). Independent of UV tiling and of the number of rings. |
+| Bark | Stretch | `barkStretch` | 0.1..40 (slider 0.1..12) | 4 |  |  | Feature length along the spine compared with its width (furrows, plates, fibres, scales). Lenticel: slit width across the trunk. Rings: not used. |
+| Bark | Warp | `barkWarp` | 0..2 | 0.5 |  |  | Domain warp strength: how much the furrows, cracks and rings meander instead of running straight. |
+| Bark | Crevice | `barkCrevice` | 0..1 | 0.5 |  |  | Crevice profile: 1 = narrow V-shaped crevices with wide tops, 0.5 = linear, 0 = wide flat-bottomed troughs. Works like the Main Sharpness curve and stacks with it. |
+| Bark | Maturity | `barkMaturity` | 0..1 | 0 |  |  | How strongly the depth follows the branch radius: 0 = every branch has the same relief, 1 = young thin twigs are smooth and old thick trunks get the full depth. |
+| Bark | Smooth up to radius | `barkMaturityMin` | 0..5 (slider 0..0.3) m | 0.01 |  |  | Radius at and below which the bark is smooth (Maturity > 0). A smoothstep leads to the full depth at the next radius. |
+| Bark | Full depth at radius | `barkMaturityMax` | 0.001..5 (slider 0.001..0.5) m | 0.15 |  |  | Radius from which the bark has its full depth (Maturity > 0). |
+| Bark | Maturity along branch | `barkMaturityCurve` | curve | curve |  |  | Depth multiplier from the base (left) to the tip (right) of each branch. A flat line at 1 leaves the depth unchanged. |
+| Bark | Seed | `barkSeed` | seed | 0 |  |  | Random seed of the bark pattern. Every branch lineage also gets its own pattern. |
 | Fade | Fade at junctions | `displaceFadeBase` | 0..10 | 1.5 |  |  | Fade-in length (in radii) past the weld / junction rings: prevents cracks where a branch leaves its parent. |
 | Fade | Fade at tips | `displaceFadeTip` | 0..10 | 1 |  |  | Fade-out length (in radii) toward the tip / cap. |
 | Fade | LOD fade | `displaceLodFade` | bool | true |  |  | Fade the displacement out between LOD 1 and 3. |
 | Subdivision | Auto-subdivide | `displaceAutoSubdivide` | bool | true |  |  | Add rings and sides so the mesh has enough vertices to carry the displacement. |
 | Subdivision | Detail size | `displaceDetail` | 0.002..1 (slider 0.002..0.2) m | 0.03 |  |  | Target quad size when auto-subdividing (smaller = more detail, more triangles). |
+| Subdivision | Max vertices | `displaceMaxVertices` | 500..1000000 (slider 500..200000) | 40000 |  |  | Bark: most vertices auto-subdivision may create for one branch, so a small Scale cannot freeze the browser. Features coarsen when the cap is reached. |
 | Subdivision | Min sides | `displaceMinSides` | 3..128 | 16 |  |  | Fewest sides around a displaced branch. |
 | Asset amount (legacy) | Amount | `displaceAmount` | -5..5 (slider 0..0.2) m | 0 |  | yes | Older asset displacement in metres at full height. The curve scales it along the branch length. |
 | Asset amount (legacy) | + % of radius | `displaceRadiusAmount` | -1..2 | 0 |  |  | Extra amount relative to the local radius. |
@@ -365,6 +437,9 @@ Main stem with crown height, buttress flare, lean, gnarliness, and profile curve
 | Material | Variation | `materialVariation` | 0..1 | 0 | yes |  | How much the material variation colours are applied. |
 | Blend | Base blend | `blendBase` | 0..1 | 0 |  | yes | Blends the material towards the parent at the base. |
 | Blend | Height blend | `blendHeight` | 0..1 | 0 |  |  | Blends the material along the height. |
+| Season | Start offset | `seasonStartOffset` | -1..1 (slider -1..1) | 0 | yes | yes | Season start offset: 0 = the transition follows the Season slider immediately, positive values delay it, negative values start it earlier. Variance spreads it per element; the curve runs along the parent. |
+| Season | Time scale | `seasonTimeScale` | 0..10 (slider 0..2) | 1 | yes | yes | Season time scale: 1 = one slider sweep is one year of this node; 2 = twice as fast, 0 = never changes. |
+| Season | Descendant offset | `seasonDescendantOffset` | -1..1 (slider -1..1) | 0 | yes |  | Season descendant offset: shifts the transition of this node AND of every node below it (positive = later). Use it so that thin twigs change after the trunk. |
 
 ### Tab: Animation
 
@@ -372,7 +447,7 @@ Main stem with crown height, buttress flare, lean, gnarliness, and profile curve
 |---|---|---|---|---|---|---|---|
 | Wind hierarchy | Hierarchy | `windHierarchy` | Trunk / Branch 1 / Branch 2 / Leaf | branch-1 |  |  | Which level of the wind hierarchy this geometry follows (trunk, branch 1/2, leaf). |
 | Amount | Amount | `windAmount` | 0..10 (slider 0..2) | 1 |  | yes | Strength multiplier of the wind on this node. |
-| Amount | Phase variance | `windPhaseVariance` | 0..1 | 0.5 |  |  | Random phase offset so neighbours do not sway in sync. |
+| Amount | Phase variance | `windPhaseVariance` | 0..1 | 0.5 |  |  | Random phase offset of the branch-level sway (0 = a branch sways in phase with the branch it grows from, 1 = fully random) so neighbours do not sway in sync. Deeper twigs and leaves always keep the phase of their level-1 ancestor. |
 
 ### Tab: Segments
 
@@ -456,7 +531,7 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 | Common | Sink | `sink` | -5..5 (slider -1..1) m | 0 | yes |  | Start offset of the nodes into (+) or out of (-) the parent; sinks trunks under the ground. |
 | Common | Pruning | `pruningCurve` | curve | curve |  |  | Runs over the parent from First (left) to Last (right). Nodes are removed where the curve is below 0.5. |
 | Common | Seed | `seed` | seed | 0 |  |  | Random seed. Change it to get a different variation of the same settings. |
-| Extend parent | Type | `extendParent` | None / Any / Split 1 / Split 2 / Skinny / Fat / Breaks only / Bottom | none |  |  | Continues an open end of the parent instead of starting a new branch. Valid only under a Branch or Trunk parent. Any = every open end (the two sides of a split count, the split branch itself does not), Split 1 / Split 2 = that side, Skinny / Fat = the thinner / thicker side, Breaks only = branches that broke, Bottom = the base of the parent. |
+| Extend parent | Type | `extendParent` | None / Any / Split 1 / Split 2 / Skinny / Fat / Breaks only / Bottom | none |  |  | Continues an open end of the parent instead of starting a new branch. Valid only under a Branch, Trunk or Root parent. On a Root generator Bottom continues the base ring of the trunk (roots never start on split halves). Any = every open end (the two sides of a split count, the split branch itself does not), Split 1 / Split 2 = that side, Skinny / Fat = the thinner / thicker side, Breaks only = branches that broke, Bottom = the base of the parent. |
 | Extend parent | Count | `extendCount` | 1..8 | 1 |  |  | Extensions created per open end (several extensions on one end separate by Extensions > Spread). |
 | Knockout | Amount | `knockout` | 0..1 | 0 |  | yes | Randomly removes this share of the nodes after the mode has placed them. The curve varies it along the parent. |
 | Knockout | + Resolution | `knockoutResolution` | -1..1 | 0 |  |  | Added to the amount for every level of detail below the highest: positive removes more nodes at lower detail, negative fewer. |
@@ -534,14 +609,9 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 | Break | Chance | `breakChance` | 0..1 | 0 |  |  | Probability that a node breaks and ends in an open end (a Cap can close it). |
 | Break | Spot | `breakSpot` | 0.02..0.99 | 0.68 | yes |  | Where along the spine the break happens (1 = at the tip). |
 | Break | Seed | `breakSeed` | seed | 0 |  |  | Random seed of which nodes break and where; nothing else changes. |
-| Splits & Termination | Tip behavior | `termination` | Taper / Blunt / Broken / Fork | taper |  |  | How the tip ends: taper, blunt, broken or forked. |
-| Splits & Termination | Split chance | `splitChance` | 0..1 | 0 |  |  | Probability that the spine forks into two. |
-| Splits & Termination | Split spread | `splitSpread` | 2..85 ° | 25 |  |  | Angle between the two forks (degrees). |
-| Splits & Termination | Split balance | `splitBalance` | 0.15..0.85 | 0.5 |  |  | Share of the radius that goes to the main fork. |
-| Splits & Termination | Split position | `splitStart` | 0.15..0.9 | 0.58 |  |  | Position along the spine from which forks may occur. |
-| Splits & Termination | Max split depth | `splitMaxDepth` | 1..3 | 1 |  |  | Maximum number of successive forks. |
-| Extensions | Length scale | `extensionLengthScale` | 0.05..8 (slider 0.05..3) | 1 |  |  | Scales the spine length of the extensions made by this node (see Generation > Extend parent). |
-| Extensions | Spread | `extensionSpread` | 0..90 ° | 15 |  | yes | Separates extensions that share one open end (Count above 1). The curve sets how much of the spread applies along the length. |
+| Splits & Termination | Tip behavior | `termination` | Taper / Blunt / Broken | taper |  |  | How the tip ends: taper, blunt or broken. Forks are made by Skin > Splits. |
+| Extensions | Length scale | `extensionLengthScale` | 0.1..3 | 1 |  |  | Scales the spine length of the extensions made by this node (see Generation > Extend parent). |
+| Extensions | Spread | `extensionSpread` | 0..90 ° | 0 |  | yes | Separates extensions that share one open end (Count above 1). The curve sets how much of the spread applies along the length. |
 | Prune | Interior | `pruneInterior` | 0..1 | 0 |  | yes | Removes branches that grow towards the inside of the model. The curve scales it along the parent. |
 | Prune | Up | `pruneUp` | 0..1 | 0 |  | yes | Removes branches that grow upwards (the steeper, the more likely). |
 | Prune | Down | `pruneDown` | 0..1 | 0 |  | yes | Removes branches that grow downwards (the steeper, the more likely). |
@@ -556,6 +626,7 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 | Influence | Influence | `forceInfluence` | 0..10 (slider 0..2) | 1 |  | yes | Global multiplier for all forces on this node. |
 | Influence | Stiffness | `forceStiffness` | 0..1 | 0.5 |  | yes | Resistance against forces; stiff branches bend less. |
 | Influence | Falloff | `forceFalloff` | 0..1 | 0 |  |  | How the force fades from the base to the tip. |
+| Influence | Align | `forceAlign` | 0..2 (slider 0..1) | 1 |  |  | Scalar for the Align strength of every attached force: how much the forces influence the initial orientation (first segment) of this generator's branches. 1 = as set on each force, 0 = branches keep their initial orientation. |
 
 ### Tab: Shape
 
@@ -563,17 +634,24 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 |---|---|---|---|---|---|---|---|
 | Cross section | Aspect | `sectionAspect` | 0.1..4 | 1 |  | yes | Width / height ratio of the cross-section (1 = round). |
 | Cross section | Roundness | `sectionRoundness` | 0..1 | 1 |  |  | Blend between a round and an angular cross-section. |
-| Cross section | Profile | `sectionShape` | Round / Ridged / Lobed / Noise | round |  |  | Profile of the cross-section: round, ridged, lobed or noisy. |
+| Cross section | Profile | `sectionShape` | Round / Ridged / Lobed / Noise / Organic | round |  |  | Round, Ridged, Lobed, Noise, or Organic: an oval plus lobes whose strength, phase and orientation drift slowly along the trunk (and can spiral). |
 | Cross section | Lobes | `sectionLobes` | 1..32 | 5 |  |  | Number of ribs / lobes in the cross-section. |
 | Cross section | Depth | `sectionDepth` | 0..1 | 0.12 |  |  | How deep the ribs cut into the cross-section. |
 | Cross section | Spiral | `sectionSpiral` | -6..6 rad/m | 0 |  |  | Twists the ribs around the stem. |
 | Cross section | Noise frequency | `sectionNoiseFrequency` | 0.1..20 | 2 |  |  | Frequency of the noise in the cross-section. |
+| Cross section | Oval (organic) | `sectionOval` | 0..0.6 | 0.1 |  |  | Organic profile: how far the section is stretched into an oval (fraction of the radius). The long axis turns slowly along the trunk. |
+| Cross section | Drift length (organic) | `sectionDrift` | 0.05..50 (slider 0.05..10) m | 2 |  |  | Organic profile: metres of trunk for one full change of the oval, the lobe strength and their phase. Small values change quickly. |
+| Cross section | Grain twist (organic) | `grainTwist` | -360..360 (slider -360..90) °/m | 0 |  |  | Organic profile: degrees per metre the lobes spiral up the trunk (spiral grain, fluting). Added to Spiral for the lobes only. |
 | Flare | Radius | `flareRadius` | 0..5 (slider 0..1.5) | 0 |  | yes | Extra radius of the root flare at the base (metres). |
 | Flare | Height | `flareHeight` | 0.01..1 | 0.14 |  |  | Height of the root flare as a fraction of the length. |
 | Flare | Buttress lobes | `flareLobes` | 0..16 | 5 |  |  | Number of buttress lobes in the flare. |
 | Flare | Noise | `flareNoise` | 0..1 | 0 |  |  | Random irregularity of the flare. |
 | Bulge | Amount | `bulgeAmount` | 0..2 | 0 |  | yes | Strength of the periodic swelling of the radius. |
 | Bulge | Frequency | `bulgeFrequency` | 0.1..20 | 1 |  |  | Number of swellings along the length. |
+| Buttress | Count | `buttressCount` | 0..16 | 0 |  |  | Number of tall, thin fins that radiate from the base of the trunk (tropical and old trees). 0 = off. Use at least 8 radial sides per fin. |
+| Buttress | Height | `buttressHeight` | 0.05..30 (slider 0.05..6) m | 1.5 |  |  | How far up the trunk the fins climb. The top edge is a concave ridge that runs out into the trunk. |
+| Buttress | Length | `buttressLength` | 0..5 (slider 0..3) | 1 |  |  | How far a fin sticks out at the ground, as a multiple of the trunk radius. |
+| Buttress | Thickness | `buttressThickness` | 0.02..1 | 0.3 |  |  | Width of the flat ridge of a fin relative to the space between two fins. Thin fins have concave sides. |
 
 ### Tab: Skin
 
@@ -587,6 +665,10 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 | Radius | Clamp to parent | `skinRadiusClampParent` | bool | false |  |  | A branch never gets thicker than its parent at the attachment. |
 | Radius | Length compensation | `skinLengthCompensation` | 0..1 | 0 |  |  | Enlarges the tip radius of branches that thin out to a point too fast: 1 keeps up to half of the base radius at the tip. |
 | Radius | Length kill ratio | `skinLengthKill` | 0..10000 (slider 0..500) | 0 |  |  | Removes branches whose length divided by radius is above this value (very long, thin whips). 0 = off. |
+| Irregularity | Amount | `radiusNoiseAmount` | 0..0.6 (slider 0..0.3) | 0 |  | yes | Irregularity of the radius: slow swells and pinches along the branch, as a fraction of the radius (RMS). 0 = a clean taper. The curve runs along the branch (left = base, right = tip). |
+| Irregularity | Scale | `radiusNoiseScale` | 0.05..50 (slider 0.05..10) m | 1.5 |  |  | Wavelength of the swells in metres (a second octave at 3x the frequency and 0.4 of the amplitude adds detail). |
+| Irregularity | Seed | `radiusNoiseSeed` | seed | 0 |  |  | Random seed of the radius irregularity only; nothing else changes. |
+| Irregularity | Along parent | `radiusNoiseParent` | 0..1 (slider 0..1) | 1 |  | yes | Multiplies the irregularity of a child by this curve along its parent (left = parent base, right = parent tip). |
 | Radius | Light seam reduction | `seamReduction` | 0..1 | 0 |  |  | Bends the normals toward the spine direction, strongest at the base of a branch where lighting seams show at the junction. |
 | Radius | Roll | `skinRoll` | -180..180 ° | 0 |  |  | Rotates the skin around the spine without changing its shape (rotates the section, the squash and the texture). |
 | Radius | Smooth | `skinSmooth` | 0..1 | 0 |  |  | Pushes the vertices out on the inner side of bends so the tube does not pinch. |
@@ -594,24 +676,41 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 | Clamp | Max | `skinRadiusMax` | 0..10 (slider 0..1) m | 0 |  |  | Largest radius of any point. 0 = off. |
 | Squash | Amount | `squashAmount` | 0..1 | 0 |  |  | Reduces the radius on one side: the section becomes an ellipse (1 = flat). Welds follow the squashed profile. |
 | Squash | Rotate | `squashRotate` | -180..180 ° | 0 |  |  | Direction of the flattened side around the spine. |
-| Splits | Chance | `splitsChance` | 0..1 | 0 |  |  | Probability that the branch divides into two open ends at its tip. Needs a bark texture with at least two U tiles around the tube. |
-| Splits | Balance | `splitsBalance` | 0..1 | 0.5 |  |  | 0.5 gives both sides the same radius; lower or higher moves radius from Side 1 to Side 2 (the cross-section area is kept). |
+| Splits | Chance | `splitsChance` | 0..1 | 0 | yes |  | Probability that the branch divides into two open ends at its tip. The U tile count around the branch must be even (at least 2): an odd count is raised to the next even number when the branch splits, and the node reports it as a warning. |
+| Splits | Balance | `splitsBalance` | 0..1 | 0.5 | yes |  | 0.5 gives both sides the same radius; lower or higher moves radius from Side 1 to Side 2 (the cross-section area is kept). |
 | Splits | Seed | `splitsSeed` | seed | 0 |  |  | Seed of the split decision: changes which branches split without changing anything else. |
-| Split spread | Side 1 | `splitsSpread1` | 0..85 ° | 25 |  |  | Angle of Side 1 away from the centre of the tree. |
-| Split spread | Side 2 | `splitsSpread2` | 0..85 ° | 25 |  |  | Angle of Side 2 toward the centre of the tree. |
-| Split expand | Side 1 | `splitsExpand1` | 0.25..3 | 1 |  |  | Scales the cross-section of Side 1 from its default (1). |
-| Split expand | Side 2 | `splitsExpand2` | 0.25..3 | 1 |  |  | Scales the cross-section of Side 2 from its default (1). |
-| Split smooth | Inner | `splitsSmoothInner` | 0..1 | 0.25 |  |  | 0 = hard crease between the two sides, 1 = no crease. |
-| Split smooth | Outer | `splitsSmoothOuter` | 0..1 | 0.5 |  |  | Smoothness of the outer bend where the split occurs (0 = hard corner). |
-| Extensions | Radius | `extensionRadius` | 0..1 | 1 |  | yes | How much of the profile curve is used. The curve is the radius along the extension relative to the radius the branch would have there (it starts at the parent radius). |
+| Splits | Fork type | `splitsMode` | Y / Lateral | y |  |  | Y = a symmetric fork (two lobes, Balance and the two Spread angles). Lateral = the branch keeps going with a slight kink and a clearly thinner side branch leaves at the Spread angle from a swelling (the branch-like fork of old oaks); the neck swell, ridge and valley fillet of the junction are applied automatically. |
+| Splits | Dominance | `splitsDominance` | 0..1 | 0 | yes |  | Dominant leader. 0 = Balance only. Towards 1 the fat half continues the direction of the branch almost unchanged (its deviation shrinks down to 25 % of its Spread) while the skinny half leaves at its full Spread with a smaller radius. r1^e + r2^e = R^e still holds. Extend parent Fat / Skinny keep working. |
+| Splits | Lateral chance | `splitsLateralChance` | 0..1 | 0 | yes |  | Fork type Y only: probability that a fork is a lateral (one-sided) one instead, drawn per fork from the Splits seed, so one tree mixes Y and lateral forks. |
+| Split spread | Side 1 | `splitsSpread1` | 0..80 ° | 22 | yes |  | Angle of Side 1 away from the centre of the tree. |
+| Split spread | Side 2 | `splitsSpread2` | 0..80 ° | 22 | yes |  | Angle of Side 2 toward the centre of the tree. |
+| Split expand | Side 1 | `splitsExpand1` | 0.5..2 | 1 | yes |  | Scales the cross-section of Side 1 from its default (1). |
+| Split expand | Side 2 | `splitsExpand2` | 0.5..2 | 1 | yes |  | Scales the cross-section of Side 2 from its default (1). |
+| Split smooth | Inner | `splitsSmoothInner` | 0..1 | 0.25 | yes |  | 0 = hard crease between the two sides, 1 = no crease. |
+| Split smooth | Outer | `splitsSmoothOuter` | 0..1 | 0.5 | yes |  | Smoothness of the outer bend where the split occurs (0 = hard corner). |
+| Split advanced | Area exponent | `splitsAreaExponent` | 1.5..3 | 2 |  |  | Pipe-model exponent e of r1^e + r2^e = parent radius^e. 2 keeps the cross-section area of the parent; higher values make both halves thicker. |
+| Split advanced | Down bias | `splitsDownBias` | 0..1 | 0 |  |  | Turns both halves toward gravity after the sides are balanced (roots default to 0.4). A half never points higher than the branch it leaves. |
+| Split shape | Waist | `splitsWaist` | 0.2..1 | 1 |  |  | Width of the neck at the middle of the transition relative to the narrower lobe. 1 = the former outline, 0.6 = a pronounced figure-8 (peanut) that pinches and then separates. |
+| Split shape | Neck swell | `splitsNeckSwell` | 0..0.5 | 0 |  |  | The parent swells by up to this fraction of its radius just before the fork. The swell is paid from the area reservoir of the lobes: the open ends keep r1^e + r2^e = R^e. |
+| Split shape | Valley radius | `splitsValleyRadius` | 0..1 | 0 |  |  | Fillet radius of the valley between the lobes as a fraction of the smaller lobe radius. 0 = the former crease (Smooth > Inner still mixes crease and no crease); the radius fades to 0 at the open ends. |
+| Split shape | Ridge | `splitsRidge` | 0..1 | 0 |  |  | Raised bark ridge along the pinch axis from the valley down to the crotch point; height as a fraction of the smaller lobe radius, width about the valley radius. |
+| Split shape | Ridge length | `splitsRidgeLength` | 0.25..8 R | 2 |  |  | Length over which the ridge blends into the parent, in parent radii counted back from the crotch. |
+| Split shape | Stretch | `splitsStretch` | 0.8..1.6 | 1 |  |  | Elongates the section along the divergence axis early in the transition (ovalisation before the pinch). 1 = none. |
+| Split shape | Included bark | `splitsIncludedBark` | 0..1 | 0 | yes |  | Codominant stems with included bark: deepens the valley into a narrow, dark, V-shaped crevice with a bark ridge (smaller valley radius, narrower neck, a ridge, stronger ambient occlusion). 0 = off. |
+| Split shape | Ease | `splitsEase` | 0..1 | 0 |  |  | Easing of the separation along the transition: 0 = smoothstep as before, 1 = the lobes stay merged longer and then pinch off suddenly. |
+| Extensions | Radius | `extensionRadius` | 0..1 | 0 |  | yes | How much of the profile curve is used. The curve is the radius along the extension relative to the radius the branch would have there (it starts at the parent radius). |
 | Extensions | Normal smooth | `extensionNormalSmooth` | 0..1 | 0.5 |  |  | Smooths the normals at the base of extensions to hide seams between several extensions. |
-| Extensions | Displacement scale | `extensionDisplaceScale` | 0..8 (slider 0..3) | 1 |  |  | Scales the displacement on the extensions made by this node. |
+| Extensions | Displacement scale | `extensionDisplaceScale` | 0..2 | 1 |  |  | Scales the displacement on the extensions made by this node. |
+| Extensions | Blend length | `extensionBlendLength` | 0.5..8 | 2 |  |  | Length, in parent radii, over which an extension blends from its parent material to its own. Has no effect while the extension material is Inherited. |
+| Extensions | Contrast | `extensionBlendContrast` | 0..1 | 0.35 |  |  | 0 = soft material transition, 1 = hard edge. |
+| Extensions | Noise | `extensionBlendNoise` | 0..1 | 0.3 |  |  | Makes the blend line around the extension irregular. |
 | Geometry | Close end | `capEnd` | bool | true |  |  | Closes the tip of the tube with a cap. |
 | Geometry | Tip rings | `tipRings` | 1..8 | 2 |  |  | Rings of the rounded tip cap. |
 | Geometry | Close base | `capBase` | Auto / Yes / No | auto |  |  | Auto closes branches that do not grow from a parent. |
 | Geometry | Twist | `skinTwist` | -720..720 °/m | 0 |  |  | Twists the surface texture and geometry around the axis. |
 | Junction | Collar | `collarAmount` | 0..2 | 0.3 |  |  | Radius flare where a branch leaves its parent. |
 | Junction | Collar length | `collarLength` | 0.1..10 | 1.5 |  |  | Length of the flare in branch radii. |
+| Junction | Collar swell | `collarSwell` | 0..1 | 0 |  |  | Raised shoulder where the branch meets its parent: the skin around the junction is pushed out by this fraction of the branch radius in a smooth bump (length: Collar length x radius). 0 = off. Not used where Welding is on (Spread does that job). |
 | Welding | Enabled | `weldEnabled` | bool | false |  |  | Pushes the base of the branch out of its parent and fuses it to the parent surface, for a seamless union without a visible seam. |
 | Welding | Keep | `weldKeep` | curve | curve |  |  | Runs over the height of the model (left = bottom, right = top). Welds are dropped where the curve is below 0.5: the branch then starts on the parent spine without fusing. |
 | Welding | Keep failed | `weldKeepFailed` | bool | false |  |  | Keeps branches whose weld failed (they are drawn without fusing) instead of removing them. Useful to find the failures. |
@@ -631,13 +730,19 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 | Vertex color | Tint | `tint` | color | [0.36, 0.26, 0.18, 1] |  |  | Vertex colour multiplied onto the material. |
 | Vertex color | Variance | `tintVariance` | 0..1 | 0.1 |  |  | Random variation of the vertex colour per instance. |
 | Vertex color | AO strength | `aoStrength` | 0..1 | 0.6 |  |  | Strength of the baked vertex ambient occlusion. |
+| Vertex color | Mode | `vcMode` | Inherit / Multiply / Set / Add | inherit |  |  | Inherit: the colour is the bark colour blended with the parent at the junction (earlier behaviour). Multiply: tint it by Color. Set: replace it with Color. Add: brighten it by Color. Profile and Parent curve control where along the branch and along the parent the change applies. |
+| Vertex color | Color | `vcColor` | color | [1, 1, 1, 1] |  |  | Linear colour used by Multiply, Set and Add. |
+| Vertex color | Variance | `vcVariance` | 0..1 | 0 |  |  | Per-branch brightness variation (+-), deterministic from the seed. 0 = none. |
+| Vertex color | Seamless | `vcSeamless` | bool | false |  |  | The colour at the attach point equals the parent colour exactly and blends into this generator's own colour along the collar (needs the parent to be meshed first; falls back to the bark colour otherwise). |
+| Vertex color | Profile | `vcProfile` | curve | curve |  |  | Strength of the Mode along this branch (left: base, right: tip). 1 = full effect, 0 = the inherited colour. Use it for lighter young twigs, darker trunk bases or leaf tips. |
+| Vertex color | Parent curve | `vcParentCurve` | curve | curve |  |  | Strength of the Mode by the position of the attach point on the parent (left: parent base, right: parent tip). Ignored without a parent. |
 
 ### Tab: UV Mapping
 
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
 | Mapping | Style | `uvStyle` | Unrestricted / U locked [0,1], V unrestricted / U and V locked [0,1] | unrestricted |  |  | Unrestricted lets the coordinates tile freely. The locked styles keep U (or U and V) inside 0..1: one texture copy around the branch, and for U and V locked one along it. Offsets and twist are ignored while locked. |
-| Mapping | Extension style | `extensionUvStyle` | Automatic / Manual (match) / Manual (match u only) / Manual (full control) | automatic |  |  | How an extension maps its texture next to the branch it extends. Automatic continues the parent (tiles around, V, twist, offset). Manual (match) uses its own settings but the parent tile count and a V that starts where the parent ends. Manual (match u only) only copies the tile count. Manual (full control) ignores the parent. |
+| Mapping | Extension style | `extensionUvStyle` | Automatic / Manual (match) / Manual (match u only) / Manual (full control) | automatic |  |  | How an extension maps its texture next to the branch it extends. Automatic continues the parent (tiles around, V, twist, offset). Manual (match) copies the parent tile count and V; your own U and V offsets are added to those of the parent. Manual (match u only) copies only the tile count; the U offset is added to that of the parent, V is your own. Manual (full control) ignores the parent. |
 | Mapping | Rotate 90° | `uvRotate` | bool | false |  |  | Swaps U and V (turns the texture a quarter turn). |
 | U | Absolute | `uvUAbsolute` | 0..64 (slider 0..8) | 0 |  |  | Texture copies around the branch regardless of its thickness. The total is always a whole number, at least 1. |
 | U | + Relative | `uvURelative` | 0..16 (slider 0..4) | 1 |  |  | Extra copies per metre of circumference, so thick branches get more (1 = one copy per metre of girth, the classic world-size tiling). |
@@ -656,6 +761,7 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 | Tiling | Style | `uvTilingStyle` | Tiling / 0-1 patches (choose one assigned material) / 0-1 patches (use all assigned materials) | tiling |  |  | Tiling repeats the texture. The patch styles cut the branch into 0..1 patches (one per V tile) that show a UV Area of the material: one material for the whole branch, or any assigned material per patch. Vertices are doubled along the seams. Set the area and placement of every row with the patch button in the Material tab. |
 | Tiling | Optimize segments | `uvOptimize` | bool | false |  |  | Avoids rings that are very close together near a patch seam (or a whole V number): the seam moves onto a ring within the V tolerance instead of adding one. |
 | Tiling | V tolerance | `uvVTolerance` | 0..0.5 | 0.1 |  |  | How close (in V) a ring must be to a whole number to be moved onto it while Optimize segments is on. |
+| Tiling | Create seams | `uvCreateSeams` | bool | false |  |  | Cuts real geometry (doubled ring vertices) at every whole U tile border so each tile around the branch is its own UV island: the branch texture can then sit in an atlas without resolution loss. Positions and normals stay continuous across the cut (the mesh is still watertight when welded). |
 | Tiling | Seed | `uvTilingSeed` | seed | 0 |  |  | UV mapping setting for textures on this geometry. “Seed” in UV › Tiling. |
 
 ### Tab: LOD
@@ -667,12 +773,17 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 | Reduction | Cull amount | `lodCull` | 0..1 | 0 |  |  | Fraction of small children removed at lower LODs. |
 | Distance | Fade start | `lodFadeStart` | 0..1 | 0.5 |  |  | Distance where this node starts fading out. |
 | Distance | Fade end | `lodFadeEnd` | 0..1 | 1 |  |  | Distance where this node has completely faded. |
+| Dynamic LOD | Weight | `lodWeight` | 0..1 | 0.5 |  |  | Priority to survive when Tree > Dynamic LOD removes pieces of the same type (branches, leaves, fronds, decorations): pieces of a generator with a higher Weight are removed later. 0.5 = neutral; equal weights never change the ranking. |
+| Dynamic LOD | Optimization | `lodOptimization` | 0..45 ° | 0 |  |  | Degrees added to the straight-section merge angle (Segments > Optimization) for every LOD step: lower levels merge nearly straight length segments more aggressively. 0 = unchanged. |
+| Dynamic LOD | Length segments | `lodLengthSegments` | 0.1..1 | 1 |  |  | Scalar applied to the number of length segments once per LOD step (LOD 1 = x, LOD 2 = x², LOD 3 = x³). 1 = no extra reduction. |
+| Dynamic LOD | Radial segments | `lodRadialSegments` | 0.1..1 | 1 |  |  | Scalar applied to the number of radial (or width) segments once per LOD step (LOD 1 = x, LOD 2 = x², LOD 3 = x³). 1 = no extra reduction. |
+| Lightmap | Lightmap weight | `lightmapWeight` | 0..4 | 1 |  |  | Relative texel density of this generator in the lightmap UVs (Tree > Lightmap, export). 1 = the same density as the other generators, 2 = twice the density, 0 = one texel per piece (a leaf gets a single texel). Leaves start at 0; the "Reset lightmap" command restores the defaults. |
 
 ### Tab: Displacement
 
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
-| Main | Source | `displaceSource` | Noise / Material / Displacement | noise |  |  | Where the height values come from: built-in noise, the Height map of the assigned material, or a named asset from the Displacements panel. |
+| Main | Source | `displaceSource` | Noise / Material / Displacement / Bark | noise |  |  | Where the height values come from: built-in noise, the Height map of the assigned material, a named asset from the Displacements panel, or procedural Bark relief (see the Bark section). |
 | Main | Displacement | `displacement` | None |  |  |  | Height map from the Displacements panel. A warning badge shows on the node when the map is missing or not loaded. |
 | Main | Radial amount | `displaceRadial` | -5..5 (slider -0.3..0.3) m | 0 |  |  | Largest move away from (positive) or toward (negative) the spine, in metres. |
 | Main | Length amount | `displaceLength` | -5..5 (slider -0.3..0.3) m | 0 |  |  | Largest move along the spine, in metres. Vertices that share a V coordinate no longer sit in one plane. |
@@ -694,11 +805,23 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 | Flares | Pinch | `displaceFlarePinch` | 0..1 | 0 |  |  | Pulls the flares toward the center spine. At 1 the lobes are thin ridges and nothing spreads at the base. |
 | Flares | Angle | `displaceFlareAngle` | -180..180 ° | 0 |  |  | Rotates the flares around the spine. |
 | Flares | Seed | `displaceFlareSeed` | seed | 0 |  |  | Displacement setting (height-map driven surface detail). “Seed” in Displacement › Flares. |
+| Bark | Style | `barkStyle` | Furrowed / Plated / Fibrous / Lenticel / Rings / Scaly | furrowed |  |  | Furrowed: long ridges and V-shaped crevices (oak, pine, elm). Plated: blocky plates between cracks (redwood, old bark). Fibrous: thin parallel fibres (cedar). Lenticel: smooth bark with short horizontal slits (cherry, birch). Rings: regular horizontal rings (palm, bamboo). Scaly: overlapping scales (cypress). |
+| Bark | Depth | `barkDepth` | 0..1 (slider 0..0.3) | 0 |  |  | Relief from crevice bottom to ridge top as a fraction of the local radius, so thick trunks get deep furrows. 0 turns the bark relief off. |
+| Bark | Scale | `barkScale` | 0.005..5 (slider 0.005..0.5) m | 0.08 |  |  | Feature size in metres (furrow spacing, plate width, ring spacing). Independent of UV tiling and of the number of rings. |
+| Bark | Stretch | `barkStretch` | 0.1..40 (slider 0.1..12) | 4 |  |  | Feature length along the spine compared with its width (furrows, plates, fibres, scales). Lenticel: slit width across the trunk. Rings: not used. |
+| Bark | Warp | `barkWarp` | 0..2 | 0.5 |  |  | Domain warp strength: how much the furrows, cracks and rings meander instead of running straight. |
+| Bark | Crevice | `barkCrevice` | 0..1 | 0.5 |  |  | Crevice profile: 1 = narrow V-shaped crevices with wide tops, 0.5 = linear, 0 = wide flat-bottomed troughs. Works like the Main Sharpness curve and stacks with it. |
+| Bark | Maturity | `barkMaturity` | 0..1 | 0 |  |  | How strongly the depth follows the branch radius: 0 = every branch has the same relief, 1 = young thin twigs are smooth and old thick trunks get the full depth. |
+| Bark | Smooth up to radius | `barkMaturityMin` | 0..5 (slider 0..0.3) m | 0.01 |  |  | Radius at and below which the bark is smooth (Maturity > 0). A smoothstep leads to the full depth at the next radius. |
+| Bark | Full depth at radius | `barkMaturityMax` | 0.001..5 (slider 0.001..0.5) m | 0.15 |  |  | Radius from which the bark has its full depth (Maturity > 0). |
+| Bark | Maturity along branch | `barkMaturityCurve` | curve | curve |  |  | Depth multiplier from the base (left) to the tip (right) of each branch. A flat line at 1 leaves the depth unchanged. |
+| Bark | Seed | `barkSeed` | seed | 0 |  |  | Random seed of the bark pattern. Every branch lineage also gets its own pattern. |
 | Fade | Fade at junctions | `displaceFadeBase` | 0..10 | 1.5 |  |  | Fade-in length (in radii) past the weld / junction rings: prevents cracks where a branch leaves its parent. |
 | Fade | Fade at tips | `displaceFadeTip` | 0..10 | 1 |  |  | Fade-out length (in radii) toward the tip / cap. |
 | Fade | LOD fade | `displaceLodFade` | bool | true |  |  | Fade the displacement out between LOD 1 and 3. |
 | Subdivision | Auto-subdivide | `displaceAutoSubdivide` | bool | true |  |  | Add rings and sides so the mesh has enough vertices to carry the displacement. |
 | Subdivision | Detail size | `displaceDetail` | 0.002..1 (slider 0.002..0.2) m | 0.03 |  |  | Target quad size when auto-subdividing (smaller = more detail, more triangles). |
+| Subdivision | Max vertices | `displaceMaxVertices` | 500..1000000 (slider 500..200000) | 40000 |  |  | Bark: most vertices auto-subdivision may create for one branch, so a small Scale cannot freeze the browser. Features coarsen when the cap is reached. |
 | Subdivision | Min sides | `displaceMinSides` | 3..128 | 16 |  |  | Fewest sides around a displaced branch. |
 | Asset amount (legacy) | Amount | `displaceAmount` | -5..5 (slider 0..0.2) m | 0 |  | yes | Older asset displacement in metres at full height. The curve scales it along the branch length. |
 | Asset amount (legacy) | + % of radius | `displaceRadiusAmount` | -1..2 | 0 |  |  | Extra amount relative to the local radius. |
@@ -723,6 +846,10 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 | Material | Variation | `materialVariation` | 0..1 | 0 | yes |  | How much the material variation colours are applied. |
 | Blend | Base blend | `blendBase` | 0..1 | 0 |  | yes | Blends the material towards the parent at the base. |
 | Blend | Height blend | `blendHeight` | 0..1 | 0 |  |  | Blends the material along the height. |
+| Season | Start offset | `seasonStartOffset` | -1..1 (slider -1..1) | 0 | yes | yes | Season start offset: 0 = the transition follows the Season slider immediately, positive values delay it, negative values start it earlier. Variance spreads it per element; the curve runs along the parent. |
+| Season | Time scale | `seasonTimeScale` | 0..10 (slider 0..2) | 1 | yes | yes | Season time scale: 1 = one slider sweep is one year of this node; 2 = twice as fast, 0 = never changes. |
+| Season | Descendant offset | `seasonDescendantOffset` | -1..1 (slider -1..1) | 0 | yes |  | Season descendant offset: shifts the transition of this node AND of every node below it (positive = later). Use it so that thin twigs change after the trunk. |
+| Season | Gravity | `seasonGravity` | -1..1 (slider 0..1) | 0 |  | yes | Season gravity: the branches droop by this amount times their transition value while their material changes (0 = no droop). |
 
 ### Tab: Animation
 
@@ -730,7 +857,7 @@ Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifur
 |---|---|---|---|---|---|---|---|
 | Wind hierarchy | Hierarchy | `windHierarchy` | Trunk / Branch 1 / Branch 2 / Leaf | branch-1 |  |  | Which level of the wind hierarchy this geometry follows (trunk, branch 1/2, leaf). |
 | Amount | Amount | `windAmount` | 0..10 (slider 0..2) | 1 |  | yes | Strength multiplier of the wind on this node. |
-| Amount | Phase variance | `windPhaseVariance` | 0..1 | 0.5 |  |  | Random phase offset so neighbours do not sway in sync. |
+| Amount | Phase variance | `windPhaseVariance` | 0..1 | 0.5 |  |  | Random phase offset of the branch-level sway (0 = a branch sways in phase with the branch it grows from, 1 = fully random) so neighbours do not sway in sync. Deeper twigs and leaves always keep the phase of their level-1 ancestor. |
 
 ### Tab: Segments
 
@@ -904,12 +1031,7 @@ Lightweight spine-only structural guides for attaching foliage or child branches
 | Break | Chance | `breakChance` | 0..1 | 0 |  |  | Probability that a node breaks and ends in an open end (a Cap can close it). |
 | Break | Spot | `breakSpot` | 0.02..0.99 | 0.68 | yes |  | Where along the spine the break happens (1 = at the tip). |
 | Break | Seed | `breakSeed` | seed | 0 |  |  | Random seed of which nodes break and where; nothing else changes. |
-| Splits & Termination | Tip behavior | `termination` | Taper / Blunt / Broken / Fork | taper |  |  | How the tip ends: taper, blunt, broken or forked. |
-| Splits & Termination | Split chance | `splitChance` | 0..1 | 0 |  |  | Probability that the spine forks into two. |
-| Splits & Termination | Split spread | `splitSpread` | 2..85 ° | 25 |  |  | Angle between the two forks (degrees). |
-| Splits & Termination | Split balance | `splitBalance` | 0.15..0.85 | 0.5 |  |  | Share of the radius that goes to the main fork. |
-| Splits & Termination | Split position | `splitStart` | 0.15..0.9 | 0.58 |  |  | Position along the spine from which forks may occur. |
-| Splits & Termination | Max split depth | `splitMaxDepth` | 1..3 | 1 |  |  | Maximum number of successive forks. |
+| Splits & Termination | Tip behavior | `termination` | Taper / Blunt / Broken | taper |  |  | How the tip ends: taper, blunt or broken. Forks are made by Skin > Splits. |
 | Prune | Interior | `pruneInterior` | 0..1 | 0 |  | yes | Removes branches that grow towards the inside of the model. The curve scales it along the parent. |
 | Prune | Up | `pruneUp` | 0..1 | 0 |  | yes | Removes branches that grow upwards (the steeper, the more likely). |
 | Prune | Down | `pruneDown` | 0..1 | 0 |  | yes | Removes branches that grow downwards (the steeper, the more likely). |
@@ -924,6 +1046,7 @@ Lightweight spine-only structural guides for attaching foliage or child branches
 | Influence | Influence | `forceInfluence` | 0..10 (slider 0..2) | 1 |  | yes | Global multiplier for all forces on this node. |
 | Influence | Stiffness | `forceStiffness` | 0..1 | 0.5 |  | yes | Resistance against forces; stiff branches bend less. |
 | Influence | Falloff | `forceFalloff` | 0..1 | 0 |  |  | How the force fades from the base to the tip. |
+| Influence | Align | `forceAlign` | 0..2 (slider 0..1) | 1 |  |  | Scalar for the Align strength of every attached force: how much the forces influence the initial orientation (first segment) of this generator's branches. 1 = as set on each force, 0 = branches keep their initial orientation. |
 
 ### Tab: Shape
 
@@ -931,17 +1054,24 @@ Lightweight spine-only structural guides for attaching foliage or child branches
 |---|---|---|---|---|---|---|---|
 | Cross section | Aspect | `sectionAspect` | 0.1..4 | 1 |  | yes | Width / height ratio of the cross-section (1 = round). |
 | Cross section | Roundness | `sectionRoundness` | 0..1 | 1 |  |  | Blend between a round and an angular cross-section. |
-| Cross section | Profile | `sectionShape` | Round / Ridged / Lobed / Noise | round |  |  | Profile of the cross-section: round, ridged, lobed or noisy. |
+| Cross section | Profile | `sectionShape` | Round / Ridged / Lobed / Noise / Organic | round |  |  | Round, Ridged, Lobed, Noise, or Organic: an oval plus lobes whose strength, phase and orientation drift slowly along the trunk (and can spiral). |
 | Cross section | Lobes | `sectionLobes` | 1..32 | 5 |  |  | Number of ribs / lobes in the cross-section. |
 | Cross section | Depth | `sectionDepth` | 0..1 | 0.12 |  |  | How deep the ribs cut into the cross-section. |
 | Cross section | Spiral | `sectionSpiral` | -6..6 rad/m | 0 |  |  | Twists the ribs around the stem. |
 | Cross section | Noise frequency | `sectionNoiseFrequency` | 0.1..20 | 2 |  |  | Frequency of the noise in the cross-section. |
+| Cross section | Oval (organic) | `sectionOval` | 0..0.6 | 0.1 |  |  | Organic profile: how far the section is stretched into an oval (fraction of the radius). The long axis turns slowly along the trunk. |
+| Cross section | Drift length (organic) | `sectionDrift` | 0.05..50 (slider 0.05..10) m | 2 |  |  | Organic profile: metres of trunk for one full change of the oval, the lobe strength and their phase. Small values change quickly. |
+| Cross section | Grain twist (organic) | `grainTwist` | -360..360 (slider -360..90) °/m | 0 |  |  | Organic profile: degrees per metre the lobes spiral up the trunk (spiral grain, fluting). Added to Spiral for the lobes only. |
 | Flare | Radius | `flareRadius` | 0..5 (slider 0..1.5) | 0 |  | yes | Extra radius of the root flare at the base (metres). |
 | Flare | Height | `flareHeight` | 0.01..1 | 0.1 |  |  | Height of the root flare as a fraction of the length. |
 | Flare | Buttress lobes | `flareLobes` | 0..16 | 5 |  |  | Number of buttress lobes in the flare. |
 | Flare | Noise | `flareNoise` | 0..1 | 0 |  |  | Random irregularity of the flare. |
 | Bulge | Amount | `bulgeAmount` | 0..2 | 0 |  | yes | Strength of the periodic swelling of the radius. |
 | Bulge | Frequency | `bulgeFrequency` | 0.1..20 | 1 |  |  | Number of swellings along the length. |
+| Buttress | Count | `buttressCount` | 0..16 | 0 |  |  | Number of tall, thin fins that radiate from the base of the trunk (tropical and old trees). 0 = off. Use at least 8 radial sides per fin. |
+| Buttress | Height | `buttressHeight` | 0.05..30 (slider 0.05..6) m | 1.5 |  |  | How far up the trunk the fins climb. The top edge is a concave ridge that runs out into the trunk. |
+| Buttress | Length | `buttressLength` | 0..5 (slider 0..3) | 1 |  |  | How far a fin sticks out at the ground, as a multiple of the trunk radius. |
+| Buttress | Thickness | `buttressThickness` | 0.02..1 | 0.3 |  |  | Width of the flat ridge of a fin relative to the space between two fins. Thin fins have concave sides. |
 
 ### Tab: Skin
 
@@ -955,6 +1085,10 @@ Lightweight spine-only structural guides for attaching foliage or child branches
 | Radius | Clamp to parent | `skinRadiusClampParent` | bool | false |  |  | A branch never gets thicker than its parent at the attachment. |
 | Radius | Length compensation | `skinLengthCompensation` | 0..1 | 0 |  |  | Enlarges the tip radius of branches that thin out to a point too fast: 1 keeps up to half of the base radius at the tip. |
 | Radius | Length kill ratio | `skinLengthKill` | 0..10000 (slider 0..500) | 0 |  |  | Removes branches whose length divided by radius is above this value (very long, thin whips). 0 = off. |
+| Irregularity | Amount | `radiusNoiseAmount` | 0..0.6 (slider 0..0.3) | 0 |  | yes | Irregularity of the radius: slow swells and pinches along the branch, as a fraction of the radius (RMS). 0 = a clean taper. The curve runs along the branch (left = base, right = tip). |
+| Irregularity | Scale | `radiusNoiseScale` | 0.05..50 (slider 0.05..10) m | 1.5 |  |  | Wavelength of the swells in metres (a second octave at 3x the frequency and 0.4 of the amplitude adds detail). |
+| Irregularity | Seed | `radiusNoiseSeed` | seed | 0 |  |  | Random seed of the radius irregularity only; nothing else changes. |
+| Irregularity | Along parent | `radiusNoiseParent` | 0..1 (slider 0..1) | 1 |  | yes | Multiplies the irregularity of a child by this curve along its parent (left = parent base, right = parent tip). |
 | Radius | Light seam reduction | `seamReduction` | 0..1 | 0 |  |  | Bends the normals toward the spine direction, strongest at the base of a branch where lighting seams show at the junction. |
 | Radius | Roll | `skinRoll` | -180..180 ° | 0 |  |  | Rotates the skin around the spine without changing its shape (rotates the section, the squash and the texture). |
 | Radius | Smooth | `skinSmooth` | 0..1 | 0 |  |  | Pushes the vertices out on the inner side of bends so the tube does not pinch. |
@@ -962,26 +1096,46 @@ Lightweight spine-only structural guides for attaching foliage or child branches
 | Clamp | Max | `skinRadiusMax` | 0..10 (slider 0..1) m | 0 |  |  | Largest radius of any point. 0 = off. |
 | Squash | Amount | `squashAmount` | 0..1 | 0 |  |  | Reduces the radius on one side: the section becomes an ellipse (1 = flat). Welds follow the squashed profile. |
 | Squash | Rotate | `squashRotate` | -180..180 ° | 0 |  |  | Direction of the flattened side around the spine. |
-| Splits | Chance | `splitsChance` | 0..1 | 0 |  |  | Probability that the branch divides into two open ends at its tip. Needs a bark texture with at least two U tiles around the tube. |
-| Splits | Balance | `splitsBalance` | 0..1 | 0.5 |  |  | 0.5 gives both sides the same radius; lower or higher moves radius from Side 1 to Side 2 (the cross-section area is kept). |
+| Splits | Chance | `splitsChance` | 0..1 | 0 | yes |  | Probability that the branch divides into two open ends at its tip. The U tile count around the branch must be even (at least 2): an odd count is raised to the next even number when the branch splits, and the node reports it as a warning. |
+| Splits | Balance | `splitsBalance` | 0..1 | 0.5 | yes |  | 0.5 gives both sides the same radius; lower or higher moves radius from Side 1 to Side 2 (the cross-section area is kept). |
 | Splits | Seed | `splitsSeed` | seed | 0 |  |  | Seed of the split decision: changes which branches split without changing anything else. |
-| Split spread | Side 1 | `splitsSpread1` | 0..85 ° | 25 |  |  | Angle of Side 1 away from the centre of the tree. |
-| Split spread | Side 2 | `splitsSpread2` | 0..85 ° | 25 |  |  | Angle of Side 2 toward the centre of the tree. |
-| Split expand | Side 1 | `splitsExpand1` | 0.25..3 | 1 |  |  | Scales the cross-section of Side 1 from its default (1). |
-| Split expand | Side 2 | `splitsExpand2` | 0.25..3 | 1 |  |  | Scales the cross-section of Side 2 from its default (1). |
-| Split smooth | Inner | `splitsSmoothInner` | 0..1 | 0.25 |  |  | 0 = hard crease between the two sides, 1 = no crease. |
-| Split smooth | Outer | `splitsSmoothOuter` | 0..1 | 0.5 |  |  | Smoothness of the outer bend where the split occurs (0 = hard corner). |
+| Splits | Fork type | `splitsMode` | Y / Lateral | y |  |  | Y = a symmetric fork (two lobes, Balance and the two Spread angles). Lateral = the branch keeps going with a slight kink and a clearly thinner side branch leaves at the Spread angle from a swelling (the branch-like fork of old oaks); the neck swell, ridge and valley fillet of the junction are applied automatically. |
+| Splits | Dominance | `splitsDominance` | 0..1 | 0 | yes |  | Dominant leader. 0 = Balance only. Towards 1 the fat half continues the direction of the branch almost unchanged (its deviation shrinks down to 25 % of its Spread) while the skinny half leaves at its full Spread with a smaller radius. r1^e + r2^e = R^e still holds. Extend parent Fat / Skinny keep working. |
+| Splits | Lateral chance | `splitsLateralChance` | 0..1 | 0 | yes |  | Fork type Y only: probability that a fork is a lateral (one-sided) one instead, drawn per fork from the Splits seed, so one tree mixes Y and lateral forks. |
+| Split spread | Side 1 | `splitsSpread1` | 0..80 ° | 22 | yes |  | Angle of Side 1 away from the centre of the tree. |
+| Split spread | Side 2 | `splitsSpread2` | 0..80 ° | 22 | yes |  | Angle of Side 2 toward the centre of the tree. |
+| Split expand | Side 1 | `splitsExpand1` | 0.5..2 | 1 | yes |  | Scales the cross-section of Side 1 from its default (1). |
+| Split expand | Side 2 | `splitsExpand2` | 0.5..2 | 1 | yes |  | Scales the cross-section of Side 2 from its default (1). |
+| Split smooth | Inner | `splitsSmoothInner` | 0..1 | 0.25 | yes |  | 0 = hard crease between the two sides, 1 = no crease. |
+| Split smooth | Outer | `splitsSmoothOuter` | 0..1 | 0.5 | yes |  | Smoothness of the outer bend where the split occurs (0 = hard corner). |
+| Split advanced | Area exponent | `splitsAreaExponent` | 1.5..3 | 2 |  |  | Pipe-model exponent e of r1^e + r2^e = parent radius^e. 2 keeps the cross-section area of the parent; higher values make both halves thicker. |
+| Split advanced | Down bias | `splitsDownBias` | 0..1 | 0 |  |  | Turns both halves toward gravity after the sides are balanced (roots default to 0.4). A half never points higher than the branch it leaves. |
+| Split shape | Waist | `splitsWaist` | 0.2..1 | 1 |  |  | Width of the neck at the middle of the transition relative to the narrower lobe. 1 = the former outline, 0.6 = a pronounced figure-8 (peanut) that pinches and then separates. |
+| Split shape | Neck swell | `splitsNeckSwell` | 0..0.5 | 0 |  |  | The parent swells by up to this fraction of its radius just before the fork. The swell is paid from the area reservoir of the lobes: the open ends keep r1^e + r2^e = R^e. |
+| Split shape | Valley radius | `splitsValleyRadius` | 0..1 | 0 |  |  | Fillet radius of the valley between the lobes as a fraction of the smaller lobe radius. 0 = the former crease (Smooth > Inner still mixes crease and no crease); the radius fades to 0 at the open ends. |
+| Split shape | Ridge | `splitsRidge` | 0..1 | 0 |  |  | Raised bark ridge along the pinch axis from the valley down to the crotch point; height as a fraction of the smaller lobe radius, width about the valley radius. |
+| Split shape | Ridge length | `splitsRidgeLength` | 0.25..8 R | 2 |  |  | Length over which the ridge blends into the parent, in parent radii counted back from the crotch. |
+| Split shape | Stretch | `splitsStretch` | 0.8..1.6 | 1 |  |  | Elongates the section along the divergence axis early in the transition (ovalisation before the pinch). 1 = none. |
+| Split shape | Included bark | `splitsIncludedBark` | 0..1 | 0 | yes |  | Codominant stems with included bark: deepens the valley into a narrow, dark, V-shaped crevice with a bark ridge (smaller valley radius, narrower neck, a ridge, stronger ambient occlusion). 0 = off. |
+| Split shape | Ease | `splitsEase` | 0..1 | 0 |  |  | Easing of the separation along the transition: 0 = smoothstep as before, 1 = the lobes stay merged longer and then pinch off suddenly. |
 | Geometry | Close end | `capEnd` | bool | true |  |  | Closes the tip of the tube with a cap. |
 | Geometry | Tip rings | `tipRings` | 1..8 | 2 |  |  | Rings of the rounded tip cap. |
 | Geometry | Close base | `capBase` | Auto / Yes / No | auto |  |  | Auto closes branches that do not grow from a parent. |
 | Geometry | Twist | `skinTwist` | -720..720 °/m | 0 |  |  | Twists the surface texture and geometry around the axis. |
 | Junction | Collar | `collarAmount` | 0..2 | 0.3 |  |  | Radius flare where a branch leaves its parent. |
 | Junction | Collar length | `collarLength` | 0.1..10 | 1.5 |  |  | Length of the flare in branch radii. |
+| Junction | Collar swell | `collarSwell` | 0..1 | 0 |  |  | Raised shoulder where the branch meets its parent: the skin around the junction is pushed out by this fraction of the branch radius in a smooth bump (length: Collar length x radius). 0 = off. Not used where Welding is on (Spread does that job). |
 | Normals | Smoothing | `smoothing` | 0..1 | 1 |  |  | Below 0.5 the tube is faceted (unwelded quads). |
 | Normals | Flatten | `flatten` | 0..1 | 0 |  |  | Flattens normals towards the axis to soften the shading. |
 | Vertex color | Tint | `tint` | color | [0.36, 0.26, 0.18, 1] |  |  | Vertex colour multiplied onto the material. |
 | Vertex color | Variance | `tintVariance` | 0..1 | 0.1 |  |  | Random variation of the vertex colour per instance. |
 | Vertex color | AO strength | `aoStrength` | 0..1 | 0.6 |  |  | Strength of the baked vertex ambient occlusion. |
+| Vertex color | Mode | `vcMode` | Inherit / Multiply / Set / Add | inherit |  |  | Inherit: the colour is the bark colour blended with the parent at the junction (earlier behaviour). Multiply: tint it by Color. Set: replace it with Color. Add: brighten it by Color. Profile and Parent curve control where along the branch and along the parent the change applies. |
+| Vertex color | Color | `vcColor` | color | [1, 1, 1, 1] |  |  | Linear colour used by Multiply, Set and Add. |
+| Vertex color | Variance | `vcVariance` | 0..1 | 0 |  |  | Per-branch brightness variation (+-), deterministic from the seed. 0 = none. |
+| Vertex color | Seamless | `vcSeamless` | bool | false |  |  | The colour at the attach point equals the parent colour exactly and blends into this generator's own colour along the collar (needs the parent to be meshed first; falls back to the bark colour otherwise). |
+| Vertex color | Profile | `vcProfile` | curve | curve |  |  | Strength of the Mode along this branch (left: base, right: tip). 1 = full effect, 0 = the inherited colour. Use it for lighter young twigs, darker trunk bases or leaf tips. |
+| Vertex color | Parent curve | `vcParentCurve` | curve | curve |  |  | Strength of the Mode by the position of the attach point on the parent (left: parent base, right: parent tip). Ignored without a parent. |
 
 ### Tab: UV Mapping
 
@@ -1005,6 +1159,7 @@ Lightweight spine-only structural guides for attaching foliage or child branches
 | V | Offset | `uvOffsetV` | -10..10 | 0 | yes |  | Moves the texture along the branch (in copies). The variance starts every branch at a random V. |
 | Tiling | Optimize segments | `uvOptimize` | bool | false |  |  | Avoids rings that are very close together near a patch seam (or a whole V number): the seam moves onto a ring within the V tolerance instead of adding one. |
 | Tiling | V tolerance | `uvVTolerance` | 0..0.5 | 0.1 |  |  | How close (in V) a ring must be to a whole number to be moved onto it while Optimize segments is on. |
+| Tiling | Create seams | `uvCreateSeams` | bool | false |  |  | Cuts real geometry (doubled ring vertices) at every whole U tile border so each tile around the branch is its own UV island: the branch texture can then sit in an atlas without resolution loss. Positions and normals stay continuous across the cut (the mesh is still watertight when welded). |
 
 ### Tab: LOD
 
@@ -1015,12 +1170,17 @@ Lightweight spine-only structural guides for attaching foliage or child branches
 | Reduction | Cull amount | `lodCull` | 0..1 | 0 |  |  | Fraction of small children removed at lower LODs. |
 | Distance | Fade start | `lodFadeStart` | 0..1 | 0.5 |  |  | Distance where this node starts fading out. |
 | Distance | Fade end | `lodFadeEnd` | 0..1 | 1 |  |  | Distance where this node has completely faded. |
+| Dynamic LOD | Weight | `lodWeight` | 0..1 | 0.5 |  |  | Priority to survive when Tree > Dynamic LOD removes pieces of the same type (branches, leaves, fronds, decorations): pieces of a generator with a higher Weight are removed later. 0.5 = neutral; equal weights never change the ranking. |
+| Dynamic LOD | Optimization | `lodOptimization` | 0..45 ° | 0 |  |  | Degrees added to the straight-section merge angle (Segments > Optimization) for every LOD step: lower levels merge nearly straight length segments more aggressively. 0 = unchanged. |
+| Dynamic LOD | Length segments | `lodLengthSegments` | 0.1..1 | 1 |  |  | Scalar applied to the number of length segments once per LOD step (LOD 1 = x, LOD 2 = x², LOD 3 = x³). 1 = no extra reduction. |
+| Dynamic LOD | Radial segments | `lodRadialSegments` | 0.1..1 | 1 |  |  | Scalar applied to the number of radial (or width) segments once per LOD step (LOD 1 = x, LOD 2 = x², LOD 3 = x³). 1 = no extra reduction. |
+| Lightmap | Lightmap weight | `lightmapWeight` | 0..4 | 1 |  |  | Relative texel density of this generator in the lightmap UVs (Tree > Lightmap, export). 1 = the same density as the other generators, 2 = twice the density, 0 = one texel per piece (a leaf gets a single texel). Leaves start at 0; the "Reset lightmap" command restores the defaults. |
 
 ### Tab: Displacement
 
 | Section | Parameter | id | Range | Default | Var | Curve | Meaning |
 |---|---|---|---|---|---|---|---|
-| Main | Source | `displaceSource` | Noise / Material / Displacement | noise |  |  | Where the height values come from: built-in noise, the Height map of the assigned material, or a named asset from the Displacements panel. |
+| Main | Source | `displaceSource` | Noise / Material / Displacement / Bark | noise |  |  | Where the height values come from: built-in noise, the Height map of the assigned material, a named asset from the Displacements panel, or procedural Bark relief (see the Bark section). |
 | Main | Displacement | `displacement` | None |  |  |  | Height map from the Displacements panel. A warning badge shows on the node when the map is missing or not loaded. |
 | Main | Radial amount | `displaceRadial` | -5..5 (slider -0.3..0.3) m | 0 |  |  | Largest move away from (positive) or toward (negative) the spine, in metres. |
 | Main | Length amount | `displaceLength` | -5..5 (slider -0.3..0.3) m | 0 |  |  | Largest move along the spine, in metres. Vertices that share a V coordinate no longer sit in one plane. |
@@ -1042,11 +1202,23 @@ Lightweight spine-only structural guides for attaching foliage or child branches
 | Flares | Pinch | `displaceFlarePinch` | 0..1 | 0 |  |  | Pulls the flares toward the center spine. At 1 the lobes are thin ridges and nothing spreads at the base. |
 | Flares | Angle | `displaceFlareAngle` | -180..180 ° | 0 |  |  | Rotates the flares around the spine. |
 | Flares | Seed | `displaceFlareSeed` | seed | 0 |  |  | Displacement setting (height-map driven surface detail). “Seed” in Displacement › Flares. |
+| Bark | Style | `barkStyle` | Furrowed / Plated / Fibrous / Lenticel / Rings / Scaly | furrowed |  |  | Furrowed: long ridges and V-shaped crevices (oak, pine, elm). Plated: blocky plates between cracks (redwood, old bark). Fibrous: thin parallel fibres (cedar). Lenticel: smooth bark with short horizontal slits (cherry, birch). Rings: regular horizontal rings (palm, bamboo). Scaly: overlapping scales (cypress). |
+| Bark | Depth | `barkDepth` | 0..1 (slider 0..0.3) | 0 |  |  | Relief from crevice bottom to ridge top as a fraction of the local radius, so thick trunks get deep furrows. 0 turns the bark relief off. |
+| Bark | Scale | `barkScale` | 0.005..5 (slider 0.005..0.5) m | 0.08 |  |  | Feature size in metres (furrow spacing, plate width, ring spacing). Independent of UV tiling and of the number of rings. |
+| Bark | Stretch | `barkStretch` | 0.1..40 (slider 0.1..12) | 4 |  |  | Feature length along the spine compared with its width (furrows, plates, fibres, scales). Lenticel: slit width across the trunk. Rings: not used. |
+| Bark | Warp | `barkWarp` | 0..2 | 0.5 |  |  | Domain warp strength: how much the furrows, cracks and rings meander instead of running straight. |
+| Bark | Crevice | `barkCrevice` | 0..1 | 0.5 |  |  | Crevice profile: 1 = narrow V-shaped crevices with wide tops, 0.5 = linear, 0 = wide flat-bottomed troughs. Works like the Main Sharpness curve and stacks with it. |
+| Bark | Maturity | `barkMaturity` | 0..1 | 0 |  |  | How strongly the depth follows the branch radius: 0 = every branch has the same relief, 1 = young thin twigs are smooth and old thick trunks get the full depth. |
+| Bark | Smooth up to radius | `barkMaturityMin` | 0..5 (slider 0..0.3) m | 0.01 |  |  | Radius at and below which the bark is smooth (Maturity > 0). A smoothstep leads to the full depth at the next radius. |
+| Bark | Full depth at radius | `barkMaturityMax` | 0.001..5 (slider 0.001..0.5) m | 0.15 |  |  | Radius from which the bark has its full depth (Maturity > 0). |
+| Bark | Maturity along branch | `barkMaturityCurve` | curve | curve |  |  | Depth multiplier from the base (left) to the tip (right) of each branch. A flat line at 1 leaves the depth unchanged. |
+| Bark | Seed | `barkSeed` | seed | 0 |  |  | Random seed of the bark pattern. Every branch lineage also gets its own pattern. |
 | Fade | Fade at junctions | `displaceFadeBase` | 0..10 | 1.5 |  |  | Fade-in length (in radii) past the weld / junction rings: prevents cracks where a branch leaves its parent. |
 | Fade | Fade at tips | `displaceFadeTip` | 0..10 | 1 |  |  | Fade-out length (in radii) toward the tip / cap. |
 | Fade | LOD fade | `displaceLodFade` | bool | true |  |  | Fade the displacement out between LOD 1 and 3. |
 | Subdivision | Auto-subdivide | `displaceAutoSubdivide` | bool | true |  |  | Add rings and sides so the mesh has enough vertices to carry the displacement. |
 | Subdivision | Detail size | `displaceDetail` | 0.002..1 (slider 0.002..0.2) m | 0.03 |  |  | Target quad size when auto-subdividing (smaller = more detail, more triangles). |
+| Subdivision | Max vertices | `displaceMaxVertices` | 500..1000000 (slider 500..200000) | 40000 |  |  | Bark: most vertices auto-subdivision may create for one branch, so a small Scale cannot freeze the browser. Features coarsen when the cap is reached. |
 | Subdivision | Min sides | `displaceMinSides` | 3..128 | 16 |  |  | Fewest sides around a displaced branch. |
 | Asset amount (legacy) | Amount | `displaceAmount` | -5..5 (slider 0..0.2) m | 0 |  | yes | Older asset displacement in metres at full height. The curve scales it along the branch length. |
 | Asset amount (legacy) | + % of radius | `displaceRadiusAmount` | -1..2 | 0 |  |  | Extra amount relative to the local radius. |
@@ -1070,6 +1242,9 @@ Lightweight spine-only structural guides for attaching foliage or child branches
 | Material | Variation | `materialVariation` | 0..1 | 0 | yes |  | How much the material variation colours are applied. |
 | Blend | Base blend | `blendBase` | 0..1 | 0 |  | yes | Blends the material towards the parent at the base. |
 | Blend | Height blend | `blendHeight` | 0..1 | 0 |  |  | Blends the material along the height. |
+| Season | Start offset | `seasonStartOffset` | -1..1 (slider -1..1) | 0 | yes | yes | Season start offset: 0 = the transition follows the Season slider immediately, positive values delay it, negative values start it earlier. Variance spreads it per element; the curve runs along the parent. |
+| Season | Time scale | `seasonTimeScale` | 0..10 (slider 0..2) | 1 | yes | yes | Season time scale: 1 = one slider sweep is one year of this node; 2 = twice as fast, 0 = never changes. |
+| Season | Descendant offset | `seasonDescendantOffset` | -1..1 (slider -1..1) | 0 | yes |  | Season descendant offset: shifts the transition of this node AND of every node below it (positive = later). Use it so that thin twigs change after the trunk. |
 
 ### Tab: Animation
 
@@ -1077,7 +1252,7 @@ Lightweight spine-only structural guides for attaching foliage or child branches
 |---|---|---|---|---|---|---|---|
 | Wind hierarchy | Hierarchy | `windHierarchy` | Trunk / Branch 1 / Branch 2 / Leaf | branch-1 |  |  | Which level of the wind hierarchy this geometry follows (trunk, branch 1/2, leaf). |
 | Amount | Amount | `windAmount` | 0..10 (slider 0..2) | 1 |  | yes | Strength multiplier of the wind on this node. |
-| Amount | Phase variance | `windPhaseVariance` | 0..1 | 0.5 |  |  | Random phase offset so neighbours do not sway in sync. |
+| Amount | Phase variance | `windPhaseVariance` | 0..1 | 0.5 |  |  | Random phase offset of the branch-level sway (0 = a branch sways in phase with the branch it grows from, 1 = fully random) so neighbours do not sway in sync. Deeper twigs and leaves always keep the phase of their level-1 ancestor. |
 
 ### Tab: Segments
 
@@ -1170,6 +1345,10 @@ Existing Leaf tabs (Generation, Skin, Forces, Orientation, Material, Lighting, W
 | Resolution | Size increase % | `resSizeIncrease` | curve | curve |  |  | Enlarges leaves at lower detail to make up for fewer leaves. X: LOD (0 = highest detail … 3 = lowest), Y: percent. |
 | Resolution | Mesh LOD | `resMeshLod` | curve | curve |  |  | Which mesh version to use at each LOD. X: LOD (0 … 3), Y: 0 = High, 1 = Medium, 2 = Low. |
 | Resolution | Mesh LOD offset | `resMeshLodOffset` | -2..2 | 0 |  |  | Shifts the chosen mesh LOD toward lower (+) or higher (−) detail. Needs at least two mesh LOD slots filled: with one, it is ignored. |
+| Dynamic LOD | Weight | `lodWeight` | 0..1 | 0.5 |  |  | Priority to survive when Tree > Dynamic LOD removes pieces of the same type (branches, leaves, fronds, decorations): pieces of a generator with a higher Weight are removed later. 0.5 = neutral; equal weights never change the ranking. |
+| Dynamic LOD | Length segments | `lodLengthSegments` | 0.1..1 | 1 |  |  | Scalar applied to the number of length segments once per LOD step (LOD 1 = x, LOD 2 = x², LOD 3 = x³). 1 = no extra reduction. |
+| Dynamic LOD | Radial segments | `lodRadialSegments` | 0.1..1 | 1 |  |  | Scalar applied to the number of radial (or width) segments once per LOD step (LOD 1 = x, LOD 2 = x², LOD 3 = x³). 1 = no extra reduction. |
+| Lightmap | Lightmap weight | `lightmapWeight` | 0..4 | 0 |  |  | Relative texel density of this generator in the lightmap UVs (Tree > Lightmap, export). 1 = the same density as the other generators, 2 = twice the density, 0 = one texel per piece (a leaf gets a single texel). Leaves start at 0; the "Reset lightmap" command restores the defaults. |
 
 ## Leaf (`generator.leaf`) - Lighting tab
 
@@ -1221,6 +1400,15 @@ Same tabs and parameters as Leaf (placement, orientation, type, deformation, res
 * **Section Variance** (Shape). Sections are painted in the cutout editor with the *Section [n]* paint tool (ids 1..8, 1 = default / unpainted) and read per vertex of the mapped mesh. Sections 2..8 get their own shift for Gravity, Fold, Curl and Roll: `Offset + Amount × random(-1..1)`, drawn once per frond and section. *Favor Outliers* maps the random value to its square root (sign kept), so extreme values are more likely than the median. Section 1 / unpainted vertices and plain ribbons keep the whole-mesh values. Each painted section is its own rib set, so section borders can show a step.
 * **Lighting.** Style Global reads the Tree lighting (Alignment / Spread are not part of it); Local uses the frond group: Smooth, Alignment (normals toward the growth direction of the parent spine), Spread (normals away from the spine), Parent puffiness (Anchor = the Leaf list plus *Origin*, Amount) and Adjustments (Up / Right / Out about the frond axes: X across, Y along, Z face; ± variance per frond). It reuses `applyLeafLighting`; order: Smooth → Parent puffiness → Alignment → Spread → Adjustments. Geometry never moves.
 * **Wind.** The per-vertex weights keep the existing layout `(level 0, level 1, level 2, phase)`; the frond starts from the parent weights at its base and adds its own bend on level 2. *Weight* = value × profile × `t^Bend power` (the profile's left end is the pivot and the weight is exactly 0 at the base, so the frond stays attached). *Cross* scales the motion from none at the spine to full at the edges. *Boost* adds an absolute weight (profile: left = base, right = tip), faded in over the first 10 % of the length. *Ribs › Apply branch wind* raises the level above the parent branch (generation − 1, at least the trunk level) for the vertices off the spine by *Ribs › Weight* × distance from the spine, also faded in over the first 10 %. Defaults reproduce the previous wind.
+
+## Splits, Extend parent, Extensions and Root splitting (notes)
+
+* **Skin > Splits** (Trunk, Branch, Root). *Chance* decides per spine whether its tip forks into two fused halves (one skin, one crotch vertex). *Balance* moves cross-section area between the halves (pipe model: r1^2 + r2^2 stays the parent area at Expand 1); *Side 1 / Side 2* are the half angles, *Expand* widens one half, *Smooth > Inner / Outer* shape the valley and the shoulders (Inner 0 keeps a sharp crease, the only place a normal jump above 25 degrees is expected). *Seed* re-rolls only the splits. The halves are the two open ends that Extend parent and Cap continue.
+* **One spine.** A split counts as ONE spine for every generator below it: Branch, Split, Leaf, Frond, Decal, Fin, Knot and the other placement generators place their nodes on the parent up to the start of the shared transition and never on the two halves (the halves only take Extend parent / Cap), so a generator is never repeated per half. Children therefore sit on the true tube and weld to it.
+* **Split generator > Split parents only.** Forks only the parents that already split (Skin > Splits). Off = every parent (halves excluded).
+* **Ring counts.** A half ends in a ring of N / 2 vertices; its extension or cap uses exactly that ring and starts on the half's real end ring (no gap). Every further split of a split halves the count again, so give the first spine a high Resolution (32 supports three levels).
+* **Root splitting.** Roots split with the same engine (Down bias tilts both halves towards gravity). Roots anchor on the ground base only, never on a split half or an extension.
+* **View > Show open ends.** Draws every open end as a ring with a direction arrow and one or two ticks (index): orange = fat half, blue = skinny half, red = break, green = bottom. Off by default.
 
 ## Knot (`generator.knot`)
 
@@ -1336,6 +1524,8 @@ Surface details welded onto branches and trunks: knots, lumps and gashes with an
 |---|---|---|---|---|---|---|
 | Inner | Material | `innerMaterials` | rows of Material / Weight / UV Area | one row |  | Materials of the Inner section; each knot picks a row by weight. Inherited uses the parent material. The gear button on a row opens the UV Area. |
 | Core | Material | `coreMaterials` | rows of Material / Weight / UV Area | one row |  | Materials of the Core, usually a cut-branch material; each knot picks a row by weight. None or Inherited uses the parent material. |
+| Season | Start offset | `seasonStartOffset` | -1..1 (slider -1..1) | 0 | yes | Season start offset: 0 = the transition follows the Season slider immediately, positive values delay it, negative values start it earlier. Variance spreads it per element; the curve runs along the parent. |
+| Season | Time scale | `seasonTimeScale` | 0..10 (slider 0..2) | 1 | yes | Season time scale: 1 = one slider sweep is one year of this node; 2 = twice as fast, 0 = never changes. |
 
 ### Tab: Segments
 
@@ -1366,3 +1556,276 @@ Pure maths: `src/generators/knot/` (`knotMesh`, `segments`); parameter reader an
 * **Materials.** Outer always uses the material of the parent node. Inner and Core pick a row of their Material list by weight (Inherited / None = the parent material). Slots are merged per material over all knots.
 * **Segments and LOD.** Rings are bands per section (Outer, Inner, Core) and *Slices* are shared; both are multiplied by *Resolution* and by the Dynamic LOD keep factor `(1 - reduction x 0.4)^lod` (separate *Ring segments* / *Slice segments*). *Weight* below 1 removes a seeded share `(1 - weight) x lod / 3` of the knots at lower detail. Knots count as decorations (visibility toggle, statistics group).
 * **Old projects.** `knotRadius` (fraction of the parent radius) becomes *Size* = fraction x 0.1 m, `knotLength` x 0.25 becomes *Offset*, `knotCoreScale` x 100 becomes Inner *Size %*, `knotCurvature` x 2 becomes *Curvature*, the old material becomes the Inner and Core material.
+
+## Decal (`generator.decal`)
+
+Flat patches projected onto the skin of a trunk, branch or root with their own material and height map: knots, lumps, cavities, scars.
+
+### Tab: Generation
+
+| Section | Parameter | id | Range | Default | Var | Meaning |
+|---|---|---|---|---|---|---|
+| Generation | Mode | `mode` | Absolute / Proportional / Absolute steps / Proportional steps / Phyllotaxy / Interval / Bifurcation / Flood / Parent / Density / Classic (legacy) | absolute |  | How children are placed on the parent: an exact number, proportional to its length, in steps (whorls), by phyllotaxy, at intervals, at bends, flooded along it or all at its origin. |
+| Absolute | Number | `number` | 0..100000 (slider 0..100) | 3 | yes | Exact number of nodes created on each parent. |
+| Absolute | Jumble | `jumble` | 0..1 | 0.35 |  | Randomises the order of spacing so children do not form a regular pattern. |
+| Absolute | Sweep | `sweep` | 0.01..1 (slider 0.01..1) | 1 |  | Fraction of the full circle the children are spread around the parent. |
+| Absolute | Roll | `roll` | -1..1 | 0 |  | Rotates children around the parent axis (−1…1 = a full turn each way). |
+| Absolute | Favor splits | `favorSplits` | -1..1 | 0 |  | Prefers (+) or avoids (−) placing children on split points. |
+| Absolute | Align style | `alignStyle` | Group / Individual / Spiral / Alternate / Opposite | group |  | How the rotation of consecutive children is arranged: group, individual, spiral, alternate or opposite. |
+| Density | Density | `density` | 0..100 (slider 0..10) /m | 1.5 |  | Children per metre of parent length (Density mode). |
+| Density | Jitter | `densityJitter` | 0..1 | 0.2 |  | Random variation of the spacing in Density mode. |
+| Proportional | Frequency | `proportionalCount` | 0..50 (slider 0..10) /m | 2.5 |  | Nodes per metre of parent length: longer parents get more nodes, spread at random along them. |
+| Steps | Steps | `whorlCount` | 1..128 | 5 |  | Number of steps (rings of nodes) along the parent. |
+| Steps | Steps | `stepsFrequency` | 0..20 (slider 0..5) /m | 0.5 |  | Steps per metre of parent length. |
+| Steps | Per step | `whorlPerStep` | 1..128 (slider 1..24) | 4 |  | Nodes in every step. |
+| Steps | Spread | `whorlSpread` | 0..1 | 0.03 |  | Lengthwise spacing of the nodes inside one step, as a fraction of the First..Last stretch. |
+| Steps | Roll | `whorlRoll` | -180..180 ° | 15 |  | Rotation of every step relative to the previous one. |
+| Steps | Balance | `stepsBalance` | 0..1 | 1 |  | How evenly the nodes of a step are spaced around the parent (1 = evenly, 0 = random). |
+| Phyllotaxy | Style | `phyllotaxyStyle` | Opposite (distichous) / Opposite (decussate) / Opposite (random orientation) / Alternating (distichous) / Alternating (random) / Whorled | alternating-distichous- |  | How the nodes of a group are arranged and how consecutive groups are turned against each other. |
+| Phyllotaxy | Internode length | `phyllotaxyInternode` | 0..50 (slider 0..2) m | 0.25 |  | Distance between groups, measured along the parent from Last towards First. 0 spreads Limit groups evenly instead. |
+| Phyllotaxy | Children per node | `phyllotaxyChildren` | 1..32 | 3 |  | Nodes in each whorled group. |
+| Phyllotaxy | Spread | `phyllotaxySpread` | 0..1 | 0 |  | Random lengthwise offset of every node inside its group (1 = up to the neighbouring group). |
+| Phyllotaxy | Spiral | `phyllotaxySpiral` | -180..180 ° | 0 |  | Extra rotation added for every group. |
+| Phyllotaxy | Limit | `phyllotaxyLimit` | 0..10000 (slider 0..100) | 0 |  | Maximum number of groups (0 = no limit). |
+| Phyllotaxy | Align style | `phyllotaxyAlignStyle` | Group / Individual | group |  | Group keeps the nodes of a group in their fixed layout; Individual turns every node on its own within its share of the circle. |
+| Interval | Frequency | `intervalStep` | 0.001..50 (slider 0.001..3) m | 0.6 |  | Distance between groups from Last towards First. The curve scales it along the parent: lower values pack groups tighter. |
+| Interval | Count | `perStep` | 1..64 (slider 1..16) | 1 |  | Nodes in every group. |
+| Interval | Spread | `intervalSpread` | 0..1 | 0 |  | Random lengthwise offset of every node inside its group (1 = up to the neighbouring group). |
+| Interval | Spiral | `intervalSpiral` | -180..180 ° | 0 |  | Extra rotation added for every group. |
+| Interval | Limit | `intervalLimit` | 0..10000 (slider 0..100) | 0 |  | Maximum number of groups (0 = no limit). |
+| Interval | Align style | `intervalAlignStyle` | Group / Individual | group |  | Group keeps the nodes of a group in their fixed layout; Individual turns every node on its own within its share of the circle. |
+| Interval | Balance | `intervalBalance` | 0..1 | 0 |  | Turns every other group so its nodes fill the gaps left by the previous group. |
+| Bifurcation | Count | `bifurcationCount` | 0..1000 (slider 0..32) | 4 |  | Maximum number of nodes; the strongest bends win. |
+| Bifurcation | Threshold | `bifurcationThreshold` | 0.5..90 ° | 6 |  | Smallest bend of the parent that gets a node. |
+| Bifurcation | Spread | `bifurcationSpread` | 0..1 | 0 |  | Random shift of every node along the parent (1 = 10 % of its length). |
+| Bifurcation | Min spacing | `bifurcationSpacing` | 0.01..0.9 | 0.12 |  | Smallest distance between two bends, as a fraction of the parent. |
+| Alignment | Align | `align` | bool | false |  | Rolls the new nodes so they face the sky. |
+| Boundaries | First | `first` | 0..1 | 0.1 |  | Lowest point on the parent where nodes occur (0 = base, 1 = tip). |
+| Boundaries | Last | `last` | 0..1 | 0.9 |  | Highest point on the parent where nodes occur (0 = base, 1 = tip). |
+| Boundaries | Distribution curve | `distributionCurve` | curve | curve |  | Maps normalized spacing [0..1] across [First..Last]. |
+| Boundaries | Clip | `clip` | 0..0.49 | 0 |  | With the checkbox on, nodes that Spread or Position push outside First..Last are removed instead of being held on the boundary. The value insets the range (fraction of First..Last). |
+| Boundaries | Clip enabled | `clipEnabled` | bool | false |  | Removes nodes that Spread or Position push outside First..Last. |
+| Common | Active | `active` | bool | true |  | Switches the generator on. With a curve over the level of detail (left = highest detail) it is active where the curve is above 0.5. |
+| Common | Pass | `pass` | 1..99 | 1 |  | Generators compute in pass order. A node cannot have a lower pass than any of its ancestors. |
+| Common | Rotation | `rotationOffset` | -180..180 ° | 0 | yes | Rotates all nodes around the parent spine as a group. Variance jumbles the rotation per parent. |
+| Common | Position | `positionOffset` | -0.5..0.5 | 0 | yes | Shifts all nodes along the parent (fraction of its length). Variance shifts every parent differently. |
+| Common | Sink | `sink` | -5..5 (slider -1..1) m | 0 | yes | Start offset of the nodes into (+) or out of (-) the parent; sinks trunks under the ground. |
+| Common | Pruning | `pruningCurve` | curve | curve |  | Runs over the parent from First (left) to Last (right). Nodes are removed where the curve is below 0.5. |
+| Common | Seed | `seed` | seed | 0 |  | Random seed. Change it to get a different variation of the same settings. |
+| Knockout | Amount | `knockout` | 0..1 | 0 |  | Randomly removes this share of the nodes after the mode has placed them. The curve varies it along the parent. |
+| Knockout | + Resolution | `knockoutResolution` | -1..1 | 0 |  | Added to the amount for every level of detail below the highest: positive removes more nodes at lower detail, negative fewer. |
+| Force containers | Include | `forceInclude` | rows of Material / Weight / UV Area | one row |  | Keeps only the nodes inside the volume of the named Force node (set a volume in the Force node). |
+| Force containers | Exclude | `forceExclude` | rows of Material / Weight / UV Area | one row |  | Removes the nodes inside the volume of the named Force node. |
+| More | Click place | `clickPlace` | Ready / None / Any / Number | ready |  | What a click in the viewport places. It is stored with the node and takes effect with Freehand mode. |
+| More | Size scalar | `sizeScalar` | 0.01..100 (slider 0.01..5) | 1 |  | Scales this node and every node below it. |
+| Masks | Mask | `genMasks` | rows of Material / Weight / UV Area | one row |  | Keeps a node only where every assigned mask (Masks panel) evaluates to 0.5 or more. |
+
+### Tab: Mesh
+
+| Section | Parameter | id | Range | Default | Var | Meaning |
+|---|---|---|---|---|---|---|
+| Scale | Size | `decalSize` | 0.002..20 (slider 0.002..2) m | 0.25 | yes | Length of the patch along the parent, metres. The curve runs along the parent branch. |
+| Scale | + % of parent | `decalSizeParent` | 0..1000 (slider 0..300) % | 0 |  | Added to Size: this percentage of the parent radius at the placement (bigger decals on thicker wood). |
+| Scale | Aspect | `decalAspect` | 0.1..10 (slider 0.1..3) | 1 | yes | Width across the parent relative to the length along it. |
+| Resolution | Resolution | `decalResolution` | 2..64 (slider 2..32) | 12 |  | Cells per side of the patch grid (12 gives 288 triangles). Lower for distant LODs. |
+| Resolution | Mesh LOD offset | `decalLodOffset` | -3..3 | 0 |  | Shifts the detail level of this mesh: +1 builds it like the next lower LOD, -1 keeps more detail. |
+
+### Tab: Decal
+
+| Section | Parameter | id | Range | Default | Var | Meaning |
+|---|---|---|---|---|---|---|
+| Decal | Rotation | `decalRotation` | -180..180 ° | 0 | yes | Rolls the patch around its centre on the surface. |
+| Decal | Random rotation | `decalRandomRotation` | 0..1 | 1 |  | Fraction of a full turn added at random per decal. |
+| Decal | Offset | `decalOffset` | -0.5..0.5 (slider -0.02..0.05) m | 0.002 |  | Lift of the whole patch above the parent surface (avoids z-fighting with the bark). |
+| Decal | Edge fade | `decalFade` | 0..0.5 | 0.25 |  | Fraction of the patch over which the relief fades to zero at its border, so the decal blends into the bark. |
+
+### Tab: Height
+
+| Section | Parameter | id | Range | Default | Var | Meaning |
+|---|---|---|---|---|---|---|
+| Height | Height | `decalHeight` | -2..2 (slider -0.2..0.2) m | 0.03 | yes | Extrusion of the material height map (Height map, or the alpha of the normal map) away from the surface. Negative values dig cavities. Needs a material with a height map; 0 keeps the patch flat. |
+
+### Tab: LOD
+
+| Section | Parameter | id | Range | Default | Var | Meaning |
+|---|---|---|---|---|---|---|
+| LOD | Cull amount | `lodCull` | 0..1 | 0.5 |  | Fraction of decals removed at the lowest LOD. |
+| Dynamic LOD | Weight | `lodWeight` | 0..1 | 0.5 |  | Priority to survive when Tree > Dynamic LOD removes pieces of the same type (branches, leaves, fronds, decorations): pieces of a generator with a higher Weight are removed later. 0.5 = neutral; equal weights never change the ranking. |
+| Dynamic LOD | Length segments | `lodLengthSegments` | 0.1..1 | 1 |  | Scalar applied to the number of length segments once per LOD step (LOD 1 = x, LOD 2 = x², LOD 3 = x³). 1 = no extra reduction. |
+| Dynamic LOD | Radial segments | `lodRadialSegments` | 0.1..1 | 1 |  | Scalar applied to the number of radial (or width) segments once per LOD step (LOD 1 = x, LOD 2 = x², LOD 3 = x³). 1 = no extra reduction. |
+| Lightmap | Lightmap weight | `lightmapWeight` | 0..4 | 1 |  | Relative texel density of this generator in the lightmap UVs (Tree > Lightmap, export). 1 = the same density as the other generators, 2 = twice the density, 0 = one texel per piece (a leaf gets a single texel). Leaves start at 0; the "Reset lightmap" command restores the defaults. |
+
+### Tab: Material
+
+| Section | Parameter | id | Range | Default | Var | Meaning |
+|---|---|---|---|---|---|---|
+| Leaves | Type | `leafTypes` | rows of Material / Weight / UV Area | one row |  | Materials (and meshes) the instances are picked from. A row is chosen with probability Weight / sum of Weights. |
+| Vertex Color | Color | `vertexColor` | color | [1, 1, 1, 1] |  | Vertex colour tint of the geometry. |
+| Vertex Color | Variance | `vertexColorVariance` | 0..1 | 0.1 |  | Random variation of the vertex colour per leaf. |
+| Vertex Color | Gradient | `vertexColorGradient` | -1..1 | 0 |  | Darkens (−) or brightens (+) towards the tip. |
+| Vertex Color | Mode | `vcMode` | Inherit / Multiply / Set / Add | inherit |  | Inherit: keep the colour (Color x Variance, earlier behaviour). Multiply: tint it by Mode color. Set: replace it with Mode color. Add: brighten it by Mode color. Profile and Parent curve control where the change applies. |
+| Vertex Color | Mode color | `vcColor` | color | [1, 1, 1, 1] |  | Linear colour used by Multiply, Set and Add. |
+| Vertex Color | Seamless | `vcSeamless` | bool | false |  | The colour at the attach point equals the parent colour exactly and blends into the item's own colour over its first quarter (needs the parent to be meshed first; falls back to the own colour otherwise). |
+| Vertex Color | Profile | `vcProfile` | curve | curve |  | Strength of the Mode along the item (left: base, right: tip). 1 = full effect, 0 = the inherited colour. Use it for lighter young twigs, darker trunk bases or leaf tips. |
+| Vertex Color | Parent curve | `vcParentCurve` | curve | curve |  | Strength of the Mode by the position of the attach point on the parent (left: parent base, right: parent tip); a frond runs along its parent, so it follows the curve along it. Ignored without a parent. |
+| Season | Start offset | `seasonStartOffset` | -1..1 (slider -1..1) | 0 | yes | Season start offset: 0 = the transition follows the Season slider immediately, positive values delay it, negative values start it earlier. Variance spreads it per element; the curve runs along the parent. |
+| Season | Time scale | `seasonTimeScale` | 0..10 (slider 0..2) | 1 | yes | Season time scale: 1 = one slider sweep is one year of this node; 2 = twice as fast, 0 = never changes. |
+
+### Decal geometry (T15)
+
+Pure maths: `src/generators/decal/decalMesh.ts` (shape: `src/generators/surfaceDetail/planarShape.ts`); node: `src/nodes/generators/decal.ts` (placement = the knot's `collectPlacements` + `knotFrame`, skin = the knot's `parentSkin`).
+
+* **Skin projection.** The patch is a `Resolution x Resolution` grid in the tangent plane of the parent (x around, y along, rolled by *Rotation* + *Random rotation*); every vertex is mapped onto the parent cone (axis point, ring frame, radius x polygon-sag scale, taper) and lifted by `Offset + displacement` along the skin normal.
+* **Size.** Length along the parent = *Size* (variance, curve along the parent) + *+ % of parent* x parent radius; width = length x *Aspect*.
+* **Height.** `displacement = Height x map(u, v) x fade`, bounded by `|Height|`. The map is the material Height texture or, as for bark sets (T07), the alpha channel of its normal map; a material without a decoded height map leaves the patch flat. *Edge fade* ramps the relief to 0 at the border, so the border floats exactly *Offset* above the bark; the colour map's alpha (cut-out) blends the rim.
+* **UV / material.** UVs cover the material once (0..1). *Type* picks a row by weight (Material Sets by season); a None row uses the parent material. A row with a **cutout mesh** replaces the grid by the cutout outline (refined to *Resolution*, then projected exactly like the grid: skin projection, height and edge fade - the distance to the outline - all apply); the cutout's anchors are exported for child generators.
+* **Wind.** Every vertex copies the parent's wind at its own position along the axis (interpolated like the parent's rings; level phases unchanged): the decal moves with the skin under it.
+* **Placement.** All Generation modes, Knockout, Masks, First / Last, Extend parent; split parents are cut at the crotch (`createFusedParents`), so decals are never placed in the transition.
+* **LOD.** *Cull amount* removes a seeded share at lower detail; *Resolution* x Dynamic LOD radial scalar per step; *Mesh LOD offset* shifts the level used for the resolution. Decals count as decorations. Not implemented: Post > Collision / Shade pruning.
+
+## Fin (`generator.fin`)
+
+Thin flaps that stand off a trunk or branch: fungus shelves, moss and lichen flaps, bark curls, with fold, curl, noise and soft lighting.
+
+### Tab: Generation
+
+| Section | Parameter | id | Range | Default | Var | Meaning |
+|---|---|---|---|---|---|---|
+| Generation | Mode | `mode` | Absolute / Proportional / Absolute steps / Proportional steps / Phyllotaxy / Interval / Bifurcation / Flood / Parent / Density / Classic (legacy) | absolute |  | How children are placed on the parent: an exact number, proportional to its length, in steps (whorls), by phyllotaxy, at intervals, at bends, flooded along it or all at its origin. |
+| Absolute | Number | `number` | 0..100000 (slider 0..100) | 4 | yes | Exact number of nodes created on each parent. |
+| Absolute | Jumble | `jumble` | 0..1 | 0.35 |  | Randomises the order of spacing so children do not form a regular pattern. |
+| Absolute | Sweep | `sweep` | 0.01..1 (slider 0.01..1) | 1 |  | Fraction of the full circle the children are spread around the parent. |
+| Absolute | Roll | `roll` | -1..1 | 0 |  | Rotates children around the parent axis (−1…1 = a full turn each way). |
+| Absolute | Favor splits | `favorSplits` | -1..1 | 0 |  | Prefers (+) or avoids (−) placing children on split points. |
+| Absolute | Align style | `alignStyle` | Group / Individual / Spiral / Alternate / Opposite | group |  | How the rotation of consecutive children is arranged: group, individual, spiral, alternate or opposite. |
+| Density | Density | `density` | 0..100 (slider 0..10) /m | 1.5 |  | Children per metre of parent length (Density mode). |
+| Density | Jitter | `densityJitter` | 0..1 | 0.2 |  | Random variation of the spacing in Density mode. |
+| Proportional | Frequency | `proportionalCount` | 0..50 (slider 0..10) /m | 2.5 |  | Nodes per metre of parent length: longer parents get more nodes, spread at random along them. |
+| Steps | Steps | `whorlCount` | 1..128 | 5 |  | Number of steps (rings of nodes) along the parent. |
+| Steps | Steps | `stepsFrequency` | 0..20 (slider 0..5) /m | 0.5 |  | Steps per metre of parent length. |
+| Steps | Per step | `whorlPerStep` | 1..128 (slider 1..24) | 4 |  | Nodes in every step. |
+| Steps | Spread | `whorlSpread` | 0..1 | 0.03 |  | Lengthwise spacing of the nodes inside one step, as a fraction of the First..Last stretch. |
+| Steps | Roll | `whorlRoll` | -180..180 ° | 15 |  | Rotation of every step relative to the previous one. |
+| Steps | Balance | `stepsBalance` | 0..1 | 1 |  | How evenly the nodes of a step are spaced around the parent (1 = evenly, 0 = random). |
+| Phyllotaxy | Style | `phyllotaxyStyle` | Opposite (distichous) / Opposite (decussate) / Opposite (random orientation) / Alternating (distichous) / Alternating (random) / Whorled | alternating-distichous- |  | How the nodes of a group are arranged and how consecutive groups are turned against each other. |
+| Phyllotaxy | Internode length | `phyllotaxyInternode` | 0..50 (slider 0..2) m | 0.25 |  | Distance between groups, measured along the parent from Last towards First. 0 spreads Limit groups evenly instead. |
+| Phyllotaxy | Children per node | `phyllotaxyChildren` | 1..32 | 3 |  | Nodes in each whorled group. |
+| Phyllotaxy | Spread | `phyllotaxySpread` | 0..1 | 0 |  | Random lengthwise offset of every node inside its group (1 = up to the neighbouring group). |
+| Phyllotaxy | Spiral | `phyllotaxySpiral` | -180..180 ° | 0 |  | Extra rotation added for every group. |
+| Phyllotaxy | Limit | `phyllotaxyLimit` | 0..10000 (slider 0..100) | 0 |  | Maximum number of groups (0 = no limit). |
+| Phyllotaxy | Align style | `phyllotaxyAlignStyle` | Group / Individual | group |  | Group keeps the nodes of a group in their fixed layout; Individual turns every node on its own within its share of the circle. |
+| Interval | Frequency | `intervalStep` | 0.001..50 (slider 0.001..3) m | 0.6 |  | Distance between groups from Last towards First. The curve scales it along the parent: lower values pack groups tighter. |
+| Interval | Count | `perStep` | 1..64 (slider 1..16) | 1 |  | Nodes in every group. |
+| Interval | Spread | `intervalSpread` | 0..1 | 0 |  | Random lengthwise offset of every node inside its group (1 = up to the neighbouring group). |
+| Interval | Spiral | `intervalSpiral` | -180..180 ° | 0 |  | Extra rotation added for every group. |
+| Interval | Limit | `intervalLimit` | 0..10000 (slider 0..100) | 0 |  | Maximum number of groups (0 = no limit). |
+| Interval | Align style | `intervalAlignStyle` | Group / Individual | group |  | Group keeps the nodes of a group in their fixed layout; Individual turns every node on its own within its share of the circle. |
+| Interval | Balance | `intervalBalance` | 0..1 | 0 |  | Turns every other group so its nodes fill the gaps left by the previous group. |
+| Bifurcation | Count | `bifurcationCount` | 0..1000 (slider 0..32) | 4 |  | Maximum number of nodes; the strongest bends win. |
+| Bifurcation | Threshold | `bifurcationThreshold` | 0.5..90 ° | 6 |  | Smallest bend of the parent that gets a node. |
+| Bifurcation | Spread | `bifurcationSpread` | 0..1 | 0 |  | Random shift of every node along the parent (1 = 10 % of its length). |
+| Bifurcation | Min spacing | `bifurcationSpacing` | 0.01..0.9 | 0.12 |  | Smallest distance between two bends, as a fraction of the parent. |
+| Alignment | Align | `align` | bool | false |  | Rolls the new nodes so they face the sky. |
+| Boundaries | First | `first` | 0..1 | 0.1 |  | Lowest point on the parent where nodes occur (0 = base, 1 = tip). |
+| Boundaries | Last | `last` | 0..1 | 0.9 |  | Highest point on the parent where nodes occur (0 = base, 1 = tip). |
+| Boundaries | Distribution curve | `distributionCurve` | curve | curve |  | Maps normalized spacing [0..1] across [First..Last]. |
+| Boundaries | Clip | `clip` | 0..0.49 | 0 |  | With the checkbox on, nodes that Spread or Position push outside First..Last are removed instead of being held on the boundary. The value insets the range (fraction of First..Last). |
+| Boundaries | Clip enabled | `clipEnabled` | bool | false |  | Removes nodes that Spread or Position push outside First..Last. |
+| Common | Active | `active` | bool | true |  | Switches the generator on. With a curve over the level of detail (left = highest detail) it is active where the curve is above 0.5. |
+| Common | Pass | `pass` | 1..99 | 1 |  | Generators compute in pass order. A node cannot have a lower pass than any of its ancestors. |
+| Common | Rotation | `rotationOffset` | -180..180 ° | 0 | yes | Rotates all nodes around the parent spine as a group. Variance jumbles the rotation per parent. |
+| Common | Position | `positionOffset` | -0.5..0.5 | 0 | yes | Shifts all nodes along the parent (fraction of its length). Variance shifts every parent differently. |
+| Common | Sink | `sink` | -5..5 (slider -1..1) m | 0 | yes | Start offset of the nodes into (+) or out of (-) the parent; sinks trunks under the ground. |
+| Common | Pruning | `pruningCurve` | curve | curve |  | Runs over the parent from First (left) to Last (right). Nodes are removed where the curve is below 0.5. |
+| Common | Seed | `seed` | seed | 0 |  | Random seed. Change it to get a different variation of the same settings. |
+| Knockout | Amount | `knockout` | 0..1 | 0 |  | Randomly removes this share of the nodes after the mode has placed them. The curve varies it along the parent. |
+| Knockout | + Resolution | `knockoutResolution` | -1..1 | 0 |  | Added to the amount for every level of detail below the highest: positive removes more nodes at lower detail, negative fewer. |
+| Force containers | Include | `forceInclude` | rows of Material / Weight / UV Area | one row |  | Keeps only the nodes inside the volume of the named Force node (set a volume in the Force node). |
+| Force containers | Exclude | `forceExclude` | rows of Material / Weight / UV Area | one row |  | Removes the nodes inside the volume of the named Force node. |
+| More | Click place | `clickPlace` | Ready / None / Any / Number | ready |  | What a click in the viewport places. It is stored with the node and takes effect with Freehand mode. |
+| More | Size scalar | `sizeScalar` | 0.01..100 (slider 0.01..5) | 1 |  | Scales this node and every node below it. |
+| Masks | Mask | `genMasks` | rows of Material / Weight / UV Area | one row |  | Keeps a node only where every assigned mask (Masks panel) evaluates to 0.5 or more. |
+
+### Tab: Fins
+
+| Section | Parameter | id | Range | Default | Var | Meaning |
+|---|---|---|---|---|---|---|
+| Fins | Size | `finSize` | 0.002..20 (slider 0.002..2) m | 0.25 | yes | How far the fin reaches away from its base, metres. The curve runs along the parent branch. |
+| Fins | + % of parent | `finSizeParent` | 0..1000 (slider 0..300) % | 0 |  | Added to Size: this percentage of the parent radius at the placement. |
+| Fins | Width | `finWidth` | 0.002..20 (slider 0.002..2) m | 0.2 | yes | Width of the base ring of the fin along the surface, metres. |
+| Fins | Flip | `finFlip` | None / Random / Always | random |  | Mirrors the fin (texture, fold and curl direction): never, at random, or always. |
+| Segments | Width segments | `finSegmentsWidth` | 1..32 (slider 1..12) | 4 |  | Cells across the fin. The base ring has one more vertex, every one on the parent skin. |
+| Segments | Length segments | `finSegmentsLength` | 2..64 (slider 2..20) | 6 |  | Cells from the base to the tip; more cells give smoother curl and noise. |
+
+### Tab: Orientation
+
+| Section | Parameter | id | Range | Default | Var | Meaning |
+|---|---|---|---|---|---|---|
+| Orientation | Style | `finStyle` | Perpendicular / Along spine / Up | perpendicular |  | Direction in which the fin leaves the surface plane: Perpendicular = around the parent, Along spine = along the parent, Up = towards the sky (shelf fungus). |
+| Orientation | Start angle | `finStartAngle` | 0..180 ° | 60 | yes | Angle between the surface and the fin at its base: 0 lies flat on the bark, 90 stands straight out. |
+| Orientation | Roll | `finRoll` | -180..180 ° | 0 | yes | Turns the fin around the surface normal at its attachment. |
+
+### Tab: Deformation
+
+| Section | Parameter | id | Range | Default | Var | Meaning |
+|---|---|---|---|---|---|---|
+| Deformation | Fold | `finFold` | -180..180 ° | 0 | yes | Folds the two halves of the fin along its centre line; the fold grows from the base to the tip. |
+| Deformation | Curl | `finCurl` | -360..360 ° | 0 | yes | Bends the fin along its length towards its face (positive) or away from it. |
+| Vertex | Amount | `finVertexAmount` | 0..2 (slider 0..0.2) m | 0 |  | Random displacement of the vertices (grows from the base to the tip, so the base stays on the skin). |
+| Vertex | Noise scale | `finVertexScale` | 0.1..40 (slider 0.1..12) | 3 |  | Frequency of the vertex noise: higher gives finer wrinkles. |
+| Vertex | Seed | `finVertexSeed` | seed | 0 |  | “Seed” in Deformation › Vertex. |
+| Scale | Scale X | `finScaleX` | 0.01..10 (slider 0.01..3) | 1 |  | Scale of the fin across its width. |
+| Scale | Scale Y | `finScaleY` | 0.01..10 (slider 0.01..3) | 1 |  | Scale of the fin along its length. |
+| Scale | Scale Z | `finScaleZ` | 0..10 (slider 0..3) | 1 |  | Scale of the fin's thickness direction (the amount of fold, curl and noise out of its plane). |
+
+### Tab: Lighting
+
+| Section | Parameter | id | Range | Default | Var | Meaning |
+|---|---|---|---|---|---|---|
+| Lighting | Puffiness | `finPuffiness` | 0..1 | 0.3 |  | Bends the normals towards the surface normal of the parent: soft, rounded shading instead of a flat card. |
+| Lighting | Match surface | `finMatchSurface` | 0..1 | 0.5 |  | Blends the normals at the base of the fin into the parent surface normal (fading out towards the tip), so the fin merges with the bark shading. |
+
+### Tab: Wind
+
+| Section | Parameter | id | Range | Default | Var | Meaning |
+|---|---|---|---|---|---|---|
+| Ripple | Ripple scale | `finRipple` | 0..5 (slider 0..2) | 1 |  | Strength of the fin's own leaf-level wind motion. The base ring keeps the exact wind of the parent, the weight grows towards the tip, so the fin never tears off. |
+
+### Tab: LOD
+
+| Section | Parameter | id | Range | Default | Var | Meaning |
+|---|---|---|---|---|---|---|
+| LOD | Cull amount | `lodCull` | 0..1 | 0.5 |  | Fraction of fins removed at the lowest LOD. |
+| LOD | Segment reduction | `lodSegments` | 0..0.9 | 0.5 |  | Fraction of the width and length segments removed per LOD step. |
+| Dynamic LOD | Weight | `lodWeight` | 0..1 | 0.5 |  | Priority to survive when Tree > Dynamic LOD removes pieces of the same type (branches, leaves, fronds, decorations): pieces of a generator with a higher Weight are removed later. 0.5 = neutral; equal weights never change the ranking. |
+| Dynamic LOD | Length segments | `lodLengthSegments` | 0.1..1 | 1 |  | Scalar applied to the number of length segments once per LOD step (LOD 1 = x, LOD 2 = x², LOD 3 = x³). 1 = no extra reduction. |
+| Dynamic LOD | Radial segments | `lodRadialSegments` | 0.1..1 | 1 |  | Scalar applied to the number of radial (or width) segments once per LOD step (LOD 1 = x, LOD 2 = x², LOD 3 = x³). 1 = no extra reduction. |
+| Lightmap | Lightmap weight | `lightmapWeight` | 0..4 | 1 |  | Relative texel density of this generator in the lightmap UVs (Tree > Lightmap, export). 1 = the same density as the other generators, 2 = twice the density, 0 = one texel per piece (a leaf gets a single texel). Leaves start at 0; the "Reset lightmap" command restores the defaults. |
+
+### Tab: Material
+
+| Section | Parameter | id | Range | Default | Var | Meaning |
+|---|---|---|---|---|---|---|
+| Leaves | Type | `leafTypes` | rows of Material / Weight / UV Area | one row |  | Materials (and meshes) the instances are picked from. A row is chosen with probability Weight / sum of Weights. |
+| Vertex Color | Color | `vertexColor` | color | [1, 1, 1, 1] |  | Vertex colour tint of the geometry. |
+| Vertex Color | Variance | `vertexColorVariance` | 0..1 | 0.1 |  | Random variation of the vertex colour per leaf. |
+| Vertex Color | Gradient | `vertexColorGradient` | -1..1 | 0 |  | Darkens (−) or brightens (+) towards the tip. |
+| Vertex Color | Mode | `vcMode` | Inherit / Multiply / Set / Add | inherit |  | Inherit: keep the colour (Color x Variance, earlier behaviour). Multiply: tint it by Mode color. Set: replace it with Mode color. Add: brighten it by Mode color. Profile and Parent curve control where the change applies. |
+| Vertex Color | Mode color | `vcColor` | color | [1, 1, 1, 1] |  | Linear colour used by Multiply, Set and Add. |
+| Vertex Color | Seamless | `vcSeamless` | bool | false |  | The colour at the attach point equals the parent colour exactly and blends into the item's own colour over its first quarter (needs the parent to be meshed first; falls back to the own colour otherwise). |
+| Vertex Color | Profile | `vcProfile` | curve | curve |  | Strength of the Mode along the item (left: base, right: tip). 1 = full effect, 0 = the inherited colour. Use it for lighter young twigs, darker trunk bases or leaf tips. |
+| Vertex Color | Parent curve | `vcParentCurve` | curve | curve |  | Strength of the Mode by the position of the attach point on the parent (left: parent base, right: parent tip); a frond runs along its parent, so it follows the curve along it. Ignored without a parent. |
+| Season | Start offset | `seasonStartOffset` | -1..1 (slider -1..1) | 0 | yes | Season start offset: 0 = the transition follows the Season slider immediately, positive values delay it, negative values start it earlier. Variance spreads it per element; the curve runs along the parent. |
+| Season | Time scale | `seasonTimeScale` | 0..10 (slider 0..2) | 1 | yes | Season time scale: 1 = one slider sweep is one year of this node; 2 = twice as fast, 0 = never changes. |
+
+### Fin geometry (T15)
+
+Pure maths: `src/generators/fin/finMesh.ts`; node: `src/nodes/generators/fin.ts`.
+
+* **Base ring.** The `Width segments + 1` base vertices are skin points of the parent (distance 0, zero gap) along a line in the tangent plane. Fold, curl and noise grow from the base, so the ring never leaves the skin.
+* **Orientation.** *Style*: Perpendicular (the flap runs around the parent), Along spine (along it), Up (towards +Z). The fin leaves along `cos(Start angle) x e + sin(Start angle) x n` (e = style direction, n = surface normal): 0 degrees lies on the bark, 90 stands out; *Roll* turns it about n.
+* **Deformation.** *Fold* turns the two halves towards each other about the centre line (growing to the tip); *Curl* bends the length axis towards the face; *Vertex Amount / Noise scale / Seed* is seeded simplex displacement x distance from the base; *Scale X / Y / Z* scale width, length and the out-of-plane amount. *Flip* mirrors U and reverses fold / curl.
+* **Lighting.** *Puffiness* blends all normals towards the parent surface normal; *Match surface* blends the base normals into it, fading out towards the tip.
+* **Wind.** Base ring = the parent's wind exactly (per vertex along the axis); `w2 = host + (1 - host) x min(1, 0.8 x Ripple) x t^1.5`, so the weight never decreases and never exceeds 1. Level phases are copied.
+* **Type: Material / Mesh / Weight.** A row with a cutout mesh gives the flap the cutout outline (normalised to Width x Size, refined to the segment counts, then mapped with the same fold / curl / noise / wind code as the grid; its base line is where the cutout touches the bark). The cutout's anchors are exported for child generators.
+* **Not implemented:** Growth, Post > Collision / Shade pruning.

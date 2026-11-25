@@ -22,13 +22,14 @@ const FAMILY: Record<string, VisibilityKey> = {
   'generator.spine': 'branches',
   'generator.split': 'branches',
   'generator.knot': 'decorations',
+  'generator.decal': 'decorations',
+  'generator.fin': 'decorations',
   'generator.frond': 'fronds',
   'generator.leaf': 'leaves',
   'generator.batchedLeaf': 'leaves',
   'generator.cluster': 'leaves',
   'generator.meshes': 'leaves',
   'generator.cap': 'caps',
-  'generator.decoration': 'decorations',
   'generator.root': 'roots',
 };
 

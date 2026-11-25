@@ -78,11 +78,14 @@ export function buildTopMenus(app: AppContext, panelItems: () => MenuItem[], lay
         {
           label: 'View Mode',
           submenu: [
-            ...['shaded', 'wireframe', 'shadedWire', 'flat', 'normals', 'uv', 'ao', 'skeleton'].map((m) => c(`view.mode.${m}`)),
+            ...['shaded', 'wireframe', 'shadedWire', 'flat', 'normals', 'uv', 'ao', 'vertexColor', 'vertexColorR', 'vertexColorG', 'vertexColorB', 'skeleton', 'lightmapDensity'].map((m) => c(`view.mode.${m}`)),
+            SEP,
+            c('lightmap.reset'),
             SEP,
             c('view.toggle.skeletonPoints'),
             c('view.toggle.skeletonRadii'),
             c('view.toggle.skeletonFrames'),
+            c('view.toggle.openEnds'),
           ],
         },
         SEP,

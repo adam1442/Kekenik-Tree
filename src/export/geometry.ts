@@ -1,4 +1,4 @@
-import type { MeshData } from '@/contracts/mesh';
+import { windPhase1Array, type MeshData } from '@/contracts/mesh';
 import { expandInstances } from '@/geometry/instancing';
 import type { GeometryStats, MergeMode } from './types';
 import { transformDirections, transformPoints, type ExportTransform } from './transform';
@@ -20,7 +20,11 @@ export interface PlantGeometry {
   /** rgba */
   colors?: Float32Array;
   ao?: Float32Array;
-  wind?: { pivot: Float32Array; weights: Float32Array };
+  /** Per-branch random tint 0..1 (Kekenik vertex-colour packing R). */
+  branchTint?: Float32Array;
+  /** Junction material blend (weld / extension / split half): 0 = parent material or no blend .. 1 = the vertex's own material. */
+  blend?: Float32Array;
+  wind?: { pivot: Float32Array; weights: Float32Array; phase1?: Float32Array };
   primitives: PlantPrimitive[];
 }
 
@@ -60,11 +64,14 @@ export function mergeToPlantGeometry(name: string, meshes: readonly MeshData[]):
   if (any((m) => m.uv1)) geo.uv1 = concatAttr(list.map((m) => m.uv1), counts, 2, [0]);
   if (any((m) => m.tangents)) geo.tangents = concatAttr(list.map((m) => m.tangents), counts, 4, [1, 0, 0, 1]);
   if (any((m) => m.colors)) geo.colors = concatAttr(list.map((m) => m.colors), counts, 4, [1, 1, 1, 1]);
+  if (any((m) => m.weld)) geo.blend = concatAttr(list.map((m) => m.weld?.blend), counts, 1, [0]);
   if (any((m) => m.ao)) geo.ao = concatAttr(list.map((m) => m.ao), counts, 1, [1]);
+  if (any((m) => m.branchTint)) geo.branchTint = concatAttr(list.map((m) => m.branchTint), counts, 1, [0.5]);
   if (any((m) => m.wind)) {
     geo.wind = {
       pivot: concatAttr(list.map((m) => m.wind?.pivot), counts, 3, [0]),
       weights: concatAttr(list.map((m) => m.wind?.weights), counts, 4, [0]),
+      phase1: concatAttr(list.map((m) => (m.wind ? windPhase1Array(m.wind) : undefined)), counts, 1, [0]),
     };
   }
   const byMaterial = new Map<string, Uint32Array[]>();

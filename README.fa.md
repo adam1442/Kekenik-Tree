@@ -8,12 +8,12 @@
 
 ## امکانات
 
-- گراف تولید نود-محور: Tree ← Trunk ← Branch / Root / Spine ← Leaf / Frond / Cap / Decoration / Mesh؛ با Undo/Redo، ذخیره‌ی خودکار و بازیابی بعد از کرش. گراف و seed یکسان همیشه گیاه یکسان می‌سازد.
+- گراف تولید نود-محور: Tree ← Trunk ← Branch / Root / Spine ← Leaf / Frond / Cap / Knot / Decal / Fin / Mesh؛ با Undo/Redo، ذخیره‌ی خودکار و بازیابی بعد از کرش. گراف و seed یکسان همیشه گیاه یکسان می‌سازد.
 - نیروها (Forces) و باد سلسله‌مراتبی روی GPU همراه با Timeline.
 - متریال‌ها و نقشه‌های بافت، Material Set، Mask و Displacement.
 - ویرایشگر Cutout/Mesh و ویرایشگر منحنی (Curve / Ramp).
 - LOD ها و خروجی GLB، glTF، OBJ، PLY و STL (به‌همراه AO پخته‌شده و Impostor).
-- رابط داک‌شونده (پنل‌های قابل چسباندن، تب‌دار و شناور) و ۱۶ گونه‌ی آماده در کتابخانه.
+- رابط داک‌شونده (پنل‌های قابل چسباندن، تب‌دار و شناور) و ۶ پروژه‌ی نمونه (Oak، Birch، Palm، Fern، Grass، Swamp) در کتابخانه؛ پروژه‌ی جدید فقط نود Tree را دارد.
 
 ## اجرا
 
@@ -26,7 +26,7 @@ npm ci
 npm run dev
 ```
 
-ساخت نسخه‌ی نهایی: `npm run build` (خروجی در `dist/index.html` به‌صورت یک فایل مستقل).
+ساخت نسخه‌ی نهایی: `npm run build` (خروجی در `dist/index.html` به‌همراه پوشه‌ی `dist/Sample Projects/` برای پروژه‌های نمونه).
 
 ## مستندات
 

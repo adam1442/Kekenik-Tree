@@ -2,6 +2,7 @@ import { curveToLUT, type Curve } from '@/contracts/curve';
 import { lodDisplacementFactor, mipLevelFor } from '@/geometry/displaceMesh';
 import type { TubeDisplaceVertex } from '@/geometry/displaceMesh';
 import { sampleHeightMips, type HeightField } from '@/materials/displacement';
+import { barkHeight, barkMaturityFactor, type BarkSpec } from './bark';
 import { branchSeed, periodicFbm2, periodicNoise2 } from './noise';
 
 /** Extra per-vertex inputs the branch displacer needs on top of the legacy tube vertex. */
@@ -20,6 +21,12 @@ export interface BranchDisplaceVertex extends TubeDisplaceVertex {
   sFree: number;
   /** Id of the branch (every branch gets its own noise pattern). */
   branch: number;
+  /** Bark: lineage key (the host's branch id for split halves / extensions); defaults to `branch`. */
+  lineage?: number;
+  /** Bark: metres along the lineage at this vertex (`s` plus the host's length up to the attach point); defaults to `s`. */
+  sLineage?: number;
+  /** true when the branch continues its parent's open end (split half, extension): the bark fades in like a junction. */
+  continued?: boolean;
 }
 
 /** Offsets of one vertex in metres: along the ring direction, along the spine, along the surface normal. */
@@ -31,7 +38,7 @@ export interface DisplaceOut {
 
 export type BranchDisplacer = (v: BranchDisplaceVertex, out: DisplaceOut) => void;
 
-export type DisplaceSource = 'noise' | 'material' | 'displacement';
+export type DisplaceSource = 'noise' | 'material' | 'displacement' | 'bark';
 export type DisplaceMapping = 'uvs' | 'fit';
 
 export interface BranchDisplaceSpec {
@@ -58,6 +65,8 @@ export interface BranchDisplaceSpec {
   fadeTip: number;
   lod: number;
   lodFade: boolean;
+  /** Bark source settings (used when `source` is 'bark'). */
+  bark?: BarkSpec;
 }
 
 /** Noise cells per image tile / per unit of scale. */
@@ -156,21 +165,33 @@ export function displaceFade(spec: BranchDisplaceSpec, v: BranchDisplaceVertex, 
   const r = Math.max(1e-4, v.radius);
   let fade = 1;
   if (tip && spec.fadeTip > 0) fade *= smooth01(v.sEnd / (spec.fadeTip * r));
-  if (v.junction && spec.fadeBase > 0) fade *= smooth01(v.sFree / (spec.fadeBase * r));
+  if ((v.junction || (spec.source === 'bark' && v.continued)) && spec.fadeBase > 0) fade *= smooth01(v.sFree / (spec.fadeBase * r));
   return fade;
+}
+
+/** true when the Bark source is selected and has a non-zero depth. */
+export const barkActive = (spec: BranchDisplaceSpec): boolean => spec.source === 'bark' && spec.bark !== undefined && spec.bark.depth !== 0;
+
+/** Bark offset (metres, signed, along the surface normal) of one vertex, before the junction / tip fade. */
+export function barkOffset(bark: BarkSpec, v: BranchDisplaceVertex): number {
+  const lineage = v.lineage ?? v.branch;
+  const s = v.sLineage ?? v.s;
+  const h = barkHeight(bark, { u: v.u, s, circumference: v.circumference }, branchSeed(bark.seed, lineage));
+  return bark.depth * v.radius * (h - 0.5) * barkMaturityFactor(bark.maturity, v.radius, v.t);
 }
 
 /** true when the spec would not move any vertex. */
 export function isDisplaceIdle(spec: BranchDisplaceSpec): boolean {
   const main = (spec.radial !== 0 || spec.length !== 0) && (spec.source === 'noise' || spec.map !== null);
-  return !main && spec.fine.amount === 0 && spec.shape.amount === 0 && !(spec.flares.radius > 0 && spec.flares.height > 0);
+  return !main && !barkActive(spec) && spec.fine.amount === 0 && spec.shape.amount === 0 && !(spec.flares.radius > 0 && spec.flares.height > 0);
 }
 
 /** Builds the per-vertex displacer of the Displacement tab; null when nothing would move. */
 export function createBranchDisplacer(spec: BranchDisplaceSpec): BranchDisplacer | null {
   if (isDisplaceIdle(spec)) return null;
   const lodFactor = spec.lodFade ? lodDisplacementFactor(spec.lod) : 1;
-  const useMain = (spec.radial !== 0 || spec.length !== 0) && (spec.source === 'noise' || spec.map !== null);
+  const useMain = (spec.radial !== 0 || spec.length !== 0) && (spec.source === 'noise' || (spec.source !== 'bark' && spec.map !== null));
+  const bark = barkActive(spec) ? spec.bark : undefined;
   return (v, out) => {
     let radial = 0;
     let along = 0;
@@ -182,6 +203,7 @@ export function createBranchDisplacer(spec: BranchDisplaceSpec): BranchDisplacer
         radial += spec.radial * h * fade * lodFactor;
         along += spec.length * h * fade * lodFactor;
       }
+      if (bark) normal += barkOffset(bark, v) * fade * lodFactor;
       normal += fineOffset(spec.fine, v, spec.seed) * fade * lodFactor;
       radial += creaseOffset(spec.shape, v) * fade * lodFactor;
     }

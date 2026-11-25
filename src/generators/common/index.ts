@@ -6,3 +6,4 @@ export * from './migrate';
 export * from './pass';
 export * from './sizeScalar';
 export * from './volumes';
+export * from './knockoutForce';

@@ -35,13 +35,13 @@ export interface KnotMeshInput {
   noiseOffset: readonly [number, number];
 }
 
-interface Surface {
+export interface Surface {
   /** Writes the surface point (x across, y along the parent, in metres) lifted by `h` along the surface normal. */
   at(x: number, y: number, h: number, out: Float64Array): void;
 }
 
 /** The parent as a cone around its axis (position, radius, taper at the knot), the same skin model the weld solver uses, as a parametric map. */
-function parentSkin(f: KnotFrame): Surface {
+export function parentSkin(f: KnotFrame): Surface {
   const [ax, ay, az] = f.axisPoint;
   const [tx, ty, tz] = f.tangent;
   const [nx, ny, nz] = f.normal;

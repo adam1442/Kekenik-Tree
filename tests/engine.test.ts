@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { defaultGraph } from '@/app/project/defaultGraph';
+import { starterGraph } from './fixtures/starterGraph';
 import { CancelledError, CancellationSource, type NodeDef } from '@/contracts/nodes';
 import { defaultParams } from '@/contracts/params';
 import { Rng } from '@/core/rng';
@@ -12,7 +12,7 @@ beforeAll(() => registerDiscoveredNodes());
 
 function modelFromDefault(): GraphModel {
   const m = new GraphModel();
-  m.load(defaultGraph());
+  m.load(starterGraph());
   return m;
 }
 

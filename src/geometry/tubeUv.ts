@@ -1,5 +1,6 @@
 import type { Branch, Skeleton } from '@/contracts/skeleton';
 import { Rng } from '@/core/rng';
+import { evenTiles, SPLIT_ATTR, SplitFlag } from '@/generators/split';
 import { sampleVariance } from '@/graph/engine/seeds';
 import {
   atS,
@@ -89,6 +90,8 @@ export interface UvPlan {
   tipSlope: number;
   /** True when the dome / cap must stay inside the 0..1 range. */
   confined: boolean;
+  /** UV seams: the mesher doubles the ring vertices at whole U tile borders. */
+  createSeams: boolean;
 }
 
 const WHOLE: UvRect = [0, 0, 1, 1];
@@ -179,7 +182,7 @@ export function planBranchUv(inp: UvPlanInput): UvPlan {
   let baseRadius = 0;
   for (let k = inp.sm.first; k < inp.sm.n; k++) baseRadius = Math.max(baseRadius, inp.sm.rad[k] as number);
   const autoCircumference = 2 * Math.PI * (baseRadius > 0 ? baseRadius : inp.rMax);
-  const uTiles = patched
+  const resolvedTiles = patched
     ? 1
     : resolveUTiles({
         style: m.style,
@@ -192,9 +195,14 @@ export function planBranchUv(inp: UvPlanInput): UvPlan {
         ...(hostValue(inp.host, UV_DENSITY_ATTR, point) !== undefined ? { parentDensity: hostValue(inp.host, UV_DENSITY_ATTR, point) as number } : {}),
         ...(forcedTiles !== undefined ? { forcedTiles } : {}),
       });
+  // A branch that splits needs an even tile count (each half gets half of it); the Branch node reports the promotion.
+  const splitsHere = ((inp.sk.attributes.get(SPLIT_ATTR)?.[inp.b.start] ?? 0) & SplitFlag.Parent) !== 0;
+  const uTiles = splitsHere && !locked && !patched ? evenTiles(resolvedTiles) : resolvedTiles;
   const free = !locked && !patched;
   const followParent = ext === 'automatic' && known;
-  const uOffset = !free ? 0 : followParent && parentUOffset !== undefined ? parentUOffset : sampleVariance(rng.fork('uo'), m.uOffset, m.uOffsetVariance, uTiles);
+  // Manual (match / match u only): the node's own U offset is added to the parent's (relative, not absolute).
+  const relativeU = (ext === 'match' || ext === 'match-u') && known && parentUOffset !== undefined ? parentUOffset : 0;
+  const uOffset = !free ? 0 : followParent && parentUOffset !== undefined ? parentUOffset : sampleVariance(rng.fork('uo'), m.uOffset, m.uOffsetVariance, uTiles) + relativeU;
   const flip = m.twistRandomFlip ? rng.fork('flip').sign() : 1;
   const twist = !free ? 0 : followParent && parentTwist !== undefined ? parentTwist : m.twist * flip;
 
@@ -202,7 +210,8 @@ export function planBranchUv(inp: UvPlanInput): UvPlan {
   const style = m.style === 'uv-locked' ? 'relative' : m.vStyle;
   const continued = inp.isExtension && parentVValue !== undefined && (ext === 'automatic' || ext === 'match');
   const sampledOffset = sampleVariance(rng.fork('vo'), m.vOffset, m.vOffsetVariance, 1);
-  const offset = locked || patched ? 0 : continued ? (parentVValue as number) : sampledOffset;
+  // Manual (match): V continues the parent's V and the node's own V offset is relative to it
+  const offset = locked || patched ? 0 : continued ? (parentVValue as number) + (ext === 'match' ? sampledOffset : 0) : sampledOffset;
   let v = computeRingV({
     style,
     anchor: m.style === 'uv-locked' || continued ? 'start' : m.vAnchor,
@@ -271,6 +280,7 @@ export function planBranchUv(inp: UvPlanInput): UvPlan {
     rects: choice.rects,
     tipSlope,
     confined,
+    createSeams: m.createSeams && !patched,
   };
 }
 

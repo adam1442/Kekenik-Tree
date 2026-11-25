@@ -16,6 +16,7 @@ import {
   resolveUTiles,
   snapRingsToWhole,
   UV_TILES_ATTR,
+  UV_UOFFSET_ATTR,
   UV_V_ATTR,
   wholeUTiles,
   type PatchRow,
@@ -467,6 +468,33 @@ describe('tube mesher UV0', () => {
     expect(Math.min(...allV(make('match-u')))).toBeCloseTo(0, 3);
     expect(Math.min(...allV(make('match')))).toBeCloseTo(parentV, 3);
     expect(Math.max(...allU(make('full')))).toBe(1);
+  });
+
+  it('Manual (match) and (match u only): the own offsets are relative to the parent values', () => {
+    const parent = line(7, 2.4, () => 0.3);
+    buildTubeMesh(parent, opts());
+    parent.attributes.set(UV_UOFFSET_ATTR, new Float32Array(parent.count).fill(0.3));
+    const parentV = (parent.attributes.get(UV_V_ATTR) as Float32Array)[6] as number;
+    const make = (extensionStyle: UvMapping['extensionStyle'], uOffset: number, vOffset: number): { u: number; minV: number } => {
+      const child = line(5, 1, () => 0.05, 1, [0, 6]);
+      child.attributes.set(EXTENSION_ATTR, new Float32Array(child.count).fill(1));
+      const m = buildTubeMesh(child, opts({ parent }, { extensionStyle, uOffset, vOffset }, 12));
+      return { u: (child.attributes.get(UV_UOFFSET_ATTR) as Float32Array)[0] as number, minV: Math.min(...allV(m)) };
+    };
+    const own = make('full', 0.2, 0.25);
+    expect(own.minV).toBeCloseTo(0.25, 3);
+    // match: U = parent + own, V = parent V + own
+    const match = make('match', 0.2, 0.25);
+    expect(match.u).toBeCloseTo(own.u + 0.3, 4);
+    expect(match.minV).toBeCloseTo(parentV + 0.25, 3);
+    // match u only: U relative to the parent, V is the node's own
+    const matchU = make('match-u', 0.2, 0.25);
+    expect(matchU.u).toBeCloseTo(own.u + 0.3, 4);
+    expect(matchU.minV).toBeCloseTo(0.25, 3);
+    // Automatic ignores the own offsets and continues the parent
+    const auto = make('automatic', 0.2, 0.25);
+    expect(auto.u).toBeCloseTo(0.3, 4);
+    expect(auto.minV).toBeCloseTo(parentV, 3);
   });
 
   it('Fractional > Auto matches the texel density of the parent', () => {

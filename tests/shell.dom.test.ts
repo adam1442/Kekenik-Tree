@@ -39,6 +39,8 @@ vi.mock('@/viewport/viewport', async () => {
     }
     resetCamera(): void {}
     refreshContent(): void {}
+    setVertexColorPacking(): void {}
+    setLightmapResolution(): void {}
     requestRender(): void {}
     dispose(): void {}
   },
@@ -173,7 +175,7 @@ describe('application shell (jsdom smoke test)', () => {
 });
 
 describe('engine + project integration (jsdom)', () => {
-  it('evaluates the default project, decorates nodes and reacts to edits and File > New', async () => {
+  it('opens with the Tree node alone, evaluates it, reacts to added generators and File > New', async () => {
     const root = boot();
     const app = getApp();
     const next = (): Promise<EvaluationSummary> =>
@@ -184,25 +186,28 @@ describe('engine + project integration (jsdom)', () => {
           resolve(r);
         });
       });
+    expect(app.graph.model.nodes().map((n) => n.type)).toEqual(['output.tree']);
+    expect(app.graph.model.edges()).toHaveLength(0);
     let pending = next();
     app.engine.schedule(0);
     const first = await pending;
     expect(first?.errors).toBe(0);
-    expect(first?.scene.entries.length).toBeGreaterThan(3);
-    expect(app.store.get().stats.triangles).toBeGreaterThan(1000);
-    expect(app.graph.diagnostics.get('trunk')?.state).toMatch(/ok|cached/);
-    expect(app.graph.rootInfo).toMatch(/^Nodes \d/);
-    expect(app.graph.edgeLabels.size).toBeGreaterThan(0);
+    expect(first?.scene.entries).toHaveLength(0);
+    expect(app.store.get().stats.triangles).toBe(0);
+    expect(app.graph.rootInfo).toMatch(/^Nodes 1$/);
 
     pending = next();
-    app.graph.setParam('leaf', 'number', { value: 2 });
+    const trunk = app.graph.addNode('generator.trunk', { anchor: { nodeId: 'tree' } });
+    expect(trunk).not.toBeNull();
+    expect(app.graph.model.edges()).toHaveLength(1);
     const second = await pending;
-    expect(second?.evaluated).toBe(1);
+    expect(second?.errors).toBe(0);
     expect(app.store.get().dirty).toBe(true);
 
     app.commands.run('file.new');
     expect(app.store.get().documents).toHaveLength(2);
     expect(app.store.get().dirty).toBe(false);
+    expect(app.graph.model.nodes().map((n) => n.type)).toEqual(['output.tree']);
     expect(root.querySelectorAll('.kt-doctab')).toHaveLength(2);
     expect(app.commands.get('file.save')?.shortcut).toBe('Mod+S');
   }, 30_000);

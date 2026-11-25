@@ -16,6 +16,7 @@ import {
 import { choosePatches, MATERIAL_INHERITED, UV_TILES_ATTR, UV_TWIST_ATTR, UV_UOFFSET_ATTR, UV_V_ATTR, type PatchRow } from '@/generators/uv';
 import { sagScale } from '@/generators/weld';
 import { MeshAccumulator, newVertex, type VertexAttrs } from '@/geometry/meshAccumulator';
+import { createSeasonSampler } from '@/seasons';
 import { resolveMaterialRef } from '@/materials/materialSource';
 import { barkRingColor } from './common';
 import { emptyFoliage, foliageOutput, isActive, collectPlacements, parentOf, parentWind, type Placement } from './foliageCommon';
@@ -32,7 +33,7 @@ const BARK_TINT: readonly number[] = [0.36, 0.26, 0.18, 1];
 const CORE_BRIGHTNESS = 1.6;
 
 /** Growable list of triangle indices of one material slot. */
-class IndexBucket {
+export class IndexBucket {
   data = new Uint32Array(1024);
   length = 0;
   push(i: number): void {
@@ -106,9 +107,9 @@ interface MaterialChoice {
   rect: UvRect | null;
 }
 
-function chooseMaterial(rows: readonly PatchRow[], rng: Rng, parentMaterial: string, areas: ReturnType<typeof libraryUvAreas>): MaterialChoice {
+function chooseMaterial(rows: readonly PatchRow[], rng: Rng, parentMaterial: string, areas: ReturnType<typeof libraryUvAreas>, season?: number): MaterialChoice {
   const c = choosePatches('patch-one', rows, 1, rng, {
-    resolveMaterial: (ref, r) => (ref === MATERIAL_INHERITED ? parentMaterial : ref ? resolveMaterialRef(ref, r) : '') || parentMaterial,
+    resolveMaterial: (ref, r) => (ref === MATERIAL_INHERITED ? parentMaterial : ref ? resolveMaterialRef(ref, r, undefined, season) : '') || parentMaterial,
     areas,
   });
   return { material: c.materials[0] || parentMaterial, rect: rectOrNull(c.rects[0]) };
@@ -129,6 +130,7 @@ export function evaluateKnot(ctx: NodeContext, inputs: NodeInputs, p: NodeParams
   const pv = inputs.parent?.[0];
   const parentMaterial = (pv && pv.kind === 'Structure' ? pv.value.materialId : undefined) || 'bark';
   const areas = libraryUvAreas();
+  const seasons = createSeasonSampler(p);
   const segments = knotSegments(cfg.segments, ctx.lod);
   const noise = createSimplex(new Rng(ctx.seed).fork(`knot-noise:${cfg.noiseSeed}`).seed);
   const branchOf = new Map<number, Branch>();
@@ -155,8 +157,9 @@ export function evaluateKnot(ctx: NodeContext, inputs: NodeInputs, p: NodeParams
     const branch = branchOf.get(pl.branch.id) ?? pl.branch;
     const rng = pl.rng;
     if (!knotSurvivesLod(cfg.lodWeight, ctx.lod, rng.fork('lod').next())) continue;
-    const inner = chooseMaterial(cfg.innerRows, rng.fork('inner-material'), parentMaterial, areas);
-    const core = chooseMaterial(cfg.coreRows, rng.fork('core-material'), parentMaterial, areas);
+    const transition = seasons.value(rng, pl.sample.u);
+    const inner = chooseMaterial(cfg.innerRows, rng.fork('inner-material'), parentMaterial, areas, transition);
+    const core = chooseMaterial(cfg.coreRows, rng.fork('core-material'), parentMaterial, areas, transition);
     const shape = sampleKnotShape(cfg, rng.fork('shape'), inner.rect, core.rect);
     const nr = rng.fork('noise');
     const frame = knotFrame(parent, branch, pl);
@@ -169,7 +172,7 @@ export function evaluateKnot(ctx: NodeContext, inputs: NodeInputs, p: NodeParams
       noiseOffset: [nr.range(-50, 50), nr.range(-50, 50)],
     });
 
-    const wind = parentWind(parent, pl.sample.parentPoint, made * 13 + 3);
+    const wind = parentWind(parent, pl.sample.parentPoint, made * 13 + 3, pl.sample.position);
     const axis = pl.sample.position;
     const [br, bg, bb] = barkRingColor(BARK_TINT, branch.generation, pl.sample.u);
     const cx = made % cells;
@@ -203,6 +206,7 @@ export function evaluateKnot(ctx: NodeContext, inputs: NodeInputs, p: NodeParams
       vx.w1 = wind[1];
       vx.w2 = wind[2];
       vx.w3 = wind[3];
+      vx.w4 = wind[4];
       acc.addVertex(vx);
     }
     const slotOf = [parentMaterial, inner.material, core.material];

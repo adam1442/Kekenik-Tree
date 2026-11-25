@@ -211,7 +211,7 @@ export interface PickedMaterialMesh {
 const KEYWORDS = new Set([MESH_ANY, MESH_PRIMARY, MESH_NOT_PRIMARY, MESH_NONE]);
 
 /**
- * The one shared selection used by Leaf, Frond, Mesh generator and Decoration: weighted row (one draw) -> material
+ * The one shared selection used by Leaf, Frond, Mesh generator, Decal and Fin: weighted row (one draw) -> material
  * (Material Sets: one more draw) -> mesh of that material per the row's Mesh selector.
  */
 export function pickMaterialMesh(list: readonly MaterialSlotRow[], ctx: PickContext): PickedMaterialMesh {

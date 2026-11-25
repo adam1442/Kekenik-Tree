@@ -498,7 +498,10 @@ describe('Branch generator: welding', () => {
       }
       return false;
     };
-    const sprouts = sk.branches.filter((b) => !onOwnBranch(b));
+    const splitInfo = sk.attributes.get('splitInfo');
+    // the fused halves of a split are never welded (only the spine that splits keeps its base weld)
+    const isHalf = (b: (typeof sk.branches)[number]): boolean => (((splitInfo?.[b.start] ?? 0) as number) & 6) !== 0;
+    const sprouts = sk.branches.filter((b) => !onOwnBranch(b) && !isHalf(b));
     expect(sprouts.length).toBeGreaterThan(0);
     for (const b of sprouts) expect(w[b.start]).toBe(1);
     const mesh = meshOf(r, 'rt');

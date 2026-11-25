@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "name": "Legacy split project (before S6)",
+  "graph": {
+    "nodes": [
+      { "id": "tree", "type": "output.tree", "name": "Tree", "position": { "x": 0, "y": 0 }, "enabled": true, "params": {} },
+      {
+        "id": "trunk",
+        "type": "generator.trunk",
+        "name": "Trunk",
+        "position": { "x": 0, "y": 120 },
+        "enabled": true,
+        "params": {
+          "length": { "value": 6 },
+          "termination": { "value": "taper" },
+          "splitChance": { "value": 0.6 },
+          "splitSpread": { "value": 30 },
+          "splitBalance": { "value": 0.4 },
+          "splitStart": { "value": 0.6 },
+          "splitMaxDepth": { "value": 2 }
+        }
+      },
+      {
+        "id": "forked",
+        "type": "generator.branch",
+        "name": "Forked branches",
+        "position": { "x": 0, "y": 240 },
+        "enabled": true,
+        "params": {
+          "number": { "value": 4 },
+          "termination": { "value": "fork" },
+          "splitChance": { "value": 0 },
+          "splitSpread": { "value": 25 },
+          "splitBalance": { "value": 0.5 },
+          "splitStart": { "value": 0.58 },
+          "splitMaxDepth": { "value": 1 }
+        }
+      },
+      {
+        "id": "plain",
+        "type": "generator.branch",
+        "name": "Plain branches",
+        "position": { "x": 160, "y": 240 },
+        "enabled": true,
+        "params": {
+          "number": { "value": 4 },
+          "termination": { "value": "taper" },
+          "splitChance": { "value": 0 },
+          "splitSpread": { "value": 25 },
+          "splitBalance": { "value": 0.5 }
+        }
+      },
+      {
+        "id": "roots",
+        "type": "generator.root",
+        "name": "Roots",
+        "position": { "x": 320, "y": 240 },
+        "enabled": true,
+        "params": {
+          "number": { "value": 4 },
+          "splitChance": { "value": 0.3 },
+          "splitSpread": { "value": 30 }
+        }
+      }
+    ],
+    "edges": []
+  },
+  "settings": { "seed": 1337, "units": "m" },
+  "nodeVersions": { "generator.trunk": 4, "generator.branch": 5, "generator.root": 4 }
+}

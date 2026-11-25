@@ -399,9 +399,9 @@ describe('generators read the Material list', () => {
     expect(indexCount(prim)).toBeGreaterThan(0);
   });
 
-  it('Decoration: cutout-mesh shape picks meshes from the list', () => {
+  it.each(['generator.decal', 'generator.fin'])('%s: a Material row with a cutout mesh builds geometry from the list', (type) => {
     install();
-    const out = run('generator.decoration', { decoShape: 'cutout-mesh', leafTypes: [{ material: 'm', mesh: 'primary', weight: 1 }] });
+    const out = run(type, { leafTypes: [{ material: 'm', mesh: 'primary', weight: 1 }] });
     expect(indexCount(out)).toBeGreaterThan(0);
   });
 });

@@ -1,13 +1,19 @@
 import { getNumber, getString, type NodeParams } from '@/contracts/params';
+import { lodLengthFactor, lodRadialFactor, readGeneratorLod } from './dynamicLodParams';
 import type { Lineage } from '@/contracts/ports';
 import type { NodeContext, NodeInputs, NodeOutputs } from '@/contracts/nodes';
 import { SkeletonBuilder, type Skeleton } from '@/contracts/skeleton';
-import type { LodLevel } from '@/contracts/material';
+import type { ForceDef, LodLevel } from '@/contracts/material';
+import { createSeasonSampler, seasonLightDelay, type SeasonSampler } from '@/seasons';
+import { extractAttachedForces } from './forcesHook';
+import { attachDropped, groundCards } from './seasonGround';
 import { deg2rad } from '@/core/math';
 import { AttachmentBuilder } from '@/geometry/attachments';
 import { bladeBasis, buildLeafMesh, cardAttachments, type CardLight, type LeafCard, type LeafOutline } from '@/geometry/leafMesher';
 import type { LeafLightingSettings } from '@/contracts/lighting';
 import { mergeByMaterial, type LeafSpan } from '@/geometry/batchedLeaf';
+import type { LeafCollisionTable, MeshPartTable } from '@/contracts/mesh';
+import { leafPriority, readLeafCollision } from '@/generators/collision/settings';
 import { isLightingActive, resolveAdjust, resolveLightAnchor, surfaceDirection } from '@/geometry/leafLighting';
 import { instanceKey } from '@/instances/keys';
 import { anchorWind, orientAtAnchor, placementsFromSlots, planAnchorSlots } from './cutoutPlacement';
@@ -39,6 +45,7 @@ import {
   emptyFoliage,
   foliageOutput,
   isActive,
+  itemVertexColor,
   leafAo,
   leafTint,
   LOD_FOLIAGE_DETAIL,
@@ -47,9 +54,11 @@ import {
   parentWind,
   pickLeafType,
   postTransform,
+  readVertexColorOptions,
   varied,
   type Placement,
 } from './foliageCommon';
+import type { VertexColorOptions } from '@/geometry/vertexColor';
 
 const UP: V3 = [0, 0, 1];
 const SUN: V3 = [0.4, -0.3, 0.85];
@@ -62,8 +71,9 @@ export function bladeSegments(p: NodeParams, lod: number): { len: number; wid: n
   const mesh = getString(p, 'geometry', 'card') === 'mesh';
   const type = getString(p, 'cardType', 'curved');
   const full = type === 'quad' ? 1 : type === 'curved' ? 3 : Math.round(getNumber(p, 'leafSegments', 4));
-  const lenSeg = Math.max(mesh ? 2 : 1, Math.round((mesh ? Math.max(full, 3) : full) * detail));
-  const widSeg = mesh ? Math.max(1, Math.round(getNumber(p, 'leafWidthSegments', 1) * detail)) : 1;
+  const genLod = readGeneratorLod(p);
+  const lenSeg = Math.max(mesh ? 2 : 1, Math.round((mesh ? Math.max(full, 3) : full) * detail * lodLengthFactor(genLod, lod)));
+  const widSeg = mesh ? Math.max(1, Math.round(getNumber(p, 'leafWidthSegments', 1) * detail * lodRadialFactor(genLod, lod))) : 1;
   return { len: type === 'quad' && !mesh ? 1 : lenSeg, wid: widSeg, outline: mesh ? (OUTLINES[getString(p, 'outline', 'rect')] ?? 'rect') : 'rect' };
 }
 
@@ -114,6 +124,14 @@ interface LeafEnv {
   warned: Set<string>;
   /** Lighting settings when they change any normal, else null. */
   lighting: LeafLightingSettings | null;
+  /** Season of the node (transition values, drop time). */
+  season: SeasonSampler;
+  /** Season light / wind forces attached to the node. */
+  seasonForces: readonly ForceDef[];
+  /** Ground cards of the leaves that finished their life (Show dropped leaves). */
+  ground: LeafCard[];
+  /** Material > Vertex Color > Mode (undefined = neutral). */
+  vertexColor: VertexColorOptions | undefined;
 }
 
 /** Build the card(s) of one leaf; null when its weld failed and failed welds are dropped. */
@@ -182,7 +200,9 @@ function leafCards(ctx: NodeContext, parent: Skeleton, pl: Placement, k: number,
   const curl = getNumber(p, 'leafCurl', 0) * curveFactor(p, 'leafCurl', u);
   const twist = varied(rng, p, 'leafTwist', 0) * (Math.PI / 2);
   const origin = attach;
-  const type = pickLeafType(rng, p, 'leaf');
+  const transition = env.season.value(rng, u, seasonLightDelay(env.seasonForces, ax));
+  const finished = env.season.dropped(transition, rng);
+  const type = pickLeafType(rng, p, 'leaf', transition);
   const cutout = type.meshAsset;
   if (cfg.useActualSize && cutout) {
     // Authored real size of the mesh (the Meshes-panel scale is applied by the cutout builder).
@@ -215,9 +235,10 @@ function leafCards(ctx: NodeContext, parent: Skeleton, pl: Placement, k: number,
   const mirror = isMirrored(cfg.flip, cfg.initial, sideSign, pl.rng.fork(`flip:${k}`).next());
   const uvArea = resolveUvAreaRect(type.materialId, 'leaf', rng);
   const color = leafTint(rng, p);
+  const vc = itemVertexColor({ options: env.vertexColor, parent, point: s.parentPoint, at: u }, pl.index * 13 + k, ctx.seed);
   const ao = leafAo(p, u, rng);
   const atlas = uvArea ?? atlasRect(p, rng, pl.index * 7 + k);
-  const wind0 = parentWind(parent, s.parentPoint, pl.index * 13 + k);
+  const wind0 = parentWind(parent, s.parentPoint, pl.index * 13 + k, s.position);
   const wind = pl.anchor ? anchorWind(wind0, pl.anchor.frame.axisT) : wind0;
   const count = Math.max(1, Math.round(getNumber(p, 'cardCount', 1)));
   const cards: LeafCard[] = [];
@@ -240,6 +261,7 @@ function leafCards(ctx: NodeContext, parent: Skeleton, pl: Placement, k: number,
         segWidth: seg.wid,
         outline: seg.outline,
         color,
+        ...vc,
         ao,
         atlas,
         materialId: type.materialId,
@@ -252,6 +274,10 @@ function leafCards(ctx: NodeContext, parent: Skeleton, pl: Placement, k: number,
         ...(light ? { light } : {}),
       });
     }
+  }
+  if (finished) {
+    env.ground.push(...groundCards(cards, s.position, pl.rng.fork(`ground:${k}`), getNumber(p, 'fallenSpread', 0.2), env.seasonForces));
+    return null;
   }
   const tip: V3 = [origin[0] + ax[0] * height, origin[1] + ax[1] * height, origin[2] + ax[2] * height];
   return { cards, tip, origin };
@@ -271,6 +297,48 @@ function leafLight(env: LeafEnv, branchId: number, s: ParentSample, attach: V3, 
 function leafPlacements(ctx: NodeContext, inputs: NodeInputs, parent: Skeleton, p: NodeParams): Placement[] {
   const slots = planAnchorSlots(ctx, inputs, parent, p, getNumber(p, 'number', 1));
   return slots ? placementsFromSlots(slots, 60_000) : collectPlacements(ctx, parent, p);
+}
+
+/** Vertex / index window of one leaf in the final mesh. */
+interface LeafRow {
+  branch: number;
+  vertexStart: number;
+  vertexCount: number;
+  indexStart: number;
+  indexCount: number;
+}
+
+/** Rows of a batched mesh (index ranges of the merged index buffer). */
+function partRows(mesh: { parts?: MeshPartTable }): LeafRow[] {
+  const t = mesh.parts;
+  if (!t) return [];
+  return Array.from({ length: t.count }, (_, i) => ({ branch: t.branch[i] as number, vertexStart: t.vertexStart[i] as number, vertexCount: t.vertexCount[i] as number, indexStart: t.indexStart[i] as number, indexCount: t.indexCount[i] as number }));
+}
+
+/** Per-leaf ranges + collision settings for the Tree's leaf-collision post pass. */
+function collisionTable(rows: readonly LeafRow[], meta: readonly { priority: number; parent: number; origin: V3 }[], cfg: ReturnType<typeof readLeafCollision>): LeafCollisionTable {
+  const live = rows.filter((r) => r.indexCount > 0 && meta[r.branch] !== undefined);
+  const t: LeafCollisionTable = {
+    count: live.length,
+    vertexStart: Uint32Array.from(live, (r) => r.vertexStart),
+    vertexCount: Uint32Array.from(live, (r) => r.vertexCount),
+    indexStart: Uint32Array.from(live, (r) => r.indexStart),
+    indexCount: Uint32Array.from(live, (r) => r.indexCount),
+    origin: new Float32Array(live.length * 3),
+    priority: new Float32Array(live.length),
+    parent: new Int32Array(live.length),
+    threshold: cfg.threshold,
+    action: cfg.action,
+    testAgainst: cfg.testAgainst,
+    parentRule: cfg.parentRule,
+  };
+  live.forEach((r, i) => {
+    const m = meta[r.branch] as { priority: number; parent: number; origin: V3 };
+    t.origin.set(m.origin, i * 3);
+    t.priority[i] = m.priority;
+    t.parent[i] = m.parent;
+  });
+  return t;
 }
 
 export function evaluateLeaf(ctx: NodeContext, inputs: NodeInputs, p: NodeParams): NodeOutputs {
@@ -305,6 +373,10 @@ function evaluateLeafNode(ctx: NodeContext, inputs: NodeInputs, p: NodeParams, b
     heights: new Map(),
     warned: new Set(),
     lighting: isLightingActive(lightingSettings) ? lightingSettings : null,
+    season: createSeasonSampler(p),
+    seasonForces: extractAttachedForces(inputs),
+    ground: [],
+    vertexColor: readVertexColorOptions(p),
   };
   const perNode = Math.max(1, Math.round(getNumber(p, 'leavesPerNode', 1)));
   const cards: LeafCard[] = [];
@@ -312,6 +384,7 @@ function evaluateLeafNode(ctx: NodeContext, inputs: NodeInputs, p: NodeParams, b
   const att = new AttachmentBuilder(ctx.nodeId);
   const gen = (parent.branches[0]?.generation ?? -1) + 1;
   let outBranch = 0;
+  const meta: { priority: number; parent: number; origin: V3 }[] = [];
   for (const pl of placements) {
     const copies = pl.anchor ? 1 : perNode;
     for (let k = 0; k < copies; k++) {
@@ -319,6 +392,7 @@ function evaluateLeafNode(ctx: NodeContext, inputs: NodeInputs, p: NodeParams, b
       if (!r) continue;
       const key = pl.anchor ? pl.anchor.key : instanceKey(ctx.nodeId, pl.branch.id, pl.placement.slotIndex, k);
       const source = { key, branch: outBranch };
+      meta.push({ priority: leafPriority(p, pl.sample.u), parent: pl.branch.id, origin: r.origin });
       for (const c of r.cards) c.source = source;
       cards.push(...r.cards);
       sb.beginBranch(pl.branch.id, pl.sample.parentPoint, gen);
@@ -340,8 +414,11 @@ function evaluateLeafNode(ctx: NodeContext, inputs: NodeInputs, p: NodeParams, b
     fixWinding: cfg.fixWinding,
     ...(env.lighting ? { lighting: env.lighting } : {}),
     ...(lightingAllow ? { lightingAllow } : {}),
-    ...(batched ? { spans } : {}),
+    spans,
   });
+  const rows = spans.map((s) => ({ ...s }));
   if (batched) mesh = mergeByMaterial(mesh, spans);
+  mesh.collision = collisionTable(batched ? partRows(mesh) : rows, meta, readLeafCollision(p));
+  attachDropped(mesh, env.ground, cfg.fixWinding);
   return foliageOutput(sk, parent, mesh, sk.branches.length, ctx.seed, att.build());
 }

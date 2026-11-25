@@ -98,6 +98,32 @@ export function registerDisplacementSource(assetId: string, src: DisplacementSou
   listeners.forEach((l) => l());
 }
 
+const alphaVariation = new Map<string, boolean>();
+
+/**
+ * Does the decoded image carry a non-constant alpha channel (height stored in the alpha of a normal map)?
+ * null while the image is not decoded.
+ */
+export function sourceAlphaVaries(assetId: string): boolean | null {
+  const src = sources.get(assetId);
+  if (!src) return null;
+  const key = `${assetId}@${sourceRevision.get(assetId) ?? 0}`;
+  let v = alphaVariation.get(key);
+  if (v === undefined) {
+    v = false;
+    const first = src.rgba[3] as number;
+    for (let i = 7; i < src.rgba.length; i += 4) {
+      if (Math.abs((src.rgba[i] as number) - first) > 2) {
+        v = true;
+        break;
+      }
+    }
+    if (alphaVariation.size > 64) alphaVariation.clear();
+    alphaVariation.set(key, v);
+  }
+  return v;
+}
+
 export const hasDisplacementSource = (assetId: string): boolean => sources.has(assetId);
 
 /** Pixel size of a decoded image asset, or null while it is not decoded. */

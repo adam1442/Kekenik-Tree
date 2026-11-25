@@ -35,6 +35,7 @@ import { getSceneObjects, onSceneObjectsChange } from './viewState';
 import { buildEnvironmentFromFile, buildGradientEnvironment, getLighting, type LightingSettings } from './lighting';
 import type { FrameInfo, ViewportContent, ViewportOptions } from './types';
 import { isSurfaceMesh, ViewModeController } from './viewModes';
+import type { VcPacking } from '@/geometry/vertexColor';
 
 const DEFAULT_OPTIONS: ViewportOptions = {
   viewMode: 'shaded',
@@ -70,6 +71,7 @@ export class Viewport {
   private refineTimer = 0;
   private pixelRatio = 1;
   private readonly modes = new ViewModeController();
+  private packing: VcPacking = 'legacy';
   private readonly resizeObserver: ResizeObserver;
   private content: ViewportContent | null = null;
   private options: ViewportOptions = { ...DEFAULT_OPTIONS };
@@ -160,6 +162,22 @@ export class Viewport {
 
   getContent(): ViewportContent | null {
     return this.content;
+  }
+
+  /** Tree > Vertex Color packing decoded by the vertex colour views (re-applies the view mode when it changed). */
+  setVertexColorPacking(packing: VcPacking): void {
+    if (this.packing === packing) return;
+    this.packing = packing;
+    this.modes.setVertexColorPacking(packing);
+    if (this.content) this.modes.apply(this.content, this.options.viewMode);
+    this.requestRender();
+  }
+
+  /** Tree > Lightmap resolution used by the Lightmap density view. */
+  setLightmapResolution(resolution: number): void {
+    this.modes.setLightmapResolution(resolution);
+    if (this.content && this.options.viewMode === 'lightmapDensity') this.modes.apply(this.content, this.options.viewMode);
+    this.requestRender();
   }
 
   setOptions(patch: Partial<ViewportOptions>): void {

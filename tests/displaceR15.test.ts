@@ -366,7 +366,7 @@ describe('Displacement tab parameters and generator integration', () => {
     expect(label('Shape')).toEqual(['Amount', 'Twist', 'Scale', 'Seed']);
     expect(label('Flares')).toEqual(['Radius', 'Noise scale', 'Height', 'Pinch', 'Angle', 'Seed']);
     const source = defs.find((p) => p.id === 'displaceSource');
-    expect(source?.kind === 'enum' ? source.options.map((o) => o.label) : []).toEqual(['Noise', 'Material', 'Displacement']);
+    expect(source?.kind === 'enum' ? source.options.map((o) => o.label) : []).toEqual(['Noise', 'Material', 'Displacement', 'Bark']);
     expect(defs.filter((p) => p.subgroup === 'Main' || p.subgroup === 'Fine' || p.subgroup === 'Shape' || p.subgroup === 'Flares').every((p) => !!p.tooltip || p.id === 'displacement' || p.kind === 'seed')).toBe(true);
   });
 

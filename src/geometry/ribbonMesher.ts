@@ -1,4 +1,5 @@
 import type { MeshData } from '@/contracts/mesh';
+import { windPhase1OfTuple, type WindTuple } from './windAttributes';
 import { cross, dot, len, norm, orthogonalize, rotate, type V3 } from './math3';
 import { MeshAccumulator, newVertex, type VertexAttrs } from './meshAccumulator';
 
@@ -50,7 +51,7 @@ export interface RibbonSpec {
   atlas: [number, number, number, number];
   materialId: string;
   /** Parent wind channels (hierarchy 0..2, phase). */
-  wind: [number, number, number, number];
+  wind: WindTuple;
   /** Exponent of the bend-weight ramp along the length (wind weight w2 = t^power). */
   windPower: number;
 }
@@ -369,7 +370,7 @@ function emitRibbon(acc: MeshAccumulator, spec: RibbonSpec, fr: RibbonFrames, o:
       vx.ao = ao;
       const piv = fr.points[0] as V3;
       vx.pvx = piv[0]; vx.pvy = piv[1]; vx.pvz = piv[2];
-      vx.w0 = spec.wind[0]; vx.w1 = spec.wind[1]; vx.w2 = w2; vx.w3 = spec.wind[3];
+      vx.w0 = spec.wind[0]; vx.w1 = spec.wind[1]; vx.w2 = w2; vx.w3 = spec.wind[3]; vx.w4 = windPhase1OfTuple(spec.wind);
       verts.push(vx);
     }
   }

@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { defaultGraph } from '@/app/project/defaultGraph';
+import { starterGraph } from './fixtures/starterGraph';
 import { CancellationSource } from '@/contracts/nodes';
 import { meshTriangleCount, meshVertexCount, type MeshData } from '@/contracts/mesh';
 import { SkeletonBuilder, type Skeleton } from '@/contracts/skeleton';
@@ -248,7 +248,7 @@ describe('mesh import', () => {
 describe('default graph meshing', () => {
   const run = async (lod: number) => {
     const m = new GraphModel();
-    m.load(defaultGraph());
+    m.load(starterGraph());
     return new GraphEvaluator().evaluate(snapshotGraph(m), { seed: 1, lod, token: new CancellationSource().token });
   };
 

@@ -6,11 +6,11 @@ export const REFERENCE_GRAPHS: Record<string, NodeSpec[]> = {
     { id: 'tree', type: 'output.tree', name: 'Tree', parent: null, params: { radius: 6 } },
     {
       id: 'trunk', type: 'generator.trunk', name: 'Trunk', parent: 'tree',
-      params: { length: 7.5, radius: 0.4, taper: 0.8, flareRadius: 0.4, flareHeight: 0.12, flareLobes: 6, crownHeight: 0.3, lean: 3, noiseAmount: { value: 0.35 }, earlyNoiseAmount: 0.1, splitChance: 0.5, splitStart: 0.7, splitSpread: 32, straightness: 0.25 },
+      params: { length: 7.5, radius: 0.4, taper: 0.8, flareRadius: 0.4, flareHeight: 0.12, flareLobes: 6, crownHeight: 0.3, lean: 3, noiseAmount: { value: 0.35 }, earlyNoiseAmount: 0.1, splitsChance: 0.5, splitsBalance: 0.45, splitsSpread1: 30, splitsSpread2: 30, splitsSmoothInner: 0.4, splitsSmoothOuter: 0.65, straightness: 0.25 },
     },
     {
       id: 'big', type: 'generator.branch', name: 'Big Branches', parent: 'trunk',
-      params: { mode: 'phyllotaxy', phyllotaxyInternode: 0, phyllotaxyLimit: 13, phyllotaxySpiral: -42.492, first: 0.34, last: 0.97, length: { value: 5.2, variance: 0.2 }, crownShape: 'oval', radius: 0.13, spread: { value: 58, variance: 0.18 }, gravity: 0.1, upDown: 0.12, curvature: 0.14, noiseAmount: 0.4, splitChance: 0.4, pruneDown: 0.5 },
+      params: { mode: 'phyllotaxy', phyllotaxyInternode: 0, phyllotaxyLimit: 13, phyllotaxySpiral: -42.492, first: 0.34, last: 0.97, length: { value: 5.2, variance: 0.2 }, crownShape: 'oval', radius: 0.13, spread: { value: 58, variance: 0.18 }, gravity: 0.1, upDown: 0.12, curvature: 0.14, noiseAmount: 0.4, splitsChance: 0.4, pruneDown: 0.5 },
     },
     {
       id: 'small', type: 'generator.branch', name: 'Small Branches', parent: 'big',

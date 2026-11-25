@@ -1,6 +1,8 @@
 import type { EvaluationSummary, SceneModel } from '@/contracts/engine';
 import type { CancellationToken } from '@/contracts/nodes';
 import type { LodLevelSettings } from '../types';
+import type { DynamicLodReport } from '@/lod/dynamic';
+import { applyDynamicLevel } from './dynamicLevels';
 import { applyLodToScene } from './lodScene';
 
 /** What the LOD builder needs from the engine (`EngineHost.evaluateAt` satisfies it). */
@@ -14,11 +16,14 @@ export interface BuiltLod {
   index: number;
   level: LodLevelSettings;
   scene: SceneModel;
+  /** Dynamic LOD levels: the LOD value and triangle statistics of the level (absent for the classic thinning). */
+  dynamic?: DynamicLodReport;
 }
 
 /**
  * Generate the requested LODs: evaluate the graph at each distinct generator detail (cached by the engine), then run
- * the post-process (small-branch removal, foliage thinning + enlargement, triangle budget).
+ * the post-process: Dynamic LOD (Tree > Dynamic LOD enabled: level k = LOD value k / (n - 1), interior parts removed first, leaf grow)
+ * or else the classic one (small-branch removal, foliage thinning + enlargement, triangle budget).
  */
 export async function buildLods(source: LodSceneSource, levels: readonly LodLevelSettings[], indices: readonly number[], token: CancellationToken, onProgress?: (fraction: number) => void): Promise<BuiltLod[]> {
   const evaluated = new Map<number, SceneModel>();
@@ -32,7 +37,9 @@ export async function buildLods(source: LodSceneSource, levels: readonly LodLeve
   }
   for (const index of indices) {
     const level = levels[index] as LodLevelSettings;
-    out.push({ index, level, scene: applyLodToScene(evaluated.get(level.engineLod) as SceneModel, level, source.seed) });
+    const base = evaluated.get(level.engineLod) as SceneModel;
+    const dyn = applyDynamicLevel(base, index, levels.length, source.seed);
+    out.push(dyn ? { index, level, scene: dyn.scene, dynamic: dyn.report } : { index, level, scene: applyLodToScene(base, level, source.seed) });
   }
   onProgress?.(1);
   return out;

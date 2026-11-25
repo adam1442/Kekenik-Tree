@@ -383,7 +383,7 @@ describe('serialization / migration', () => {
   });
 });
 
-describe('Mesh and Decoration generators', () => {
+describe('Mesh, Decal and Fin generators', () => {
   type AttachSet = import('@/contracts/attachment').AttachmentSet;
   const run = (type: string, id: string, input: { skeleton: Skeleton; attachments?: AttachSet }, p: NodeParams) => {
     const out = getNodeDef(type)!.evaluate(ctx(id), { parent: [{ kind: 'Structure', value: input }] } as NodeInputs, p) as Record<string, unknown>;
@@ -412,18 +412,19 @@ describe('Mesh and Decoration generators', () => {
     for (let i = 0; i < 3; i++) close(col(child.attachments.instanceTransform, i, 3), frames[i]!.position);
   });
 
-  it('Decoration cutouts stand on the parent surface with their base pivot (not centred)', () => {
+  it.each(['generator.decal', 'generator.fin'])('%s with a cutout: anchors are exported on the skin and children are planted on them', (type) => {
     const c = cutout('deco', {}, CLUSTER_ANCHORS);
     install([c, cutout('single')]);
-    const p = params('generator.decoration', { decoShape: 'cutout-mesh', number: 6, decoOffset: 0.003 });
+    const p = params(type, { number: 6 });
     p.leafTypes = { ...(p.leafTypes as NodeParams[string]), value: [{ material: 'leaf', mesh: 'deco', weight: 1 }] as never };
-    const deco = run('generator.decoration', 'D', { skeleton: stem() }, p);
+    const deco = run(type, 'D', { skeleton: stem() }, p);
     expect(deco.attachments.instanceCount).toBeGreaterThan(0);
-    for (let i = 0; i < deco.attachments.instanceCount; i++) {
-      const o = col(deco.attachments.instanceTransform, i, 3);
-      expect(Math.hypot(o[0], o[1])).toBeCloseTo(0.02 + 0.003, 4);
+    for (let f = 0; f < deco.attachments.position.length / 3; f++) {
+      const r = Math.hypot(deco.attachments.position[f * 3]!, deco.attachments.position[f * 3 + 1]!);
+      expect(r).toBeGreaterThan(0.02 - 1e-3);
+      expect(r).toBeLessThan(0.02 + 0.5);
     }
-    // a child Leaf is planted on the decoration's anchors
+    expect(attachmentFramesOf(deco.attachments, 0).length).toBe(3);
     const child = run('generator.leaf', 'B', { skeleton: deco.skeleton, attachments: deco.attachments }, leafParams('single'));
     expect(child.skeleton.branches).toHaveLength(deco.attachments.instanceCount * 3);
   });

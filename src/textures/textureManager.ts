@@ -7,6 +7,8 @@ import { slotColorSpace } from '@/materials/shadingMath';
 import { bleedColorUnderAlpha, detectOpacityChannel, extractOpacityChannel, quantizeCutoff, type CoverageChannel } from './alphaCoverage';
 import { base64ToBytes, bytesToBase64, hashBytes, sniffImageMime } from './bytes';
 import { COVERAGE_MAX_EDGE, computeCoverageMips } from './coverageService';
+import { buildNormalMips, flipRows } from './normalMips';
+import { decodePng } from './pngDecode';
 
 export interface DecodedImage {
   bitmap: ImageBitmap;
@@ -261,6 +263,15 @@ export class TextureManager {
       hit.refs++;
       return hit.tex;
     }
+    if (slot === 'normal') {
+      const nt = this.normalTexture(assetId, res);
+      if (nt) {
+        nt.userData[POOL_KEY] = key;
+        nt.anisotropy = this.anisotropy;
+        this.pool.set(key, { tex: nt, refs: 1, bytes: Math.round((nt.image as { width: number; height: number }).width * (nt.image as { width: number; height: number }).height * 4 * 1.33) });
+        return nt;
+      }
+    }
     const img = this.ready.get(`${assetId}@${res}`);
     if (!img) {
       void this.decode(assetId, res);
@@ -278,6 +289,28 @@ export class TextureManager {
     tex.premultiplyAlpha = false;
     tex.needsUpdate = true;
     this.pool.set(key, { tex, refs: 1, bytes: Math.round(img.width * img.height * 4 * 1.33) });
+    return tex;
+  }
+
+  /**
+   * Normal map as a data texture with renormalised CPU mips (exact RGB under a low alpha: the height of the bark sets
+   * lives in the alpha channel). Only for 8-bit PNGs within the resolution limit; null = use the browser decoder path.
+   */
+  private normalTexture(assetId: string, res: number): Texture | null {
+    const bytes = this.bytesOf(assetId);
+    const png = bytes ? decodePng(bytes) : null;
+    if (!png || (res > 0 && Math.max(png.width, png.height) > res)) return null;
+    const levels = buildNormalMips(flipRows(png));
+    const base = levels[0] as { width: number; height: number; data: Uint8ClampedArray };
+    const tex = new DataTexture(new Uint8Array(base.data.buffer.slice(0)), base.width, base.height, RGBAFormat, UnsignedByteType);
+    tex.mipmaps = levels.map((l) => ({ data: new Uint8Array(l.data.buffer.slice(0)), width: l.width, height: l.height }));
+    tex.generateMipmaps = false;
+    tex.minFilter = LinearMipmapLinearFilter;
+    tex.magFilter = LinearFilter;
+    tex.wrapS = tex.wrapT = RepeatWrapping;
+    tex.colorSpace = NoColorSpace;
+    tex.flipY = false;
+    tex.needsUpdate = true;
     return tex;
   }
 

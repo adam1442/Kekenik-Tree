@@ -8,7 +8,8 @@ export type ExportUnits = 'm' | 'cm' | 'mm' | 'in' | 'ft';
 export type MergeMode = 'single' | 'perNode';
 export type LodLayout = 'files' | 'single';
 export type ImpostorMode = 'off' | 'impostor' | 'cross' | 'both';
-export type AoVertexMode = 'off' | 'multiply' | 'replace';
+/** `channelB` = bake into the B channel of the vertex colours only (R / G untouched); with the Kekenik packing B always holds the AO. */
+export type AoVertexMode = 'off' | 'multiply' | 'replace' | 'channelB';
 export type ChannelPacking = 'none' | 'orm';
 
 /** Metres per unit (the scene is authored in metres). */
@@ -45,6 +46,12 @@ export interface TextureExportSettings {
   padding: number;
   /** Write the maps next to the model (glTF uses uris, the zip gets a textures/ folder) instead of embedding. */
   external: boolean;
+  /** Packer definition id (`src/export/packing/presets.ts`); `legacy` = no extra packed textures (earlier behaviour). */
+  packer: string;
+  /** Write a tiny texture even when a packed texture is all constants (false = the constant is only reported). */
+  forceTextures: boolean;
+  /** File format of the packed maps: `png` (level 0 only) or `dds` (uncompressed RGBA8 with the whole mip chain built with the packer's mip flags). */
+  packedFormat: 'png' | 'dds';
 }
 
 export interface BakeSettings {
@@ -84,13 +91,15 @@ export interface ExportSettings {
   /** Extra uniform scale on top of the unit conversion. */
   scale: number;
   zip: boolean;
-  /** Write the Kekenik custom attributes (`_WIND_PIVOT`, `_WIND_WEIGHTS`, `_AO`). */
+  /** Write the Kekenik custom attributes (`_WIND_PIVOT`, `_WIND_WEIGHTS`, `_AO`, `_BLEND`). */
   customAttributes: boolean;
   vertexColors: boolean;
   /** Write `<name>.kekenik.json` (stats, LODs, wind, materials). */
   metadata: boolean;
   /** Re-import the exported GLB / glTF and compare the statistics. */
   verify: boolean;
+  /** Branch V-tiling for atlases: every tiled primitive spans a whole number of V repeats (top and bottom touch the atlas cell edges). */
+  vTiling: boolean;
   textures: TextureExportSettings;
   bake: BakeSettings;
   impostor: ImpostorSettings;

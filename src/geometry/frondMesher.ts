@@ -1,10 +1,12 @@
 import type { MeshData } from '@/contracts/mesh';
+import { windPhase1OfTuple, type WindTuple } from './windAttributes';
 import type { LeafLightingSettings } from '@/contracts/lighting';
 import { locateStation, mapToRibs, sampleRib, type Ribs } from './frondRibs';
 import { DEFAULT_FROND_WIND, frondWindAt, type FrondWind } from './frondWind';
 import { applyLeafLighting, isLightingActive, type FrondLightingExtras, type LightingGroup } from './leafLighting';
 import { MeshAccumulator, newVertex, type VertexAttrs } from './meshAccumulator';
 import type { V3 } from './math3';
+import type { ItemColorFn } from './vertexColor';
 
 /**
  * Meshes of the Frond generator: a cutout mesh or the plain ribbon grid mapped onto the ribs of `frondRibs.ts`.
@@ -92,8 +94,12 @@ export interface FrondSpec {
   atlas: [number, number, number, number];
   color: [number, number, number];
   colorGradient: number;
+  /** Per-frond random tint 0..1 (Kekenik packing R channel). */
+  tint?: number;
+  /** Material > Vertex Color > Mode: the colour at 0 (base) .. 1 (tip) along the frond; absent = the plain colour. */
+  colorAt?: ItemColorFn;
   ao: number;
-  wind: [number, number, number, number];
+  wind: WindTuple;
   windPower: number;
   /** Wind Weight / Cross / Boost / Ribs; absent = the plain `t^windPower` bend. */
   windSet?: FrondWind;
@@ -398,9 +404,11 @@ function emit(acc: MeshAccumulator, s: FrondSpec, uvOpt: FrondUv, vx: VertexAttr
       vx.v = L.uv[i * 2 + 1] as number;
       vx.u1 = (cx + (L.across[i] as number) * 0.5 + 0.5) / cells;
       vx.v1 = (cy + t) / cells;
-      vx.r = s.color[0] * grad * ao;
-      vx.g = s.color[1] * grad * ao;
-      vx.b = s.color[2] * grad * ao;
+      const col = s.colorAt ? s.colorAt(s.color, t) : s.color;
+      vx.r = col[0] * grad * ao;
+      vx.g = col[1] * grad * ao;
+      vx.b = col[2] * grad * ao;
+      vx.bt = s.tint ?? -1;
       vx.ao = ao;
       vx.pvx = pivot[0] as number;
       vx.pvy = pivot[1] as number;
@@ -410,6 +418,7 @@ function emit(acc: MeshAccumulator, s: FrondSpec, uvOpt: FrondUv, vx: VertexAttr
       vx.w1 = w[1] as number;
       vx.w2 = w[2] as number;
       vx.w3 = w[3] as number;
+      vx.w4 = windPhase1OfTuple(s.wind);
       acc.addVertex(vx);
     }
     const idx = L.indices;

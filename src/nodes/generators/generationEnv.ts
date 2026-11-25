@@ -6,6 +6,9 @@ import { sampleVariance } from '@/graph/engine/seeds';
 import type { Skeleton } from '@/contracts/skeleton';
 import {
   knockedOut,
+  knockedOutByForce,
+  readKnockoutForces,
+  type KnockoutForce,
   knockoutChance,
   maskGateKeeps,
   passesForceContainers,
@@ -15,7 +18,10 @@ import {
   type ForceVolume,
 } from '@/generators/common';
 import { migrateCommonGeneration } from '@/generators/common/migrate';
+import type { SeasonState } from '@/contracts/season';
+import { sampleDescendantOffset, withSeasonState } from '@/seasons';
 import { applySizeScalar, cumulativeSizeScalar, readSizeScalar, SIZE_PARAMS } from '@/generators/common/sizeScalar';
+import { extractAttachedForces } from './forcesHook';
 import { getMaterialSource } from '@/materials/materialSource';
 
 /** Everything the shared Generation filters need besides the node's own parameters. */
@@ -27,6 +33,8 @@ export interface GenerationEnv {
   zRange: readonly [number, number];
   /** Node type of the hierarchy parent. */
   parentType: string | undefined;
+  /** Attached Knockout forces. */
+  knockouts: readonly KnockoutForce[];
 }
 
 const NO_Z: readonly [number, number] = [0, 1];
@@ -64,16 +72,18 @@ export function createGenerationEnv(ctx: NodeContext, params: NodeParams, parent
     masks,
     zRange: masks.length > 0 ? skeletonZRange(parent) : NO_Z,
     parentType: ctx.parentType,
+    knockouts: ctx.knockoutForces ?? [],
   };
 }
 
 /** True when the env can remove nodes by position (Force containers or Masks assigned). */
 export const envFiltersByPosition = (env: GenerationEnv | undefined): env is GenerationEnv =>
-  env !== undefined && (env.containers.include.length > 0 || env.containers.exclude.length > 0 || env.masks.length > 0);
+  env !== undefined && (env.containers.include.length > 0 || env.containers.exclude.length > 0 || env.masks.length > 0 || env.knockouts.length > 0);
 
 /** Force containers, then Masks, for a node at `position` on a surface with the given unit normal. */
 export function keepsAtPosition(env: GenerationEnv, position: readonly [number, number, number], normal: readonly [number, number, number]): boolean {
   if (!passesForceContainers(position, env.containers, env.volumes)) return false;
+  if (env.knockouts.length > 0 && knockedOutByForce(env.knockouts, normal)) return false;
   if (env.masks.length === 0) return true;
   const [lo, hi] = env.zRange;
   return maskGateKeeps(env.masks, { position, normal, height: (position[2] - lo) / (hi - lo) });
@@ -120,13 +130,20 @@ export function withGenerationCommon(def: NodeDef): NodeDef {
       const pv = inputs.parent?.[0];
       const parentScalar = pv && pv.kind === 'Structure' ? pv.value.sizeScalar : undefined;
       const scalar = hasScalar ? cumulativeSizeScalar(parentScalar, readSizeScalar(params)) : (parentScalar ?? 1);
-      const scaled = SIZE_PARAMS[def.type] ? applySizeScalar(def.type, params, scalar) : params;
+      const sized = SIZE_PARAMS[def.type] ? applySizeScalar(def.type, params, scalar) : params;
+      // Season: the Tree's state plus this node's (and its ancestors') Descendant offset; children inherit it.
+      const parentSeason = pv && pv.kind === 'Structure' ? pv.value.season : undefined;
+      const season: SeasonState | undefined = parentSeason
+        ? { ...parentSeason, shift: parentSeason.shift + sampleDescendantOffset(params, ctx.rng.fork('seasonDescendant')) }
+        : undefined;
+      const scaled = season ? withSeasonState(sized, season) : sized;
       const tag = (out: Awaited<ReturnType<NodeDef['evaluate']>>): Awaited<ReturnType<NodeDef['evaluate']>> => {
         const own = out.children;
         if (!own || own.kind !== 'Structure') return out;
-        return { ...out, children: { kind: 'Structure', value: { ...own.value, kind: def.type, ...(Math.abs(scalar - 1) > 1e-9 ? { sizeScalar: scalar } : {}) } } };
+        return { ...out, children: { kind: 'Structure', value: { ...own.value, kind: def.type, ...(season ? { season } : {}), ...(Math.abs(scalar - 1) > 1e-9 ? { sizeScalar: scalar } : {}) } } };
       };
-      const r = evaluate(ctx, inputs, scaled);
+      const knock = readKnockoutForces(extractAttachedForces(inputs));
+      const r = evaluate(knock.length > 0 ? { ...ctx, knockoutForces: knock } : ctx, inputs, scaled);
       return r instanceof Promise ? r.then(tag) : tag(r);
     },
   };

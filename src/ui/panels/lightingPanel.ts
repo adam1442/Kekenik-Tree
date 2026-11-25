@@ -1,5 +1,5 @@
 import { getApp } from '@/app/context';
-import { getMaterialLibrary } from '@/materials/library';
+import { getSeason, setSeason } from '@/app/seasonControl';
 import { getShadingSettings, setShadingSettings } from '@/materials/shadingSettings';
 import { LIGHTING_PRESETS, applyLightingPreset, getLighting, onLightingChange, setLighting, type LightingSettings, type ShadowQuality, type ToneMappingName } from '@/viewport/lighting';
 import { hexToRgba, rgbaToHex } from '../components/colorPicker';
@@ -55,7 +55,7 @@ export function createLightingPanel(host: HTMLElement): PanelInstance {
       card('Shadows', row('Quality', createSelect({ options: ['off', 'low', 'medium', 'high', 'ultra'], value: l.shadowQuality, width: 110, onChange: (v) => setLighting({ shadowQuality: v as ShadowQuality }) })), row('Softness', num('shadowSoftness', 0, 8))),
       card('Exposure', row('Exposure', num('exposure', 0.1, 3)), row('Tone mapping', createSelect({ options: ['ACES', 'AgX', 'Neutral', 'Linear', 'None'], value: l.toneMapping, width: 110, onChange: (v) => setLighting({ toneMapping: v as ToneMappingName }) }))),
       card('Fog & background', row('Fog', checkbox(l.fog, (v) => setLighting({ fog: v }))), row('Density', num('fogDensity', 0, 0.03)), row('Use horizon colour', checkbox(l.fogFollowsHorizon, (v) => setLighting({ fogFollowsHorizon: v }))), row('Top', color('bgTop')), row('Middle', color('bgMid')), row('Bottom', color('bgBottom'))),
-      card('Season', row('Season', sliderField({ value: getMaterialLibrary().season(), min: 0, max: 1, onChange: (v) => getMaterialLibrary().setSeason(v) }))),
+      card('Season', row('Season', sliderField({ value: getSeason(app), min: 0, max: 1, onChange: (v) => setSeason(app, v, true) }))),
       card('Shading', row('Alpha threshold', sliderField({ value: sh.alphaThreshold, min: 0.01, max: 0.99, onChange: (v) => setShadingSettings({ alphaThreshold: v }) })), row('Alpha to coverage', checkbox(sh.alphaToCoverage, (v) => setShadingSettings({ alphaToCoverage: v }))), row('Translucency', checkbox(sh.translucency, (v) => setShadingSettings({ translucency: v }))), row('Transmission', sliderField({ value: sh.translucencyStrength, min: 0, max: 2, onChange: (v) => setShadingSettings({ translucencyStrength: v }) })), row('Foliage wrap', sliderField({ value: sh.foliageWrap, min: 0, max: 1, onChange: (v) => setShadingSettings({ foliageWrap: v }) })), row('Foliage sheen', sliderField({ value: sh.foliageSheen, min: 0, max: 1, onChange: (v) => setShadingSettings({ foliageSheen: v }) })), row('Baked AO', sliderField({ value: sh.vertexAo, min: 0, max: 1, onChange: (v) => setShadingSettings({ vertexAo: v }) }))),
     );
   };

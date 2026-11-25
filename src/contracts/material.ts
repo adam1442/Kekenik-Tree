@@ -47,7 +47,7 @@ export interface MaterialDef {
   variations: [RGBA, RGBA, RGBA];
   variationAmount: number;
   slots: Partial<Record<TextureSlot, MaterialSlotValue>>;
-  atlas: { scale: number; handling: 'default' | 'cutout' | 'mesh'; name: string };
+  atlas: { scale: number; handling: 'default' | 'cutout' | 'mesh' | 'forceOut'; name: string; /** Lightmap unwrap scale of the material's pieces (1 = neutral). */ unwrapScale?: number };
   maxResolution: number | null;
   backMaterialId: string | null;
   backSpacing: number;

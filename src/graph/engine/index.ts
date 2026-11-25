@@ -6,3 +6,4 @@ export * from './scheduler';
 export * from './seeds';
 export * from './snapshot';
 export * from './topology';
+export { collisionIsActive } from './collisionPass';

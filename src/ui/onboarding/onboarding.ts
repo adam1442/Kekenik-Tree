@@ -73,7 +73,7 @@ export function showWelcome(app: AppContext): void {
   const body = h(
     'div',
     'kt-welcome',
-    h('div', '', h('h1', '', 'Kekenik Tree'), h('p', '', 'Procedural plant & tree generator. Pick a species to start, then tweak its parameters, animate the wind and export a GLB.')),
+    h('div', '', h('h1', '', 'Kekenik Tree'), h('p', '', 'Procedural plant & tree generator. Pick a sample project to start, then tweak its parameters, animate the wind and export a GLB.')),
     h('div', 'kt-welcome-cols', left, h('div', '', h('h2', '', t('Start from a preset')), grid, h('div', 'kt-welcome-actions', more))),
     h('div', 'kt-welcome-foot', h('label', '', check, t('Show this window at startup')), h('span', '', `Help ▸ Welcome · ${formatShortcut('F1', isMac())} for shortcuts`)),
   );
@@ -93,7 +93,7 @@ interface TourStep {
 }
 
 export const TOUR_STEPS: readonly TourStep[] = [
-  { selector: '[data-panel="library"]', title: 'Library', text: 'Browse 16 species. Double-click one (or drag it into the viewport) to open it as a new project. “Save Current…” adds your own presets.' },
+  { selector: '[data-panel="library"]', title: 'Library', text: 'Browse the sample projects. Double-click one (or drag it into the viewport) to open it as a new project. “Save Current…” adds your own presets.' },
   { selector: '[data-panel="graph"]', title: 'Generation graph', text: 'The plant is a graph: Tree → Trunk → Branches → Leaves. Press Tab or double-click the canvas to add nodes, drag from a node’s port to connect.' },
   { selector: '[data-panel="properties"]', title: 'Properties', text: 'Select a node to edit its parameters. Hover any label for a description; the % toggle adds random variance and the green curve button varies a value along the parent.' },
   { selector: '[data-panel="viewport"]', title: 'Viewport', text: 'LMB orbit · MMB / Shift+LMB pan · wheel zoom · F frames the tree. Alt+1…8 switch view modes.' },
@@ -197,7 +197,7 @@ export function showShortcutSheet(app: AppContext): void {
 /** Shows a hint over the graph canvas while the document has no (or only the Tree) node. */
 export function installGraphEmptyHint(app: AppContext, host: HTMLElement): () => void {
   host.style.position = host.style.position || 'relative';
-  const hint = h('div', 'kt-empty-hint', h('b', '', 'Your graph is empty'), h('br'), 'Press Tab or double-click to add a Trunk, or open the Library and double-click a species.');
+  const hint = h('div', 'kt-empty-hint', h('b', '', 'Your graph is empty'), h('br'), 'Press Tab or double-click to add a Trunk, or open the Library and double-click a sample project.');
   hint.style.display = 'none';
   host.append(hint);
   const update = (): void => {

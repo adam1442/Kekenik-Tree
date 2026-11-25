@@ -75,6 +75,7 @@ export function applyGeneratorForces(skeleton: Skeleton, params: NodeParams, inp
   const falloff = clamp(getNumber(params, 'forceFalloff', 0), 0, 1);
   applyForces(skeleton, forces, {
     rng: new Rng(seed || 1).fork('forces'),
+    align: getNumber(params, 'forceAlign', 1),
     influence: (t) => influenceBase * (influenceLut ? sampleCurveLUT(influenceLut, t) : 1) * (1 - falloff * (1 - t)),
     // 0.5 is the neutral generator stiffness (the force's own stiffness is used as is).
     stiffness: (t) => (0.25 + 1.5 * stiffnessBase) * (stiffnessLut ? sampleCurveLUT(stiffnessLut, t) : 1),

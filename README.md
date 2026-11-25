@@ -19,8 +19,8 @@
 
 ## Features
 
-- **Node-based procedural generation** — a generation graph (Tree → Trunk → Branch / Root / Spine → Leaf / Frond / Cap / Decoration / Mesh) with live, cached, cancellable evaluation, undo/redo, node templates, autosave and crash recovery. The same graph and seed always produce the same plant.
-- **Generators** — Trunk, Branch, Root, Spine, Frond, Leaf, Cap, Decoration and Mesh nodes, plus Split, Knot and Cluster helpers. Every parameter has a tooltip, an optional random variance and, where it makes sense, a curve that varies it along the parent ([parameter reference](docs/PARAMETERS.md)).
+- **Node-based procedural generation** — a generation graph (Tree → Trunk → Branch / Root / Spine → Leaf / Frond / Cap / Knot / Decal / Fin / Mesh) with live, cached, cancellable evaluation, undo/redo, node templates, autosave and crash recovery. The same graph and seed always produce the same plant.
+- **Generators** — Trunk, Branch, Root, Spine, Frond, Leaf, Cap, Decal, Fin and Mesh nodes, plus Split, Knot and Cluster helpers. Every parameter has a tooltip, an optional random variance and, where it makes sense, a curve that varies it along the parent ([parameter reference](docs/PARAMETERS.md)).
 - **Forces & wind** — gravity/attractor style forces, hierarchical GPU wind (trunk, branch and leaf levels), a wind timeline and per-node wind response.
 - **Materials & texture maps** — color, opacity, normal and other slots, material sets (e.g. Summer/Autumn/Winter), masks, procedural default maps, alpha-coverage preserving mips and several viewport anti-aliasing modes.
 - **Cutout / mesh editor** — author leaf and cluster cutouts, outlines, straighten axes and attachment anchors ([details](docs/CUTOUT_ATTACHMENT.md)).
@@ -29,7 +29,7 @@
 - **LODs** — configurable LOD levels with a viewport preview.
 - **Export** — GLB, glTF, OBJ, PLY and STL, including LODs, baked ambient occlusion and billboard impostors ([export specification](docs/EXPORT_SPEC.md)).
 - **Docking UI** — dockable, tabbable and floating panels with saved layouts; an instance-level **Node mode** for per-branch editing ([details](docs/NODE_MODE.md)).
-- **Presets** — a library of 16 species built from the real graph (Oak, Maple, Spruce, Pine, Birch, Willow, Palm, Acacia, Baobab, Dead Tree, Shrub, Fern, Cactus, Succulent Rosette, Bamboo, Young Sapling), user presets and `.ktree` project import/export.
+- **Sample projects** — six real `.ktree` projects in the library (Oak, Birch, Palm, Fern, Grass, Swamp; files in `public/Sample Projects/`), user presets and `.ktree` project import/export. A new or freshly opened project contains the Tree node only.
 - **Onboarding & preferences** — welcome screen, interactive tour, shortcut cheat sheet, UI scale, navigation schemes (Kekenik, Maya-like, Blender-like) and performance mode.
 
 ## Quick start
@@ -48,17 +48,17 @@ Open the URL printed by Vite (by default `http://localhost:5173/`).
 ## Build & preview
 
 ```bash
-npm run build      # production build -> dist/index.html (one self-contained file)
+npm run build      # production build -> dist/index.html (`dist/index.html` + `dist/Sample Projects/`)
 npm run preview    # serve the production build locally
 ```
 
-The production build is a single `dist/index.html` with all JavaScript, CSS and the bundled Inter font inlined, so it runs from any URL, from a sub-path such as GitHub Pages, or straight from disk. Asset links (favicon, manifest) are relative, so no configuration is needed for sub-path hosting.
+The production build is a single `dist/index.html` with all JavaScript, CSS and the bundled Inter font inlined, so the editor runs from any URL or sub-path such as GitHub Pages. The six sample projects (about 32 MB) are not inlined: Vite copies `public/Sample Projects/` next to it as `dist/Sample Projects/` and each file is fetched only when it is opened, so serve the whole `dist/` folder (opening `index.html` straight from disk works for everything except the built-in samples; *File ▸ Open* and *Import* still work). Asset links (favicon, manifest) are relative, so no configuration is needed for sub-path hosting.
 
 Other scripts: `npm run typecheck`, `npm run lint`, `npm test`, `npm run licenses` (regenerates `THIRD_PARTY_NOTICES.md`).
 
 ## Usage basics
 
-1. **Open a species** from the Welcome window or *Window ▸ Layout ▸ Library*.
+1. **Open a sample project** from the Welcome window (or press *New* for an empty project that holds only the Tree node) or *Window ▸ Layout ▸ Library*.
 2. **Look around** in the viewport: left-drag orbit, middle-drag or `Shift`+left-drag pan, wheel zoom.
 3. **Tweak** — select a node in the *Generation* graph and edit its parameters in the *Properties* panel. `Shift+R` randomizes the seed.
 4. **Wind** — open *Window ▸ Wind & Timeline*, set direction/strength and press play.
@@ -103,7 +103,7 @@ src/
   instances/   per-instance identity and overrides (Node mode)
   viewport/    three.js viewport, overlays, gizmos, wind shader, quality
   export/      GLB / glTF / OBJ / PLY / STL writers, LODs, baking, impostors
-  presets/     species library and thumbnails
+  presets/     sample-project library (catalog, samples) and thumbnails
   app/         application shell: store, commands, projects, engine host
   ui/          docking system, panels, widgets, theme (CSS tokens)
 tests/         vitest unit and DOM tests

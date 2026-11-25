@@ -1,4 +1,4 @@
-import { VIEW_MODES, VIEW_MODE_LABELS } from '@/contracts/app';
+import { VIEW_MODES, VIEW_MODE_LABELS, type ViewMode } from '@/contracts/app';
 import { h } from '@/ui/components/dom';
 import { showInfoDialog, showPromptDialog } from '@/ui/components/dialogs';
 import type { MenuItem } from '@/ui/components/menu';
@@ -8,6 +8,7 @@ import type { DockLayout } from '@/ui/docking/types';
 import type { AppCommand } from './commands';
 import type { AppContext } from './context';
 import { deleteNamedLayout, listSavedLayouts, loadNamedLayout, saveNamedLayout } from './layoutStore';
+import { resetLightmap } from './lightmapControl';
 import { registerGraphCommands } from './graphAppCommands';
 import { registerExportCommands } from '@/export/install';
 import { registerProjectCommands } from './project/projectCommands';
@@ -21,6 +22,9 @@ export function applyLayout(app: AppContext, layout: DockLayout): void {
   app.dock?.setLayout(layout);
   app.events.emit('layout:replaced', undefined);
 }
+
+/** Vertex colour channel views: Alt+Shift+R / G / B (Alt+1..9 follow the menu order). */
+const VIEW_MODE_CHANNEL_SHORTCUTS: Partial<Record<ViewMode, string>> = { vertexColorR: 'Alt+Shift+R', vertexColorG: 'Alt+Shift+G', vertexColorB: 'Alt+Shift+B' };
 
 const USER_GUIDE_URL = 'https://github.com/adam1442/Kekenik-Tree/blob/main/docs/USER_GUIDE.md';
 
@@ -42,11 +46,12 @@ export function registerAppCommands(app: AppContext): void {
   add({ id: 'view.frame', label: 'Frame Selection', shortcut: 'F', run: () => app.viewport?.frame() });
   add({ id: 'view.frameSelection', label: 'Zoom to Selection', shortcut: 'Shift+F', run: () => app.viewport?.frameNodes(store.get().selection) });
   add({ id: 'view.reset', label: 'Reset Camera', shortcut: 'Home', run: () => app.viewport?.resetCamera() });
+  add({ id: 'lightmap.reset', label: 'Reset Lightmap', run: () => void resetLightmap(app) });
   VIEW_MODES.forEach((mode, i) =>
     add({
       id: `view.mode.${mode}`,
       label: VIEW_MODE_LABELS[mode],
-      shortcut: i < 9 ? `Alt+${i + 1}` : undefined,
+      shortcut: i < 9 ? `Alt+${i + 1}` : VIEW_MODE_CHANNEL_SHORTCUTS[mode],
       run: () => store.set({ viewMode: mode }),
       checked: () => store.get().viewMode === mode,
     }),
@@ -63,6 +68,7 @@ export function registerAppCommands(app: AppContext): void {
       | 'showSkeletonPoints'
       | 'showSkeletonRadii'
       | 'showSkeletonFrames'
+      | 'showOpenEnds'
       | 'spinesOnTop'
       | 'showAttachmentFrames',
     shortcut?: string,
@@ -84,6 +90,7 @@ export function registerAppCommands(app: AppContext): void {
   toggle('skeletonPoints', 'Skeleton: Sample Points', 'showSkeletonPoints');
   toggle('skeletonRadii', 'Skeleton: Radius Circles', 'showSkeletonRadii', 'Alt+R');
   toggle('skeletonFrames', 'Skeleton: Normal Frames', 'showSkeletonFrames', 'Alt+N');
+  toggle('openEnds', 'Show open ends', 'showOpenEnds');
 
   add({ id: 'window.maximizePanel', label: 'Maximize Panel', shortcut: 'Shift+Space', run: () => app.dock?.toggleMaximize() });
   add({ id: 'window.resetLayout', label: 'Reset Layout', run: () => applyLayout(app, defaultLayout()) });

@@ -160,7 +160,7 @@ describe('instance counts (no hidden 24 cap)', () => {
 
 describe('number slider range', () => {
   it('Number has a 0..100 soft range, a hard max >= 1000 and a performance warning threshold', () => {
-    for (const type of ['generator.trunk', 'generator.branch', 'generator.spine', 'generator.leaf', 'generator.decoration']) {
+    for (const type of ['generator.trunk', 'generator.branch', 'generator.spine', 'generator.leaf', 'generator.decal', 'generator.fin']) {
       const def = getNodeDef(type)?.params.find((p) => p.id === 'number');
       expect(def?.kind).toBe('int');
       if (def?.kind !== 'int') continue;

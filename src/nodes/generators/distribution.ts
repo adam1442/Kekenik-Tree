@@ -293,7 +293,7 @@ export function generateChildPlacements(
     });
   }
 
-  // Extend parent (seamless extensions at the tip or base of the parent). Only valid under a Branch or Trunk parent.
+  // Extend parent (seamless extensions at the tip or base of the parent). Only valid under a Branch, Trunk or Root parent.
   const extendType = asExtendType(getString(params, 'extendParent', 'none'));
   if (extendType !== 'none' && accepted.length < maxRemaining && (env === undefined || env.parentType === undefined || EXTEND_PARENT_TYPES.has(env.parentType))) {
     const extCount = Math.min(maxRemaining - accepted.length, Math.max(1, Math.round(getNumber(params, 'extendCount', 1))));

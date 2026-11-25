@@ -70,8 +70,22 @@ export interface NodeContext {
   getParentAttachments?(instanceKey: number): AttachmentFrame[];
   /** Volumes of the Force nodes in the graph (Force containers: Include / Exclude). Absent = none. */
   forceVolumes?: readonly ForceVolume[];
+  /** Knockout forces attached to this generator (nodes growing in their arrow direction are removed). Absent = none. */
+  knockoutForces?: readonly { direction: readonly [number, number, number]; sensitivity: number }[];
   /** Node type of the hierarchy parent (e.g. `generator.branch`); absent when the node has no parent. */
   parentType?: string;
+  /** Open ends that sibling generators already extend (only given to Cap nodes, see `generators/split/endClaims`). Absent = none. */
+  endClaims?: readonly EndClaim[];
+}
+
+/** Which kind of generator owns an extension. */
+export type EndClaimOwner = 'branch' | 'cap';
+
+/** An Extend parent selection of a sibling generator: the ends it selects are taken. */
+export interface EndClaim {
+  owner: EndClaimOwner;
+  /** The sibling's Extend parent type (`any`, `split-1`, ... `bottom`). */
+  type: string;
 }
 
 /** Inputs grouped by port id; ports with `multiple` receive several values. */

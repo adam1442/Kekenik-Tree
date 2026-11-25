@@ -3,7 +3,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { UndoStack } from '@/app/commands/undoStack';
 import { setApp, type AppContext, type AppEvents } from '@/app/context';
 import { GraphSession } from '@/app/graphSession';
-import { defaultGraph } from '@/app/project/defaultGraph';
+import { starterGraph } from './fixtures/starterGraph';
 import type { FileIO } from '@/app/project/fileAccess';
 import { MemoryKeyValueStore } from '@/app/project/kvStore';
 import { ProjectManager } from '@/app/project/projectManager';
@@ -136,7 +136,7 @@ function createTestApp(): { app: AppContext; dispose(): void } {
     notify: () => undefined,
   };
   setApp(app);
-  graph.loadGraph(defaultGraph());
+  graph.loadGraph(starterGraph());
   return {
     app,
     dispose: () => {

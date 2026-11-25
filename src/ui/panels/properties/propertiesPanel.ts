@@ -27,6 +27,8 @@ import { icon } from '../../icons/icons';
 import { OverrideEditor } from '@/instances/editor';
 import { reanchorOverrides, resolveOverrides, OVERRIDES_PARAM_ID, overridesParamState } from '@/instances/overrides';
 import { readForceVolume } from '@/generators/common/volumes';
+import { EXTEND_CHILD_TYPES, EXTEND_PARENT_TYPES } from '@/generators/common/extend';
+import { extendDisabledReason } from '@/generators/split/selectOpenEnds';
 import { getNodeModeView, type NodeModeView } from './nodeModeInspector';
 import { mountProjectSettingsContent, mountViewportSettingsContent } from './globalPanels';
 import {
@@ -465,6 +467,16 @@ export function createPropertiesPanel(host: HTMLElement): PanelInstance {
     return !onlyOverridden || !view || view.overridden(id);
   };
 
+  /** Generation > Extend parent (Type / Count) is disabled, with a tooltip, unless every selected node sits under a Branch generator. */
+  const extendBlockReason = (def: ParamDef, nodes: readonly GraphNode[]): string | null => {
+    if (def.id !== 'extendParent' && def.id !== 'extendCount') return null;
+    for (const n of nodes) {
+      const reason = extendDisabledReason(n.type, app.graph.model.parentOf(n.id)?.type, EXTEND_CHILD_TYPES, EXTEND_PARENT_TYPES);
+      if (reason !== null) return reason;
+    }
+    return null;
+  };
+
   // --- Update visibility & values of already-mounted rows in-place ---
   const syncMountedRowsInPlace = (): void => {
     const nodes = getSelectedNodes();
@@ -686,7 +698,7 @@ export function createPropertiesPanel(host: HTMLElement): PanelInstance {
                 nodeId: nodes.length === 1 ? (nodes[0] as GraphNode).id : undefined,
                 nodeName: nodes.length === 1 ? (nodes[0] as GraphNode).name : `${nodes.length} nodes`,
                 mixed: mixedInfo.valueMixed || mixedInfo.varianceMixed || mixedInfo.curveMixed,
-                disabled: allLocked,
+                disabled: allLocked || extendBlockReason(def, nodes) !== null,
                 pairedEnable: pairedOpt,
                 resolveDynamicOptions,
                 nodeParams: () => (nodes[0] as GraphNode).params,
@@ -708,6 +720,8 @@ export function createPropertiesPanel(host: HTMLElement): PanelInstance {
               const visible =
                 matchesParamSearch(def, currentSearchQuery) && isParamVisibleForNodes(def, paramMaps) && passesOverrideFilter(def.id);
               rowInst.setVisible(visible);
+              const blocked = extendBlockReason(def, nodes);
+              if (blocked !== null) rowInst.element.title = blocked;
               decorateRow({ def, row: rowInst });
 
               mountedEntries.push({ def, pairedEnableDef, row: rowInst });

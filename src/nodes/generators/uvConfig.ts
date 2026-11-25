@@ -3,6 +3,7 @@ import type { Rng } from '@/core/rng';
 import type { UvMaterialOptions } from '@/geometry/tubeUv';
 import { DEFAULT_UV_MAPPING, MATERIAL_INHERITED, UV_AREA_WHOLE, type ExtensionUvStyle, type PatchRow, type TilingStyle, type UvAreaLike, type UvMapping, type UvStyle, type VAnchor, type VStyle } from '@/generators/uv';
 import { getMaterialSource, resolveMaterialRef } from '@/materials/materialSource';
+import { seasonNodeValue } from '@/seasons';
 
 
 const parseStyle = (v: string): UvStyle => (v.includes('and-v') ? 'uv-locked' : v.startsWith('u-locked') ? 'u-locked' : 'unrestricted');
@@ -48,6 +49,7 @@ export function readUvMapping(params: NodeParams): UvMapping {
     optimizeSegments: getBool(params, 'uvOptimize', d.optimizeSegments),
     vTolerance: clamp(getNumber(params, 'uvVTolerance', d.vTolerance), 0, 0.5),
     tilingSeed: Math.round(getNumber(params, 'uvTilingSeed', d.tilingSeed)),
+    createSeams: getBool(params, 'uvCreateSeams', d.createSeams),
   };
   if (!legacyNormalized) return mapping;
   return { ...mapping, vStyle: 'relative', uAbsolute: 0, uRelative: 0, fractional: { enabled: true, auto: false, value: legacyU } };
@@ -107,7 +109,7 @@ export function uvMaterialOptions(params: NodeParams): UvMaterialOptions | undef
     branchRows: readBranchMaterialRows(params),
     extensionRows: readExtensionMaterialRows(params),
     areas: libraryUvAreas(),
-    resolve: (ref: string, rng: Rng): string => resolveMaterialRef(ref, rng),
+    resolve: (ref: string, rng: Rng): string => resolveMaterialRef(ref, rng, undefined, seasonNodeValue(params)),
   };
 }
 

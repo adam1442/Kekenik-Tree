@@ -13,16 +13,17 @@ import type { ParentSample } from './frames';
 import type { Placement } from './foliageCommon';
 import { anchorFrameInPose, buildCutoutFrame, cardPoseFor, defaultMetric } from '@/materials/cutouts/frame';
 import { composeFrame, type Frame } from '@/geometry/rigid';
+import { windPhase1OfTuple, type WindTuple } from '@/geometry/windAttributes';
 
 /**
- * Anchor-based child placement shared by Leaf, Mesh and Decoration.
+ * Anchor-based child placement shared by Leaf and Mesh.
  * A parent instance (a cutout card with Anchors) exports `AttachmentFrame`s; a child generator connected below it
  * plants its own cutouts ON those frames: child base = anchor position, child growth axis = anchor direction.
  */
 
 const COND_AUTO = { param: 'attachToAnchors', op: 'ne', value: 'never' } as const;
 
-/** The "Placement" section of the Generation tab (Leaf, Mesh, Decoration). */
+/** The "Placement" section of the Generation tab (Leaf, Mesh). */
 export function anchorPlacementParams(): ParamDef[] {
   const s = section('Generation', 'Placement');
   return [
@@ -176,8 +177,8 @@ export function orientAtAnchor(slot: AnchorSlot, p: NodeParams, rng: Rng, natura
 }
 
 /** Wind weights inherited from the parent at the anchor: the flutter weight grows with the anchor's `axisT`. */
-export function anchorWind(base: [number, number, number, number], axisT: number): [number, number, number, number] {
-  return [base[0], base[1], Math.min(1, base[2] + (1 - base[2]) * axisT * 0.8), base[3]];
+export function anchorWind(base: WindTuple, axisT: number): [number, number, number, number, number] {
+  return [base[0], base[1], Math.min(1, base[2] + (1 - base[2]) * axisT * 0.8), base[3], windPhase1OfTuple(base)];
 }
 
 /** Turn anchor slots into generator placements (a fake parent sample sits on every anchor). */

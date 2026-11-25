@@ -4,10 +4,31 @@ import type { EvaluationSummary, SceneModel } from '@/contracts/engine';
 import { CancelledError, CancellationSource } from '@/contracts/nodes';
 import { hashString } from '@/core/rng';
 import { getLodSettings, onLodSettingsChange } from '../settings';
+import type { LodLevelSettings } from '../types';
+import { exportLevelsFor, modelOf } from './dynamicLevels';
+import { applyDynamicLod, defaultDynamicLodConfig, lodNodeScales, lodReport, lodValueForScreen, type DynamicLodConfig, type DynamicLodMode, type DynamicLodModel } from '@/lod/dynamic';
 import { buildLods } from './lodBuilder';
 import { lodForFraction, screenFraction, sceneHeight } from './lodScene';
 
 export type PreviewMode = 'off' | 'auto' | number;
+
+/** Viewport-side Dynamic LOD controls: they override the Tree settings until the Tree's Dynamic LOD group changes. */
+export interface DynamicPreviewOverride {
+  enabled?: boolean;
+  mode?: DynamicLodMode;
+  value?: number;
+}
+
+/** What the toolbar / viewport corner show about the Dynamic LOD. */
+export interface DynamicPreviewInfo {
+  enabled: boolean;
+  mode: DynamicLodMode;
+  /** LOD value in use (the slider in manual mode, from the camera distance in screen-area mode). */
+  value: number;
+  triangles: number;
+  fullTriangles: number;
+  interiorRemovedShare: number;
+}
 
 export interface PreviewInfo {
   activeLod: number;
@@ -39,6 +60,10 @@ export class LodPreview {
   private pending: Promise<void> | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private activeLod = 0;
+  private dynOverride: DynamicPreviewOverride = {};
+  private dynBase = '';
+  private dynLast: DynamicPreviewInfo | null = null;
+  private dynValue = 0;
   private app: AppContext | null = null;
   private readonly listeners = new Set<() => void>();
   private unsubs: (() => void)[] = [];
@@ -57,6 +82,7 @@ export class LodPreview {
       }),
       app.store.select((s) => s.stats.cameraDistance, () => {
         if (this.mode === 'auto' && !this.simulate) this.refreshActive();
+        this.refreshDynamicValue();
       }),
     ];
     return () => {
@@ -96,9 +122,74 @@ export class LodPreview {
     return this.scenes.length > 0 && this.builtVersion === this.settingsVersion && this.lastFull !== null && this.builtFp === fingerprint(this.lastFull);
   }
 
+  /** Change the viewport's Dynamic LOD controls (the graph is not re-evaluated). */
+  setDynamic(patch: DynamicPreviewOverride): void {
+    this.dynOverride = { ...this.dynOverride, ...patch };
+    this.emit();
+  }
+
+  /** Effective Dynamic LOD state of the latest result (null before the first one). */
+  dynamicInfo(): DynamicPreviewInfo | null {
+    const scene = this.lastFull?.scene ?? this.app?.engine.latest?.scene;
+    if (!scene) return null;
+    const cfg = this.dynamicConfig(scene);
+    const info = this.dynLast;
+    if (!cfg.enabled) return { enabled: false, mode: cfg.mode, value: 0, triangles: scene.stats.triangles, fullTriangles: scene.stats.triangles, interiorRemovedShare: 0 };
+    return info ?? { enabled: true, mode: cfg.mode, value: this.dynValue, triangles: scene.stats.triangles, fullTriangles: scene.stats.triangles, interiorRemovedShare: 0 };
+  }
+
+  /** Tree settings merged with the viewport override (the override is dropped when the Tree's group changed). */
+  private dynamicConfig(scene: SceneModel): DynamicLodConfig & { enabled: boolean } {
+    const base = scene.dynamicLod ?? defaultDynamicLodConfig();
+    const key = JSON.stringify(base);
+    if (key !== this.dynBase) {
+      this.dynBase = key;
+      this.dynOverride = {};
+    }
+    return { ...base, enabled: this.dynOverride.enabled ?? base.enabled, mode: this.dynOverride.mode ?? base.mode, value: this.dynOverride.value ?? base.value };
+  }
+
+  private dynamicValue(cfg: DynamicLodConfig, model: DynamicLodModel): number {
+    if (cfg.mode === 'manual') return cfg.value;
+    if (model.radius <= 0) return 0;
+    return lodValueForScreen(screenFraction(this.currentDistance(), model.radius * 2, this.fov()));
+  }
+
+  /** Screen-area mode: re-apply when the camera moved far enough to change the LOD value. */
+  private refreshDynamicValue(): void {
+    const scene = this.lastFull?.scene;
+    if (!scene || this.mode !== 'off') return;
+    const cfg = this.dynamicConfig(scene);
+    if (!cfg.enabled || cfg.mode !== 'screen') return;
+    const next = this.dynamicValue(cfg, modelOf(scene, this.seed()));
+    if (Math.abs(next - this.dynValue) >= 0.01) this.emit();
+  }
+
+  private seed(): number {
+    return this.app ? activeDocument(this.app.store.get()).seed : 0;
+  }
+
+  private resolveDynamic(summary: EvaluationSummary): SceneModel {
+    const scene = summary.scene;
+    const cfg = this.dynamicConfig(scene);
+    if (!cfg.enabled) {
+      this.dynLast = null;
+      return scene;
+    }
+    const model = modelOf(scene, this.seed());
+    const value = Math.round(this.dynamicValue(cfg, model) * 200) / 200;
+    this.dynValue = value;
+    const scales = lodNodeScales(model, cfg, value);
+    const report = lodReport(model, scales, value);
+    const out = applyDynamicLod(scene, model, cfg, value);
+    this.dynLast = { enabled: true, mode: cfg.mode, value, triangles: out.stats.triangles, fullTriangles: report.fullTriangles, interiorRemovedShare: report.interiorRemovedShare };
+    return out;
+  }
+
   /** Which scene should the viewport draw for this engine result? */
   resolve(summary: EvaluationSummary): SceneModel {
-    if (this.mode === 'off' || summary.preview) return summary.scene;
+    if (summary.preview) return summary.scene;
+    if (this.mode === 'off') return this.resolveDynamic(summary);
     if (this.builtFp === fingerprint(summary) && this.builtVersion === this.settingsVersion && this.scenes.length > 0) {
       return this.scenes[Math.min(this.activeLod, this.scenes.length - 1)] as SceneModel;
     }
@@ -144,8 +235,13 @@ export class LodPreview {
     return this.simulate ? this.simulatedDistance : (this.app?.store.get().stats.cameraDistance ?? this.simulatedDistance);
   }
 
+  /** The LOD levels in use: the export settings, or the Tree's Levels count while Dynamic LOD is enabled. */
+  levels(): LodLevelSettings[] {
+    return exportLevelsFor(getLodSettings().levels, this.lastFull?.scene);
+  }
+
   private refreshActive(notify = true): void {
-    const levels = getLodSettings().levels;
+    const levels = this.levels();
     let next = this.activeLod;
     if (typeof this.mode === 'number') next = Math.min(this.mode, levels.length - 1);
     else if (this.mode === 'auto') {
@@ -175,7 +271,7 @@ export class LodPreview {
     const source = new CancellationSource();
     this.building = source;
     this.emit();
-    const levels = getLodSettings().levels;
+    const levels = this.levels();
     const version = this.settingsVersion;
     const basis = this.lastFull;
     if (!basis) {
@@ -206,7 +302,8 @@ export class LodPreview {
 
 /** Identity of a generated plant: the revision tokens of its pieces (stable across no-op re-runs). */
 function fingerprint(s: EvaluationSummary): string {
-  return String(hashString(s.scene.entries.map((e) => e.rev).join('|')));
+  const dyn = s.scene.dynamicLod?.enabled ? JSON.stringify(s.scene.dynamicLod) : '';
+  return String(hashString(s.scene.entries.map((e) => e.rev).join('|') + dyn));
 }
 
 let instance: LodPreview | null = null;

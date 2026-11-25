@@ -5,7 +5,7 @@ import { createDebugLogger } from '@/core/debugLog';
 import { EventBus } from '@/core/eventBus';
 import type { Logger } from '@/core/logger';
 import type { Store } from '@/core/store';
-import { GraphEvaluator, ParamSnapshotCache, snapshotGraph } from '@/graph/engine';
+import { collisionIsActive, GraphEvaluator, ParamSnapshotCache, snapshotGraph } from '@/graph/engine';
 import type { AppEvents } from './context';
 import type { GraphSession } from './graphSession';
 import { activeDocument } from './state';
@@ -142,9 +142,17 @@ export class EngineHost {
         if (source.token.cancelled) return null;
         this.publish(quick);
       }
+      // Leaf collision removal is a post pass: show the plain tree first, the result pops in when the pass is done.
+      let plainMs = 0;
+      if (collisionIsActive(snap, lod)) {
+        const plain = await this.evaluator.evaluate(snap, { ...common, lod, collision: false });
+        if (source.token.cancelled) return null;
+        plainMs = plain.totalMs;
+        this.publish(plain);
+      }
       const full = await this.evaluator.evaluate(snap, { ...common, lod });
       if (source.token.cancelled) return null;
-      this.lastFullMs = full.totalMs;
+      this.lastFullMs = full.totalMs + plainMs;
       this.publish(full);
       return full;
     } catch (err) {

@@ -8,14 +8,17 @@ import { evaluateBatchedLeaf, evaluateLeaf } from './foliage';
 import { migrateLegacyMaterialParam } from '@/materials/meshSelection';
 import { evaluateFrond, migrateFrondParams } from './frond';
 import { frondParams } from './frondParams';
-import { decorationParams } from './decorationParams';
-import { decorationDependencyKey, evaluateDecoration } from './decoration';
 import { displacementDependencyKey, warnDisplacement } from './displacement';
 import { evaluateCap, evaluateCluster, evaluateMeshInstances } from './instanceNodes';
 import { evaluateSpine, evaluateSplit } from './helpers';
 import { evaluateKnot } from './knot';
 import { knotParams } from './knotParams';
 import { migrateKnotParams } from './knotConfig';
+import { decalParams } from './decalParams';
+import { evaluateDecal } from './decal';
+import { finParams } from './finParams';
+import { evaluateFin } from './fin';
+import { surfaceHeightKey } from './surfaceDetail';
 import {
   animationParams,
   capParams,
@@ -35,6 +38,7 @@ import {
   materialTabParams,
   orientationParams,
   postParams,
+  leafCollisionParams,
   shapeParams,
   segmentParams,
   skinParams,
@@ -51,9 +55,11 @@ import { leafLightingParams } from './leafLightingParams';
 import { migrateLeafParams } from './foliage';
 import { migrateBranchMaterial, uvDependencyKey } from './uvConfig';
 import { withGenerationMigration } from './generationMigration';
+import { migrateLegacySplitParams } from '@/generators/split';
 import { migrateSpineParams } from '@/generators/spine';
 import { vTileDependencyKey } from './vTile';
 import { withGenerationCommon } from './generationEnv';
+import { seasonStructureParams, seasonTimingParams } from './seasonParams';
 import { withLineage } from './lineageHook';
 import { evaluateRoot } from './root';
 import { evaluateTrunk } from './trunk';
@@ -63,6 +69,8 @@ export { evaluateBranch } from './branch';
 export { evaluateRoot } from './root';
 export { evaluateSplit, evaluateSpine } from './helpers';
 export { evaluateKnot } from './knot';
+export { evaluateDecal } from './decal';
+export { evaluateFin } from './fin';
 export {
   registerExternalForceEvaluator,
   getExternalForceEvaluator,
@@ -111,11 +119,12 @@ const structureParams = (
   ...segmentParams(spine.kind, spine.segments, sides),
   ...forcesParams(),
   ...shapeParams(flareRadius, flareHeight),
-  ...skinParams(spineOnly, undefined, spine.kind === 'branch' || spine.kind === 'root', spine.kind === 'trunk' ? 'trunk' : 'child', spine.kind === 'branch'),
+  ...skinParams(spineOnly, undefined, spine.kind === 'branch' || spine.kind === 'root', spine.kind === 'trunk' ? 'trunk' : 'child', spine.kind === 'branch', spine.kind === 'root'),
   ...uvParams(spine.kind === 'branch'),
   ...lodParams(),
   ...structureDisplacementParams(),
   ...materialTabParams(spine.kind === 'branch'),
+  ...seasonStructureParams(spine.kind === 'branch'),
   ...animationParams(),
   ...handDrawnParams(),
 ];
@@ -138,6 +147,7 @@ const leafTabs = (gen: GenerationDefaults, extra: ParamDef[] = [], batched = fal
     ...lightingParams(),
     ...leafWindParams(),
     ...postParams(),
+    ...leafCollisionParams(),
   ];
   return batched ? defs.filter((d) => !BATCHED_EXCLUDED.has(d.id)) : defs;
 };
@@ -152,8 +162,8 @@ const baseNodeDefs: NodeDef[] = [
     description: 'Main stem with crown height, buttress flare, lean, gnarliness, and profile curves.',
     statsGroup: 'branches',
     ports: withChildren,
-    version: 4,
-    migrate: withGenerationMigration((params) => migrateSpineParams(params)),
+    version: 5,
+    migrate: withGenerationMigration((params) => migrateLegacySplitParams(migrateSpineParams(params))),
     params: structureParams(
       { number: 1, first: 0, last: 1, placement: true },
       { kind: 'trunk', length: 12, radius: 0.32, taper: 0.88, segments: 24, spread: 12, gravity: 0, upDown: 0.04, noiseAmount: 0.16 },
@@ -173,8 +183,8 @@ const baseNodeDefs: NodeDef[] = [
     description: 'Procedural branches grown along parent skeletons with phyllotaxis, whorls, bifurcations, and pruning.',
     statsGroup: 'branches',
     ports: withChildren,
-    version: 5,
-    migrate: withGenerationMigration((params) => migrateBranchMaterial(migrateSpineParams(params))),
+    version: 6,
+    migrate: withGenerationMigration((params) => migrateBranchMaterial(migrateLegacySplitParams(migrateSpineParams(params)))),
     params: structureParams(
       { number: 12, first: 0.2, last: 0.95, jumble: 0.2, includeBranchExtended: true, placement: true, extend: true },
       { kind: 'branch', length: 3.2, radius: 0.06, taper: 0.88, segments: 10, spread: 48, gravity: 0.16, upDown: 0.06, noiseAmount: 0.2 },
@@ -192,10 +202,10 @@ const baseNodeDefs: NodeDef[] = [
     description: 'Subterranean and buttress roots grown below ground or blended into the trunk base.',
     statsGroup: 'roots',
     ports: withChildren,
-    version: 4,
-    migrate: withGenerationMigration((params) => migrateSpineParams(params)),
+    version: 5,
+    migrate: withGenerationMigration((params) => migrateLegacySplitParams(migrateSpineParams(params))),
     params: structureParams(
-      { number: 6, first: 0, last: 0.12, jumble: 0.28, includeBranchExtended: true },
+      { number: 6, first: 0, last: 0.12, jumble: 0.28, includeBranchExtended: true, extend: true, extendNoCount: true },
       { kind: 'root', length: 3.4, radius: 0.09, taper: 0.92, segments: 12, spread: 68, gravity: 0.2, upDown: -0.25, noiseAmount: 0.28 },
       8,
       0.18,
@@ -227,8 +237,33 @@ const baseNodeDefs: NodeDef[] = [
     ports: withChildren,
     version: 2,
     migrate: withGenerationMigration((params) => migrateKnotParams(params)),
-    params: knotParams(),
+    params: [...knotParams(), ...seasonTimingParams()],
     evaluate: withLineage(evaluateKnot),
+  },
+  {
+    type: 'generator.decal',
+    category: 'generator',
+    label: 'Decal',
+    icon: 'nodeDecal',
+    color: 'var(--kt-node-cap)',
+    description: 'Flat patches projected onto the skin of a trunk, branch or root with their own material and height map: knots, lumps, cavities, scars.',
+    statsGroup: 'decorations',
+    ports: withChildren,
+    params: decalParams(),
+    evaluate: withLineage(evaluateDecal),
+    dependencyKey: surfaceHeightKey,
+  },
+  {
+    type: 'generator.fin',
+    category: 'generator',
+    label: 'Fin',
+    icon: 'nodeFin',
+    color: 'var(--kt-node-fin)',
+    description: 'Thin flaps that stand off a trunk or branch: fungus shelves, moss and lichen flaps, bark curls, with fold, curl, noise and soft lighting.',
+    statsGroup: 'decorations',
+    ports: withChildren,
+    params: finParams(),
+    evaluate: withLineage(evaluateFin),
   },
   {
     type: 'generator.spine',
@@ -239,8 +274,8 @@ const baseNodeDefs: NodeDef[] = [
     description: 'Lightweight spine-only structural guides for attaching foliage or child branches without tube geometry.',
     statsGroup: 'branches',
     ports: withChildren,
-    version: 4,
-    migrate: withGenerationMigration((params) => migrateSpineParams(params)),
+    version: 5,
+    migrate: withGenerationMigration((params) => migrateLegacySplitParams(migrateSpineParams(params))),
     params: structureParams(
       { number: 8, first: 0.15, last: 0.95, jumble: 0.2, includeBranchExtended: true, placement: true },
       { kind: 'spine', length: 1.8, radius: 0.02, taper: 0.9, segments: 8, spread: 42, gravity: 0.12, upDown: 0.05, noiseAmount: 0.12 },
@@ -298,19 +333,6 @@ const baseNodeDefs: NodeDef[] = [
     dependencyKey: (params: NodeParams): string => `${displacementDeps(params)}#${getNumber(params, 'frondHeightOffset', 0) === 0 ? '' : materialHeightKey()}`,
   },
   {
-    type: 'generator.decoration',
-    category: 'generator',
-    label: 'Decoration',
-    icon: 'nodeDecoration',
-    color: 'var(--kt-node-decoration)',
-    description: 'Cards or cutout meshes on the surface of a trunk, branch or spine: moss, mushrooms, lichen, ivy, peeling bark.',
-    statsGroup: 'decorations',
-    ports: withChildren,
-    params: [...decorationParams(), ...anchorPlacementParams(), ...passAndSizeParams()],
-    evaluate: evaluateDecoration,
-    dependencyKey: decorationDependencyKey,
-  },
-  {
     type: 'generator.meshes',
     category: 'generator',
     label: 'Mesh Instance',
@@ -323,6 +345,7 @@ const baseNodeDefs: NodeDef[] = [
       ...generationParams({ number: 6, first: 0.2, last: 1, jumble: 0.2, includeBranchExtended: true }),
       ...anchorPlacementParams(),
       ...meshGeneratorParams(),
+      ...seasonTimingParams(),
       ...forcesParams(),
       ...leafWindParams(),
       ...postParams(),

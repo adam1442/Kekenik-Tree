@@ -120,9 +120,10 @@ const copyAttr = (src: Float32Array | undefined, stride: number, map: Int32Array
 
 /**
  * Keep the components for which `keep[c]` is 1 and scale them by `scale[c]` about their base point.
- * Vertices of dropped components are removed; slots are rebuilt.
+ * Vertices of dropped components are removed; slots are rebuilt. With `anchors` (xyz per source vertex) every vertex scales about its own
+ * anchor instead of the component base (Dynamic LOD: branches shrink towards their spine).
  */
-export function subsetComponents(mesh: MeshData, comps: MeshComponents, info: ComponentInfo, keep: Uint8Array, scale: Float32Array | null): MeshData {
+export function subsetComponents(mesh: MeshData, comps: MeshComponents, info: ComponentInfo, keep: Uint8Array, scale: Float32Array | null, anchors?: Float32Array): MeshData {
   const n = mesh.positions.length / 3;
   const map = new Int32Array(n).fill(-1);
   let outCount = 0;
@@ -136,7 +137,7 @@ export function subsetComponents(mesh: MeshData, comps: MeshComponents, info: Co
       const s = scale[c] as number;
       if (s === 1) continue;
       for (let a = 0; a < 3; a++) {
-        const b = info.base[c * 3 + a] as number;
+        const b = (anchors ? anchors[i * 3 + a] : info.base[c * 3 + a]) as number;
         positions[to * 3 + a] = b + ((mesh.positions[i * 3 + a] as number) - b) * s;
       }
     }
@@ -164,12 +165,22 @@ export function subsetComponents(mesh: MeshData, comps: MeshComponents, info: Co
   const uv1 = copyAttr(mesh.uv1, 2, map, outCount);
   const colors = copyAttr(mesh.colors, 4, map, outCount);
   const ao = copyAttr(mesh.ao, 1, map, outCount);
+  const branchTint = copyAttr(mesh.branchTint, 1, map, outCount);
   if (tangents) out.tangents = tangents;
   if (uv1) out.uv1 = uv1;
   if (colors) out.colors = colors;
   if (ao) out.ao = ao;
+  if (branchTint) out.branchTint = branchTint;
   if (mesh.wind) {
     out.wind = { pivot: copyAttr(mesh.wind.pivot, 3, map, outCount) as Float32Array, weights: copyAttr(mesh.wind.weights, 4, map, outCount) as Float32Array };
+    if (mesh.wind.phase1) out.wind.phase1 = copyAttr(mesh.wind.phase1, 1, map, outCount) as Float32Array;
+  }
+  if (mesh.weld) {
+    out.weld = {
+      blend: copyAttr(mesh.weld.blend, 1, map, outCount) as Float32Array,
+      parentUv: copyAttr(mesh.weld.parentUv, 2, map, outCount) as Float32Array,
+      style: copyAttr(mesh.weld.style, 3, map, outCount) as Float32Array,
+    };
   }
   return out;
 }

@@ -3,13 +3,12 @@ import { decodeProject, encodeProject } from '@/app/project/codec';
 import { fileNameForProject } from '@/app/project/format';
 import { IndexedDbKeyValueStore, type KeyValueStore } from '@/app/project/kvStore';
 import { uid } from '@/core/id';
-import { buildSpeciesProject } from './builder';
-import { SPECIES } from './species';
+import { DEFAULT_WELCOME_PRESET_ID, loadSampleProject, SAMPLES } from './samples';
 import type { PresetCategory, PresetEntry } from './types';
 
 const USER_PREFIX = 'preset:user:';
-/** Bump when built-in species change so cached thumbnails are regenerated. */
-export const BUILTIN_REVISION = 'b1';
+/** Bump when the built-in sample projects change so cached thumbnails are regenerated. */
+export const BUILTIN_REVISION = 's1';
 
 interface UserRecord {
   id: string;
@@ -24,16 +23,18 @@ const isUserRecord = (v: unknown): v is UserRecord => {
   return typeof r.id === 'string' && typeof r.name === 'string' && typeof r.savedAt === 'number' && r.bytes instanceof Uint8Array;
 };
 
+/** The built-in sample projects (`Sample Projects/*.ktree`), default sample first. */
 export function builtinPresets(): PresetEntry[] {
-  return SPECIES.map((s) => ({
+  const ordered = [...SAMPLES.filter((s) => s.id === DEFAULT_WELCOME_PRESET_ID), ...SAMPLES.filter((s) => s.id !== DEFAULT_WELCOME_PRESET_ID)];
+  return ordered.map((s) => ({
     id: s.id,
     name: s.name,
     category: s.category,
     description: s.description,
     tags: s.tags,
     builtin: true,
-    revision: `${BUILTIN_REVISION}`,
-    load: () => Promise.resolve(buildSpeciesProject(s)),
+    revision: BUILTIN_REVISION,
+    load: () => loadSampleProject(s),
   }));
 }
 
@@ -47,7 +48,7 @@ export function filterPresets(entries: readonly PresetEntry[], query: string, ca
   });
 }
 
-/** Built-in species plus the user's local presets (stored in IndexedDB as `.ktree` bytes). */
+/** Built-in sample projects plus the user's local presets (stored in IndexedDB as `.ktree` bytes). */
 export class PresetCatalog {
   private readonly listeners = new Set<() => void>();
 

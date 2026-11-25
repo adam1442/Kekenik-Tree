@@ -1,6 +1,6 @@
 import { BufferAttribute, BufferGeometry, Box3, Group, InstancedMesh, Material, Mesh, MeshBasicMaterial, Vector3 } from 'three';
-import type { SceneModel } from '@/contracts/engine';
-import type { MeshData } from '@/contracts/mesh';
+import { entryNodeId, type SceneModel } from '@/contracts/engine';
+import { windPhase1Array, type MeshData } from '@/contracts/mesh';
 import { createDefaultMaterialResolver, type MaterialResolver } from './defaultMaterials';
 import { getMaterialResolver } from '@/materials/materialResolver';
 import { meshDataToGeometry } from './meshDataToGeometry';
@@ -43,8 +43,10 @@ function canReuse(geo: BufferGeometry, md: MeshData): boolean {
     same('tangent', md.tangents) &&
     same('color', md.colors) &&
     same('ao', md.ao) &&
+    same('branchTint', md.branchTint) &&
     same('windPivot', md.wind?.pivot) &&
     same('windWeights', md.wind?.weights) &&
+    same('windPhase1', md.wind ? windPhase1Array(md.wind) : undefined) &&
     same('weldBlend', md.weld?.blend) &&
     same('weldParentUV', md.weld?.parentUv) &&
     same('weldStyle', md.weld?.style) &&
@@ -69,8 +71,10 @@ function writeInto(geo: BufferGeometry, md: MeshData): void {
   put('tangent', md.tangents);
   put('color', md.colors);
   put('ao', md.ao);
+  put('branchTint', md.branchTint);
   put('windPivot', md.wind?.pivot);
   put('windWeights', md.wind?.weights);
+  put('windPhase1', md.wind ? windPhase1Array(md.wind) : undefined);
   put('weldBlend', md.weld?.blend);
   put('weldParentUV', md.weld?.parentUv);
   put('weldStyle', md.weld?.style);
@@ -121,6 +125,7 @@ export class SceneSync {
     showPoints: true,
     showRadii: true,
     showFrames: false,
+    showOpenEnds: false,
   };
   private readonly skelMaterials = createSkeletonDebugMaterials();
   private readonly hiddenMaterial = new MeshBasicMaterial({ visible: false });
@@ -161,7 +166,7 @@ export class SceneSync {
         const geo = meshDataToGeometry(e.mesh);
         applyGroups(geo, e.mesh);
         const mesh = createMesh(geo, this.materialsFor(e.mesh), e.mesh);
-        mesh.userData.nodeId = e.nodeId;
+        mesh.userData.nodeId = entryNodeId(e.nodeId);
         mesh.userData.baseMaterial = mesh.material;
         this.wind.decorateMesh(mesh, e.wind);
         mesh.castShadow = true;
@@ -178,7 +183,7 @@ export class SceneSync {
         const geo = meshDataToGeometry(e.mesh);
         applyGroups(geo, e.mesh);
         const mesh = createMesh(geo, this.materialsFor(e.mesh), e.mesh);
-        mesh.userData.nodeId = e.nodeId;
+        mesh.userData.nodeId = entryNodeId(e.nodeId);
         mesh.userData.baseMaterial = mesh.material;
         this.wind.decorateMesh(mesh, e.wind);
         mesh.castShadow = true;
@@ -272,6 +277,7 @@ export class SceneSync {
       bones: scene.stats.bones,
       skeletonBranches: scene.stats.skeletonBranches ?? 0,
       skeletonPoints: scene.stats.skeletonPoints ?? 0,
+      ...(scene.stats.collision ? { collision: scene.stats.collision } : {}),
     };
     return changed;
   }
@@ -362,7 +368,7 @@ export class SceneSync {
     piece.back?.removeFromParent();
     const mats = backs.map((b) => b ?? this.hiddenMaterial);
     const back = new Mesh(piece.mesh.geometry, mats.length > 1 ? mats : (mats[0] as Material));
-    back.userData.nodeId = e.nodeId;
+    back.userData.nodeId = entryNodeId(e.nodeId);
     back.userData.baseMaterial = back.material;
     back.userData.isBackFace = true;
     back.castShadow = true;

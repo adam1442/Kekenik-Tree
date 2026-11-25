@@ -66,7 +66,7 @@ export function installPresetDrop(app: AppContext, area: HTMLElement): () => voi
   };
 }
 
-/** Dockable "Library" panel: searchable species browser with cached thumbnails, user presets and `.ktree` import / export. */
+/** Dockable "Library" panel: searchable sample-project browser with cached thumbnails, user presets and `.ktree` import / export. */
 export function createLibraryPanel(host: HTMLElement): PanelInstance {
   const app = getApp();
   const catalog = getPresetCatalog();

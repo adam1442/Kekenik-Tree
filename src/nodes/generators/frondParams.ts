@@ -1,7 +1,9 @@
 import type { ParamDef } from '@/contracts/params';
+import { dynamicLodGeneratorParams, lightmapGeneratorParams } from './dynamicLodParams';
 import { section } from '../shared/builders';
 import { defaultMeshLodCurve } from './leafDeformParams';
 import { frondLightingParams } from './frondLightingParams';
+import { seasonTimingParams } from './seasonParams';
 import { displacementParams, leafMaterialParams, leafWindParams } from './params';
 
 /**
@@ -95,9 +97,11 @@ export function frondParams(): ParamDef[] {
 
     lod.float('lodSegments', 'Segment reduction', 0.5, { min: 0, max: 0.9, tooltip: 'Fraction of the rib accuracy and ribbon width segments removed per LOD step.' }),
     lod.float('lodCull', 'Cull amount', 0, { min: 0, max: 1, tooltip: 'Fraction of fronds removed at the lowest LOD (the survivors are widened).' }),
+    ...dynamicLodGeneratorParams('LOD', 'Dynamic LOD', false, false),
+    ...lightmapGeneratorParams(0),
     lod.float('lodWidthBoost', 'Width boost', 0.5, { min: 0, max: 2, tooltip: 'How much the remaining fronds are widened when fronds are culled.' }),
   ];
-  const material = leafMaterialParams().filter((d) => d.subgroup === 'Leaves' || d.subgroup === 'Vertex Color');
+  const material = [...leafMaterialParams().filter((d) => d.subgroup === 'Leaves' || d.subgroup === 'Vertex Color'), ...seasonTimingParams()];
   const materialExtras: ParamDef[] = [
     fm.bool('frondFlip', 'Flip', false, { tooltip: 'Mirrors a random half of the fronds across the spine (the local Y axis).' }),
     fm.bool('frondTwoSided', 'Two sided', false, { tooltip: 'Duplicates the geometry for the back side. The two layers overlap, which can show under strong wind.' }),

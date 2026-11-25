@@ -1,11 +1,12 @@
 import { curveToLUT, evaluateCurve, sampleCurveLUT, type Curve } from '@/contracts/curve';
+import { lodLengthFactor, readGeneratorLod } from './dynamicLodParams';
 import type { CancellationToken, NodeInputs } from '@/contracts/nodes';
 import { getBool, getNumber, getString, type NodeParams } from '@/contracts/params';
 import { clamp, deg2rad } from '@/core/math';
 import { createSimplex, type SimplexNoise } from '@/core/noise';
 import type { Rng } from '@/core/rng';
 import { sampleVariance } from '@/graph/engine/seeds';
-import { clampRadius, compensateTipRadii, exceedsKillRatio, isSpineOnly, skinBaseRadius, type SkinRadiusSettings } from '@/generators/skin';
+import { clampRadius, compensateTipRadii, createRadiusNoise, exceedsKillRatio, irregularityEndFade, isSpineOnly, skinBaseRadius, type RadiusNoise, type SkinRadiusSettings } from '@/generators/skin';
 import {
   LENGTH_BASIS,
   applyJink,
@@ -37,22 +38,44 @@ import {
   zigzagKick,
   zigzagSegmentLength,
 } from '@/generators/spine';
+import { WIND_HOST_ATTR } from '@/geometry/windAttributes';
 import {
   EXTENSION_ATTR,
+  EXTENSION_GROUP_VALUE,
   EXTENSION_DISPLACE_ATTR,
   EXTENSION_SMOOTH_ATTR,
   SPLIT_ATTR,
+  SPINE_ORIGIN_ATTR,
+  SpineOrigin,
+  sampleSplitSettings,
+  SPLIT_EXPAND_ATTR,
+  SPLIT_SMOOTH_INNER_ATTR,
+  SPLIT_SHAPE_ATTRS,
+  NEUTRAL_SPLIT_SHAPE,
+  isSplitShapeNeutral,
+  splitShapeOf,
+  SPLIT_SMOOTH_OUTER_ATTR,
+  SplitFlag,
   applyExtensionSpread,
-  computeSplit,
+  decideSplit,
+  planSplit,
+  sampleSpineBack,
+  splitTransitionLength,
   extensionRadiusFactor,
+  blendExtensionStart,
+  extensionStartSampleIndex,
   extensionSpreadAngle,
   splitFlags,
+  effectiveSplitSides,
+  type SplitSettings,
+  VIRTUAL_SPLIT_FORK_FRACTION,
+  VIRTUAL_SPLIT_STUB_RADII,
 } from '@/generators/split';
+import type { Logger } from '@/core/logger';
 import { readExtensionConfig, readSplitConfig, type ExtensionConfig, type SplitConfig } from './splitConfig';
 import { compileSpineForceHook, type CompiledSpineForceHook } from './forcesHook';
 import {
   advanceRMF,
-  orthonormalNormal,
   rotateAroundAxis,
   selectAdaptiveSampleIndices,
   v3Add,
@@ -79,6 +102,27 @@ function getCurveValue(params: NodeParams, id: string): Curve | null {
 function evalParentCurve(params: NodeParams, id: string, u: number, fallback = 1): number {
   const c = params[id]?.curve;
   return c ? evaluateCurve(c, u) : fallback;
+}
+
+/** Skin > Irregularity settings of a spine (null when the amount is 0: the neutral default). */
+function compileRadiusNoise(params: NodeParams): CompiledSpineConfig['radiusNoise'] {
+  const amount = clamp(getNumber(params, 'radiusNoiseAmount', 0), 0, 0.6);
+  if (amount <= 0) return null;
+  const curve = params.radiusNoiseAmount?.curve;
+  return {
+    amount,
+    noise: createRadiusNoise(getNumber(params, 'radiusNoiseScale', 1.5), getNumber(params, 'radiusNoiseSeed', 1)),
+    alongLut: curve ? curveToLUT(curve, 256) : null,
+  };
+}
+
+/** Radius factor of the irregularity at arc length `s` (metres) / normalised position `f` of a spine attached at `parentU`. */
+export function irregularityFactor(cfg: CompiledSpineConfig, s: number, f: number, phase: number, parentU: number, fade = 1): number {
+  const n = cfg.radiusNoise;
+  if (!n) return 1;
+  const along = n.alongLut ? Math.max(0, sampleCurveLUT(n.alongLut, clamp(f, 0, 1))) : 1;
+  const parent = Math.max(0, evalParentCurve(cfg.params, 'radiusNoiseParent', parentU, 1));
+  return n.noise.factor(s, phase, n.amount * along * parent * fade);
 }
 
 export interface CompiledSpineConfig {
@@ -190,11 +234,6 @@ export interface CompiledSpineConfig {
   readonly pathTwistRad: number;
   readonly pathLut: Float32Array | null;
 
-  readonly splitChance: number;
-  readonly splitSpreadDeg: number;
-  readonly splitBalance: number;
-  readonly splitStart: number;
-  readonly splitMaxDepth: number;
   /** Skin > Splits: the branch ends in two fused open ends. */
   readonly splits: SplitConfig;
   /** Branch > Extensions: shape of the extensions made by this node's Extend parent. */
@@ -224,6 +263,12 @@ export interface CompiledSpineConfig {
   readonly flareLut: Float32Array | null;
   readonly bulgeLut: Float32Array | null;
   readonly twistLut: Float32Array | null;
+  /** Skin > Irregularity: slow wobble of the radius (null = off). */
+  readonly radiusNoise: {
+    readonly amount: number;
+    readonly noise: RadiusNoise;
+    readonly alongLut: Float32Array | null;
+  } | null;
 }
 
 export function compileSpineConfig(
@@ -250,12 +295,15 @@ export function compileSpineConfig(
           1,
         );
 
+  const genLod = readGeneratorLod(params);
+  const lengthLod = lodLengthFactor(genLod, lod);
+
   const rawAccuracy = Math.max(4, Math.min(256, Math.round(getNumber(params, 'accuracy', 32))));
   const accuracy = lod >= 2 ? Math.max(4, Math.round(rawAccuracy * 0.5)) : rawAccuracy;
   const segmentScalar = clamp(getNumber(params, 'segmentScalar', 1), 0.1, 4);
-  const baseSegments = Math.max(1, Math.round(getNumber(params, 'segments', 12) * lodFactor * segmentScalar));
-  const relativeSegments = Math.max(0, getNumber(params, 'relativeSegments', 0) * lodFactor * segmentScalar);
-  const optimizationRad = deg2rad(clamp(getNumber(params, 'optimization', 0), 0, 45));
+  const baseSegments = Math.max(1, Math.round(getNumber(params, 'segments', 12) * lodFactor * lengthLod * segmentScalar));
+  const relativeSegments = Math.max(0, getNumber(params, 'relativeSegments', 0) * lodFactor * lengthLod * segmentScalar);
+  const optimizationRad = deg2rad(clamp(getNumber(params, 'optimization', 0) + genLod.optimization * Math.min(3, Math.max(0, lod)), 0, 45));
   const matchOneVTile = getBool(params, 'matchOneVTile', false);
 
   const radiusProfileCurve = getCurveValue(params, 'radiusProfile');
@@ -372,11 +420,6 @@ export function compileSpineConfig(
     pathTwistRad: deg2rad(getNumber(params, 'pathTwist', 0)),
     pathLut: pathProfileCurve ? curveToLUT(pathProfileCurve, 256) : null,
 
-    splitChance: clamp(getNumber(params, 'splitChance', 0), 0, 1),
-    splitSpreadDeg: clamp(getNumber(params, 'splitSpread', 26), 2, 85),
-    splitBalance: clamp(getNumber(params, 'splitBalance', 0.5), 0.15, 0.85),
-    splitStart: clamp(getNumber(params, 'splitStart', 0.55), 0.15, 0.9),
-    splitMaxDepth: Math.max(1, Math.min(3, Math.round(getNumber(params, 'splitMaxDepth', 1)))),
     splits: readSplitConfig(params),
     extension: readExtensionConfig(params),
 
@@ -401,6 +444,7 @@ export function compileSpineConfig(
     flareLut: params.flareRadius?.curve ? curveToLUT(params.flareRadius.curve, 256) : null,
     bulgeLut: params.bulgeAmount?.curve ? curveToLUT(params.bulgeAmount.curve, 256) : null,
     twistLut: params.twist?.curve ? curveToLUT(params.twist.curve, 256) : null,
+    radiusNoise: compileRadiusNoise(params),
   };
 }
 
@@ -420,8 +464,6 @@ export interface SpineSpawnSpec {
   lengthOverride?: number;
   /** Optional explicit base radius override (used by daughter splits). */
   baseRadiusOverride?: number;
-  /** Current recursive split depth within this spine (0 = primary stem). */
-  splitDepth?: number;
   /** Per-instance multiplier of the computed length (Node mode override). */
   lengthScale?: number;
   /** Per-instance multiplier of the computed base radius (Node mode override). */
@@ -432,10 +474,32 @@ export interface SpineSpawnSpec {
   extensionIndex?: number;
   extensionCount?: number;
   extensionAzimuth?: number;
+  /**
+   * Count 2 on one open end: this spine is the short shared stub of a virtual split. It forks into two extensions (the fused crotch of
+   * S2); the two halves are grown from the fork's open ends with this spec's Length scale.
+   */
+  extensionPair?: boolean;
   /** Length segments of the parent branch (Relative basis: Parent's length segments). */
   parentLengthSegments?: number;
   /** Radial segments of the parent branch (Relative basis: Parent's radial segments). */
   parentRadialSegments?: number;
+  /** Counters the caller turns into node messages (optional). */
+  notes?: SpineNotes;
+}
+
+/** Things worth telling the user that the spine noticed while growing (the caller reports them once per node). */
+export interface SpineNotes {
+  /** Branches whose U tile count was odd and has been raised to the next even number because they split. */
+  splitTilesPromoted: number;
+}
+
+export const newSpineNotes = (): SpineNotes => ({ splitTilesPromoted: 0 });
+
+/** Surfaces the spine notes as node warnings (shown in the inspector / node badge); nothing is logged when there is nothing to say. */
+export function reportSpineNotes(logger: Logger, notes: SpineNotes): void {
+  if (notes.splitTilesPromoted > 0) {
+    logger.warn(`Skin > Splits: the U tile count of ${notes.splitTilesPromoted} splitting branch(es) was odd and has been raised to the next even number (a split needs an even count, at least 2). Set UV > U to an even value to remove this notice.`);
+  }
 }
 
 /**
@@ -582,6 +646,17 @@ export function evaluateSpineRadius(
   return Math.max(cfg.minRadius, core + flareAdd + bulgeAdd);
 }
 
+/** Makes sure the first segment of an extension ends inside the start blend, so its chord follows the open end's direction. */
+function withStartSample(sampleIdx: Int32Array, densePos: ArrayLike<number>, denseCount: number, radius: number): Int32Array {
+  const at = extensionStartSampleIndex(densePos, denseCount, radius);
+  if (at <= 0 || sampleIdx.length < 2 || (sampleIdx[1] as number) <= at) return sampleIdx;
+  const out = new Int32Array(sampleIdx.length + 1);
+  out[0] = sampleIdx[0] as number;
+  out[1] = at;
+  for (let i = 1; i < sampleIdx.length; i++) out[i + 1] = sampleIdx[i] as number;
+  return out;
+}
+
 /**
  * Integrates one spine (plus any bifurcated split daughters) and appends the resulting branch(es)
  * into `builder`. Returns the number of branches written.
@@ -595,39 +670,41 @@ export function growSpineIntoBuilder(
 ): number {
   cancel?.throwIfCancelled();
 
-  const splitDepth = spec.splitDepth ?? 0;
-  if (splitDepth === 0 && shouldPruneBranch(cfg, spec, rng)) {
+  // Extensions continue an open end: they are never pruned (Prune up / down / interior / ground / general belong to ordinary children)
+  if (!spec.isExtension && shouldPruneBranch(cfg, spec, rng)) {
     return 0;
   }
 
+  const isPairStub = spec.isExtension && spec.extensionPair === true;
   const baseRadius = computeBaseRadius(cfg, spec, rng) * Math.max(0.01, spec.radiusScale ?? 1);
-  const fullLength = computeBranchLength(cfg, spec, rng, baseRadius) * Math.max(0.01, spec.lengthScale ?? 1);
-  if (splitDepth === 0 && exceedsKillRatio(fullLength, baseRadius, cfg.skinRadius.killRatio)) return 0;
+  // The stub of a virtual split has its own short length (the Length scale belongs to the two extensions that leave it)
+  const fullLength = isPairStub
+    ? Math.max(0.02, VIRTUAL_SPLIT_STUB_RADII * baseRadius)
+    : computeBranchLength(cfg, spec, rng, baseRadius) * Math.max(0.01, spec.lengthScale ?? 1);
+  if (!isPairStub && exceedsKillRatio(fullLength, baseRadius, cfg.skinRadius.killRatio)) return 0;
 
   // Determine break / termination behavior
-  const isForkMode = cfg.termination === 'fork' && splitDepth === 0;
   const breakRng = cfg.breakSeed === 0 ? rng : rng.fork(`brkSeed${cfg.breakSeed}`);
   const isBroken =
-    splitDepth === 0 && (cfg.termination === 'broken' || breaks(cfg.breakChance, breakRng.fork('brk').next()));
+    !isPairStub && (cfg.termination === 'broken' || breaks(cfg.breakChance, breakRng.fork('brk').next()));
   const fBreak = isBroken
     ? clampBreakSpot(sampleVariance(breakRng.fork('brkSpot'), cfg.breakSpot, cfg.breakSpotVar, 0.35))
     : 1;
 
-  // Determine split / bifurcation behavior
-  const willSplit =
-    !isBroken &&
-    splitDepth < cfg.splitMaxDepth &&
-    (isForkMode || (cfg.splitChance > 0 && rng.fork('spl').chance(cfg.splitChance)));
-  const fSplit = willSplit
-    ? clamp(isForkMode ? 0.62 : cfg.splitStart + rng.fork('splPos').range(-0.1, 0.1), 0.2, 0.85)
-    : 1;
+  // Skin > Splits: the ONE split engine of Trunk, Branch and Root (not combined with a break). Its own stream: the Splits seed
+  // changes nothing but this decision, the variances and the plan below.
+  const splitsRng = rng.fork(`splits${cfg.splits.seed}`);
+  const sampledSplit = sampleSplitSettings(cfg.splits.chance, cfg.splits.settings, cfg.splits.variance, splitsRng);
+  const splitDecision =
+    !isBroken && !isPairStub && sampledSplit.chance > 0
+      ? decideSplit(splitsRng, sampledSplit.chance, 1, cfg.splits.tilesAt(baseRadius))
+      : null;
+  const splitsHere = splitDecision?.split === true;
+  if (splitDecision?.split && splitDecision.promoted && spec.notes) spec.notes.splitTilesPromoted += 1;
+  const isExtensionSpine = spec.isExtension;
+  const pairRng = isPairStub ? rng.fork('extPair') : null;
 
-  // Skin > Splits: the tip is fused into two open ends (not combined with a break or the legacy fork)
-  const splitsHere =
-    splitDepth === 0 && !isBroken && !willSplit && cfg.splits.chance > 0 && rng.fork(`splits${cfg.splits.seed}`).chance(cfg.splits.chance);
-  const isExtensionSpine = spec.isExtension && splitDepth === 0;
-
-  const fEnd = willSplit ? fSplit : fBreak;
+  const fEnd = fBreak;
   const activeLength = Math.max(0.015, fullLength * fEnd);
 
   const curv = sampleVariance(rng.fork('curv'), cfg.curvatureBase, cfg.curvatureVar, 0.5);
@@ -684,8 +761,8 @@ export function growSpineIntoBuilder(
       const gate = earlyNoiseGate(f, cfg.earlyNoiseThreshold, cfg.earlyThresholdLut ? sampleCurveLUT(cfg.earlyThresholdLut, f) : 1);
       const eAmp = cfg.earlyNoiseAmount * eCurve * gate * straightDamp * (1 / Math.sqrt(steps)) * 1.4;
       if (eAmp !== 0) {
-        const nx = cfg.earlyNoise.noise3(f * cfg.earlyNoiseFreq * 2.3 + noisePhase, 1.7, splitDepth * 3.1);
-        const ny = cfg.earlyNoise.noise3(f * cfg.earlyNoiseFreq * 2.3 + noisePhase, 8.9, splitDepth * 3.1 + 4.2);
+        const nx = cfg.earlyNoise.noise3(f * cfg.earlyNoiseFreq * 2.3 + noisePhase, 1.7, 0);
+        const ny = cfg.earlyNoise.noise3(f * cfg.earlyNoiseFreq * 2.3 + noisePhase, 8.9, 4.2);
         nextDir = v3Add(nextDir, v3Add(v3Scale(curN, nx * eAmp), v3Scale(curB, ny * eAmp)));
       }
     }
@@ -820,6 +897,9 @@ export function growSpineIntoBuilder(
     applyPath(densePos, denseNrm, denseCount, path);
   }
 
+  // Extensions start exactly along the open end's direction; the spine's own curvature takes over gradually (first 1.5 radii)
+  if (isExtensionSpine) blendExtensionStart(densePos, denseCount, spec.initialFrame.tangent, baseRadius);
+
   // Extensions that share an open end fan out: Spread x its profile along the extension (the base keeps the parent's direction)
   if (isExtensionSpine && (spec.extensionCount ?? 1) > 1) {
     const az = spec.extensionAzimuth ?? 0;
@@ -836,6 +916,7 @@ export function growSpineIntoBuilder(
   // Ground prune: a branch that intersects the ground plane is removed with the Ground probability
   if (
     spec.hasParent &&
+    !spec.isExtension &&
     cfg.pruneGround > 0 &&
     groundPrunes(
       cfg.pruneGround,
@@ -864,6 +945,7 @@ export function growSpineIntoBuilder(
   if (spec.hasParent && !spec.isExtension && Math.abs(cfg.weldScalar - 1) > 1e-3) {
     sampleIdx = reshapeWeldSamples(densePos, denseCount, sampleIdx, Math.min(activeLength * 0.4, baseRadius * 4), cfg.weldScalar);
   }
+  if (isExtensionSpine) sampleIdx = withStartSample(sampleIdx, densePos, denseCount, baseRadius);
   const outCount = sampleIdx.length;
   if (outCount < 2) return 0;
 
@@ -879,7 +961,7 @@ export function growSpineIntoBuilder(
   const outU = new Float32Array(outCount);
 
   const effectiveTaperScale =
-    willSplit || splitsHere ? 0.35 : cfg.termination === 'blunt' ? 0.35 : isBroken ? 0.65 : 1;
+    splitsHere ? 0.35 : cfg.termination === 'blunt' ? 0.35 : isBroken ? 0.65 : 1;
 
   for (let k = 0; k < outCount; k++) {
     const si = sampleIdx[k] as number;
@@ -889,10 +971,14 @@ export function growSpineIntoBuilder(
     outPos[k * 3 + 1] = densePos[si * 3 + 1] as number;
     outPos[k * 3 + 2] = densePos[si * 3 + 2] as number;
     outRad[k] = evaluateSpineRadius(cfg, baseRadius, f, noisePhase, effectiveTaperScale);
+    if (cfg.radiusNoise && !isExtensionSpine && !isPairStub) {
+      outRad[k] = Math.max(cfg.minRadius, (outRad[k] as number) * irregularityFactor(cfg, f * fullLength, f, noisePhase * 0.37, spec.parentU, irregularityEndFade(f / Math.max(1e-6, fEnd), splitsHere)));
+    }
     if (isExtensionSpine && extRadius.value > 0 && extRadius.lut) {
       outRad[k] = (outRad[k] as number) * extensionRadiusFactor(extRadius.value, extRadius.c0, sampleCurveLUT(extRadius.lut, localU));
     }
     outU[k] = localU;
+    if (isPairStub) outRad[k] = baseRadius;
     outAges[k] = isBroken ? 1 - f : 1 - localU;
     const twFactor = cfg.twistLut ? sampleCurveLUT(cfg.twistLut, f) : f;
     outTwists[k] = totalTwistRad * twFactor;
@@ -902,7 +988,7 @@ export function growSpineIntoBuilder(
   if (sr.lengthCompensation > 0) compensateTipRadii(outRad, outU, sr.lengthCompensation);
   if (sr.min > 0 || sr.max > 0) for (let k = 0; k < outCount; k++) outRad[k] = clampRadius(outRad[k] as number, sr.min, sr.max);
 
-  const radialSides = radialSegmentCount({
+  const ownSides = radialSegmentCount({
     absolute: cfg.radialAbsolute,
     relative: cfg.radialRelative,
     basis: cfg.radialBasis,
@@ -910,6 +996,10 @@ export function growSpineIntoBuilder(
     parentSides: spec.parentRadialSegments ?? 0,
     scalar: cfg.segmentScalar,
   });
+  // An extension continues its open end ring by ring: it takes the end's radial count; a spine that splits needs an even count >= 6
+  // (the mesher raises it the same way, so the children read the effective number)
+  const inheritedSides = isExtensionSpine && (spec.parentRadialSegments ?? 0) >= 3 ? (spec.parentRadialSegments as number) : ownSides;
+  const radialSides = splitsHere || isPairStub ? effectiveSplitSides(inheritedSides) : inheritedSides;
   const added = builder.addPolylineBranch({
     parentBranch: spec.parentBranch,
     parentPoint: spec.parentPoint,
@@ -930,136 +1020,106 @@ export function growSpineIntoBuilder(
 
   // Extensions continue the parent's end seamlessly (the mesher adds no junction ring or collar for them)
   if (isExtensionSpine) {
-    builder.setBranchExtra(added.branchId, EXTENSION_ATTR, 1);
+    builder.setBranchExtra(added.branchId, SPINE_ORIGIN_ATTR, SpineOrigin.Extension);
+    builder.setBranchExtra(added.branchId, EXTENSION_ATTR, (spec.extensionCount ?? 1) > 1 ? EXTENSION_GROUP_VALUE : 1);
     if (cfg.extension.normalSmooth > 0) builder.setBranchExtra(added.branchId, EXTENSION_SMOOTH_ATTR, cfg.extension.normalSmooth);
     if (Math.abs(cfg.extension.displaceScale - 1) > 1e-6) builder.setBranchExtra(added.branchId, EXTENSION_DISPLACE_ATTR, cfg.extension.displaceScale);
   }
 
-  // Pass 3b: Skin > Splits. The tip is fused into two short sides; both are open ends that Extend parent / Cap continue.
-  if (splitsHere && outCount >= 2) {
-    const tipIndex = added.end;
+  // Pass 3b: Skin > Splits. The parent spine is not cut: the last stretch of it is the shared body and both halves leave it
+  // along a smooth path, ending as two tangent circles (the open ends that Extend parent / Cap continue).
+  if ((splitsHere || isPairStub) && outCount >= 2) {
     const last = (outCount - 1) * 3;
     const prev = (outCount - 2) * 3;
     const tip: Vec3 = [outPos[last] as number, outPos[last + 1] as number, outPos[last + 2] as number];
+    const lastStep = Math.hypot(tip[0] - (outPos[prev] as number), tip[1] - (outPos[prev + 1] as number), tip[2] - (outPos[prev + 2] as number));
     const tangent = v3Norm([tip[0] - (outPos[prev] as number), tip[1] - (outPos[prev + 1] as number), tip[2] - (outPos[prev + 2] as number)], curT);
-    const roll = (rng.fork(`splitsRoll${cfg.splits.seed}`).next() - 0.5) * 0.6;
-    const sides = computeSplit({
-      tip,
-      radius: outRad[outCount - 1] as number,
-      tangent,
-      away: [tip[0], tip[1], 0],
-      roll,
-      settings: cfg.splits.settings,
+    const tipRadius = outRad[outCount - 1] as number;
+    // Virtual split (Count 2): the fork starts a fixed fraction back on the stub and both halves leave it with Extensions > Spread
+    const axisStart = sampleSpineBack(outPos, outCount, isPairStub ? activeLength * VIRTUAL_SPLIT_FORK_FRACTION : splitTransitionLength(tipRadius, activeLength));
+    const splitSettings: SplitSettings = isPairStub
+      ? { ...cfg.splits.settings, balance: 0.5, spread1Deg: cfg.extension.spreadDeg, spread2Deg: cfg.extension.spreadDeg, expand1: 1, expand2: 1, dominance: 0, mode: 'y', lateralChance: 0 }
+      : sampledSplit.settings;
+    const plan = planSplit({
+      end: { position: tip, tangent, up: spec.initialFrame.normal, radius: tipRadius },
+      parentLength: activeLength,
+      settings: splitSettings,
+      ringSpacing: lastStep,
+      rng: pairRng ?? splitsRng,
+      chance: isPairStub ? 1 : sampledSplit.chance,
+      parentTiles: cfg.splits.tilesAt(baseRadius),
+      parentSpineId: added.branchId,
+      axisStart,
+      treeAxis: [0, 0, 0],
     });
-    builder.setBranchExtra(added.branchId, SPLIT_ATTR, splitFlags('parent'));
-    for (const side of sides) {
-      const sideAges = new Float32Array(side.radii.length).fill(0.05);
-      const sideBranch = builder.addPolylineBranch({
-        parentBranch: added.branchId,
-        parentPoint: tipIndex,
-        generation: spec.generation,
-        count: side.radii.length,
-        positions: side.positions,
-        radii: side.radii,
-        ages: sideAges,
-        initialNormalHint: spec.initialFrame.normal,
-        openEnd: true,
-        radialSides,
-      });
-      if (sideBranch.branchId < 0) continue;
-      builder.setBranchExtra(sideBranch.branchId, SPLIT_ATTR, splitFlags(side));
-      builder.setBranchExtra(sideBranch.branchId, EXTENSION_ATTR, 1);
-      if (cfg.extension.normalSmooth > 0) builder.setBranchExtra(sideBranch.branchId, EXTENSION_SMOOTH_ATTR, cfg.extension.normalSmooth);
-      written += 1;
+    if (plan) {
+      builder.setBranchExtra(added.branchId, SPLIT_ATTR, splitFlags('parent'));
+      const parentPoint = added.start + (axisStart.index ?? outCount - 1);
+      for (const lobe of plan.lobes) {
+        const lobeAges = new Float32Array(lobe.ringCount).fill(0.05);
+        const sideBranch = builder.addPolylineBranch({
+          parentBranch: added.branchId,
+          parentPoint,
+          generation: spec.generation,
+          count: lobe.ringCount,
+          positions: lobe.positions,
+          radii: lobe.radii,
+          ages: lobeAges,
+          initialNormalHint: [lobe.openEnd.frame.normal[0], lobe.openEnd.frame.normal[1], lobe.openEnd.frame.normal[2]],
+          openEnd: true,
+          radialSides,
+        });
+        if (sideBranch.branchId < 0) continue;
+        builder.setBranchExtra(sideBranch.branchId, SPLIT_ATTR, (lobe.side === 1 ? SplitFlag.Side1 : SplitFlag.Side2) | (lobe.kind === 'fat' ? SplitFlag.Fat : 0));
+        builder.setBranchExtra(sideBranch.branchId, EXTENSION_ATTR, 1);
+        builder.setBranchExtra(sideBranch.branchId, SPINE_ORIGIN_ATTR, SpineOrigin.SplitHalf);
+        builder.setBranchExtra(sideBranch.branchId, WIND_HOST_ATTR, 1);
+        builder.setBranchExtra(sideBranch.branchId, SPLIT_EXPAND_ATTR, lobe.side === 1 ? splitSettings.expand1 : splitSettings.expand2);
+        if (splitSettings.smoothInner > 0) builder.setBranchExtra(sideBranch.branchId, SPLIT_SMOOTH_INNER_ATTR, splitSettings.smoothInner);
+        if (splitSettings.smoothOuter > 0) builder.setBranchExtra(sideBranch.branchId, SPLIT_SMOOTH_OUTER_ATTR, splitSettings.smoothOuter);
+        if (!isSplitShapeNeutral(plan.settings)) {
+          const shape = splitShapeOf(plan.settings);
+          for (const { key, attr } of SPLIT_SHAPE_ATTRS) if (shape[key] !== NEUTRAL_SPLIT_SHAPE[key]) builder.setBranchExtra(sideBranch.branchId, attr, shape[key]);
+        }
+        if (cfg.extension.normalSmooth > 0) builder.setBranchExtra(sideBranch.branchId, EXTENSION_SMOOTH_ATTR, cfg.extension.normalSmooth);
+        written += 1;
+        if (isPairStub) {
+          // Virtual split: each half of the fork is continued by one real extension (own RNG stream per side)
+          const d = lobe.openEnd.direction;
+          const f = lobe.openEnd.frame;
+          const extBranchId = builder.branchCount;
+          written += growSpineIntoBuilder(
+            cfg,
+            {
+              parentBranch: sideBranch.branchId,
+              parentPoint: sideBranch.end,
+              generation: spec.generation,
+              origin: [lobe.openEnd.position[0], lobe.openEnd.position[1], lobe.openEnd.position[2]],
+              initialFrame: { tangent: [d[0], d[1], d[2]], normal: [f.normal[0], f.normal[1], f.normal[2]], binormal: [f.binormal[0], f.binormal[1], f.binormal[2]] },
+              parentTangent: [d[0], d[1], d[2]],
+              parentU: 1,
+              parentLength: spec.parentLength,
+              parentRadius: lobe.radius,
+              hasParent: true,
+              isExtension: true,
+              extensionIndex: lobe.side - 1,
+              extensionCount: 1,
+              ...(spec.lengthScale !== undefined ? { lengthScale: spec.lengthScale } : {}),
+              ...(spec.side !== undefined ? { side: spec.side } : {}),
+              ...(spec.parentLengthSegments !== undefined ? { parentLengthSegments: spec.parentLengthSegments } : {}),
+              parentRadialSegments: Math.max(3, Math.round(radialSides / 2)),
+              ...(spec.notes ? { notes: spec.notes } : {}),
+            },
+            rng.fork(`extPair:s${lobe.side}`),
+            builder,
+            cancel,
+          );
+          // The extension grows from the half just added to this very skeleton: wind inherits from it
+          if (builder.branchCount > extBranchId) builder.setBranchExtra(extBranchId, WIND_HOST_ATTR, 1);
+        }
+      }
     }
   }
 
-  // Pass 4: Spawn daughter split branches at tip if bifurcated
-  if (willSplit) {
-    const tipIndex = added.end;
-    const tipPos: Vec3 = [
-      outPos[(outCount - 1) * 3] as number,
-      outPos[(outCount - 1) * 3 + 1] as number,
-      outPos[(outCount - 1) * 3 + 2] as number,
-    ];
-    const prevPos: Vec3 = [
-      outPos[(outCount - 2) * 3] as number,
-      outPos[(outCount - 2) * 3 + 1] as number,
-      outPos[(outCount - 2) * 3 + 2] as number,
-    ];
-    const tipT = v3Norm([tipPos[0] - prevPos[0], tipPos[1] - prevPos[1], tipPos[2] - prevPos[2]], curT);
-    const tipN = orthonormalNormal(tipT, curN);
-    const splitRoll = rng.fork('splRoll').range(0, Math.PI * 2);
-    const forkPlaneN = orthonormalNormal(tipT, rotateAroundAxis(tipN, tipT, splitRoll));
-    const forkAxis = v3Norm(v3Cross(tipT, forkPlaneN));
-
-    const tipRadius = outRad[outCount - 1] as number;
-    const bal = cfg.splitBalance;
-    // Leonardo da Vinci / pipe-model cross-sectional area conservation: r1^2 + r2^2 = r_tip^2
-    const r1 = Math.max(cfg.minRadius, tipRadius * Math.sqrt(bal));
-    const r2 = Math.max(cfg.minRadius, tipRadius * Math.sqrt(1 - bal));
-
-    const halfSpread = deg2rad(cfg.splitSpreadDeg);
-    const ang1 = halfSpread * (1 - (bal - 0.5) * 0.5);
-    const ang2 = -halfSpread * (1 + (bal - 0.5) * 0.5);
-    const remLen = Math.max(0.03, fullLength * (1 - fEnd));
-
-    const d1T = v3Norm(rotateAroundAxis(tipT, forkAxis, ang1));
-    const d1N = orthonormalNormal(d1T, rotateAroundAxis(forkPlaneN, forkAxis, ang1));
-    const d1B = v3Norm(v3Cross(d1T, d1N));
-
-    const d2T = v3Norm(rotateAroundAxis(tipT, forkAxis, ang2));
-    const d2N = orthonormalNormal(d2T, rotateAroundAxis(forkPlaneN, forkAxis, ang2));
-    const d2B = v3Norm(v3Cross(d2T, d2N));
-
-    written += growSpineIntoBuilder(
-      cfg,
-      {
-        parentBranch: added.branchId,
-        parentPoint: tipIndex,
-        generation: spec.generation,
-        origin: tipPos,
-        initialFrame: { tangent: d1T, normal: d1N, binormal: d1B },
-        parentTangent: tipT,
-        parentU: spec.parentU,
-        parentLength: added.length,
-        parentRadius: tipRadius,
-        hasParent: true,
-        isExtension: true,
-        lengthOverride: remLen * (0.92 + bal * 0.16),
-        baseRadiusOverride: r1,
-        splitDepth: splitDepth + 1,
-      },
-      rng.fork('splitA'),
-      builder,
-      cancel,
-    );
-
-    written += growSpineIntoBuilder(
-      cfg,
-      {
-        parentBranch: added.branchId,
-        parentPoint: tipIndex,
-        generation: spec.generation,
-        origin: tipPos,
-        initialFrame: { tangent: d2T, normal: d2N, binormal: d2B },
-        parentTangent: tipT,
-        parentU: spec.parentU,
-        parentLength: added.length,
-        parentRadius: tipRadius,
-        hasParent: true,
-        isExtension: true,
-        lengthOverride: remLen * (1.08 - bal * 0.16),
-        baseRadiusOverride: r2,
-        splitDepth: splitDepth + 1,
-      },
-      rng.fork('splitB'),
-      builder,
-      cancel,
-    );
-  }
-
-  // Silence unused v3Dot warning if not used directly here
-  void v3Dot;
   return written;
 }

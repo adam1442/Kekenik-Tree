@@ -48,6 +48,14 @@ function statsBox(stats: ContentStats | null, selected: SelectionStats | null): 
     row('branches:', fmt(stats.skeletonBranches ?? stats.bones)),
     row('points:', fmt(stats.skeletonPoints ?? 0)),
     row('bones:', fmt(stats.bones)),
+    ...(stats.collision
+      ? [
+          h('div', 'kt-vp-stat-gap'),
+          row('leaves removed (collision):', `${fmt(stats.collision.removed)} / ${fmt(stats.collision.leaves)}`),
+          ...(stats.collision.shrunk + stats.collision.moved > 0 ? [row('leaves shrunk / moved:', `${fmt(stats.collision.shrunk)} / ${fmt(stats.collision.moved)}`)] : []),
+          ...(stats.collision.orphanedParents > 0 ? [row('twigs without leaves:', fmt(stats.collision.orphanedParents))] : []),
+        ]
+      : []),
   ];
 }
 
@@ -99,9 +107,11 @@ export function createViewportPanel(host: HTMLElement, ctx: PanelContext): Panel
   const sunDir = h('div', 'kt-vp-light kt-vp-sundir', icon('sunDir', 22));
   sunDir.title = 'Drag: sun direction';
   const info = h('div', 'kt-vp-info', '');
+  const lodBadge = h('div', 'kt-vp-lod', '');
+  lodBadge.hidden = true;
   const more = h('button', 'kt-vp-more', icon('dotsV', 12));
   more.type = 'button';
-  view.append(canvasWrap, label, stats, gizmoWrap, bulb, sunDir, info, more);
+  view.append(canvasWrap, label, stats, gizmoWrap, bulb, sunDir, info, lodBadge, more);
 
   host.classList.add('kt-vp');
   host.append(docTabs, buildViewportToolbar(app, ctx), view);
@@ -188,6 +198,14 @@ export function createViewportPanel(host: HTMLElement, ctx: PanelContext): Panel
     const s = store.get();
     stats.replaceChildren(...statsBox(sync.stats, selectionStats(app.engine.latest?.scene ?? null, s.selection, s.editMode === 'node' ? s.instanceSelection : [])));
   };
+  /** Corner indicator of the Dynamic LOD: mode, LOD value and the live triangle share. */
+  const refreshLodBadge = (): void => {
+    const d = getLodPreview().dynamicInfo();
+    lodBadge.hidden = !d?.enabled;
+    if (!d?.enabled) return;
+    const pct = d.fullTriangles > 0 ? Math.round((d.triangles / d.fullTriangles) * 100) : 100;
+    lodBadge.textContent = `LOD ${d.value.toFixed(2)} · ${d.mode === 'screen' ? 'screen area' : 'manual'} · ${fmt(d.triangles)} tris (${pct} %)`;
+  };
   let framedDoc = '';
   const applyResult = (summary: EvaluationSummary): void => {
     const docId = store.get().activeDocumentId;
@@ -200,9 +218,12 @@ export function createViewportPanel(host: HTMLElement, ctx: PanelContext): Panel
     viewport.requestRender();
     if (changed || frame) viewport.refreshContent(frame);
     if (frame) framedDoc = docId;
+    viewport.setVertexColorPacking(summary.scene.vertexColor?.compute === false ? 'legacy' : summary.scene.vertexColor?.packing ?? 'legacy');
+    viewport.setLightmapResolution(summary.scene.lightmap?.resolution ?? 1024);
     overlays.setScene(summary.scene);
     nodeMode.setScene(summary.scene);
     refreshStats();
+    refreshLodBadge();
   };
 
   // --- state sync
@@ -221,6 +242,7 @@ export function createViewportPanel(host: HTMLElement, ctx: PanelContext): Panel
       showPoints: s.viewMode === 'points' || (s.viewMode === 'skeleton' && s.showSkeletonPoints),
       showRadii: s.viewMode === 'skeleton' && s.showSkeletonRadii,
       showFrames: s.viewMode === 'skeleton' && s.showSkeletonFrames,
+      showOpenEnds: s.showOpenEnds,
     });
     stats.hidden = !s.showStats;
     gizmoWrap.hidden = !s.showAxes;
@@ -265,6 +287,7 @@ export function createViewportPanel(host: HTMLElement, ctx: PanelContext): Panel
         s.showSkeletonPoints !== prev.showSkeletonPoints ||
         s.showSkeletonRadii !== prev.showSkeletonRadii ||
         s.showSkeletonFrames !== prev.showSkeletonFrames ||
+        s.showOpenEnds !== prev.showOpenEnds ||
         s.sunIntensity !== prev.sunIntensity
       ) {
         syncOptions();

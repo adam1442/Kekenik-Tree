@@ -1,4 +1,5 @@
-import { evaluateCurve } from '@/contracts/curve';
+import { curveToLUT, evaluateCurve, type Curve } from '@/contracts/curve';
+import { lodLengthFactor, lodRadialFactor, readGeneratorLod } from './dynamicLodParams';
 import { OUTPUT_KEY } from '@/contracts/engine';
 import { emptyMeshData } from '@/contracts/mesh';
 import type { NodeInputs, NodeOutputs } from '@/contracts/nodes';
@@ -6,10 +7,12 @@ import { getBool, getNumber, getString, type NodeParams } from '@/contracts/para
 import type { PortValue } from '@/contracts/ports';
 import { emptySkeleton, type Skeleton } from '@/contracts/skeleton';
 import { clamp, deg2rad } from '@/core/math';
+import { isNeutralVertexColor, parseVcMode, type VertexColorOptions } from '@/geometry/vertexColor';
 import { RADIAL_BASIS, radialSegmentCount } from '@/generators/spine';
 import { applyGeneratorForces } from './forcesHook';
 import { displacedSides, tubeDisplacementOptions } from './displacement';
 import { resolveMaterialRef } from '@/materials/materialSource';
+import { applySeasonGravity, seasonNodeValue } from '@/seasons/gravity';
 import { Rng } from '@/core/rng';
 import type { SectionKind, SectionShape } from '@/geometry/crossSection';
 import { buildTubeMesh, SQUASH_ANGLE_ATTR, SQUASH_ATTR, type TubeOptions } from '@/geometry/tubeMesher';
@@ -68,7 +71,26 @@ export function barkRingColor(tint: readonly number[], generation: number, t: nu
   ];
 }
 
-const SECTION_KINDS: Record<string, SectionKind> = { round: 'round', ridged: 'ridged', lobed: 'lobed', noise: 'noise' };
+const SECTION_KINDS: Record<string, SectionKind> = { round: 'round', ridged: 'ridged', lobed: 'lobed', noise: 'noise', organic: 'organic' };
+
+/** Skin > Vertex color of a generator; undefined = neutral (the mesher keeps the exact legacy colour path). */
+export function readVertexColorOptions(params: NodeParams): VertexColorOptions | undefined {
+  const raw = params.vcColor?.value;
+  const c = Array.isArray(raw) && raw.length >= 3 ? (raw as number[]) : [1, 1, 1];
+  const curveLut = (id: string): Float32Array | null => {
+    const v = params[id]?.value;
+    return v && typeof v === 'object' && 'points' in v && Array.isArray((v as Curve).points) ? curveToLUT(v as Curve, 256) : null;
+  };
+  const o: VertexColorOptions = {
+    mode: parseVcMode(getString(params, 'vcMode', 'inherit')),
+    color: [c[0] ?? 1, c[1] ?? 1, c[2] ?? 1],
+    variance: clamp(getNumber(params, 'vcVariance', 0), 0, 1),
+    seamless: getBool(params, 'vcSeamless', false),
+    profile: curveLut('vcProfile'),
+    parentCurve: curveLut('vcParentCurve'),
+  };
+  return isNeutralVertexColor(o) ? undefined : o;
+}
 
 /** Mesh-building options from a generator's Skin / UV / Shape / LOD tabs. */
 export function tubeOptionsFromParams(
@@ -110,23 +132,31 @@ export function tubeOptionsFromParams(
     spiral: getNumber(params, 'sectionSpiral', 0),
     noiseFrequency: getNumber(params, 'sectionNoiseFrequency', 2),
     seed: seed || 1,
+    oval: Math.max(0, getNumber(params, 'sectionOval', 0.1)),
+    drift: Math.max(0.05, getNumber(params, 'sectionDrift', 2)),
+    grainTwist: getNumber(params, 'grainTwist', 0),
   };
   const capBase = getString(params, 'capBase', 'auto');
+  const genLod = readGeneratorLod(params);
+  const radialLod = lodRadialFactor(genLod, lod);
   return {
     maxGeneration: 64,
     radialSegments: (_gen, radius, branchIndex) => {
       const sides = sidesOf(radius, branchIndex);
-      return lodRadialSides(
-        displaced && displacement.maxSegmentLength ? displacedSides(radius, displacement.maxSegmentLength, sides) : sides,
+      const reduced = lodRadialSides(
+        displaced && displacement.maxSegmentLength
+          ? displacedSides(radius, displacement.displaceSideSpacing ?? displacement.maxSegmentLength, sides, displacement.displaceMaxSides)
+          : sides,
         lod,
         getNumber(params, 'lodSides', 0.5),
       );
+      return radialLod === 1 ? reduced : Math.max(3, Math.round(reduced * radialLod));
     },
     color: (gen, t) => barkRingColor(tint, gen, t),
     uvMetres: 1,
     materialId,
     ...(parent ? { parent } : {}),
-    segmentKeep: lodSegmentKeep(lod, getNumber(params, 'lodSegments', 0.5)),
+    segmentKeep: clamp(lodSegmentKeep(lod, getNumber(params, 'lodSegments', 0.5)) * lodLengthFactor(genLod, lod), 0.05, 1),
     section,
     uvMapping: readUvMapping(params),
     ...(uvMaterialOptions(params) ? { uvMaterials: uvMaterialOptions(params) as NonNullable<TubeOptions['uvMaterials']> } : {}),
@@ -139,16 +169,33 @@ export function tubeOptionsFromParams(
     tipRings: lod >= 2 ? 1 : Math.round(getNumber(params, 'tipRings', 2)),
     collarAmount: getNumber(params, 'collarAmount', 0.3),
     collarLength: getNumber(params, 'collarLength', 1.5),
+    collarSwell: Math.max(0, getNumber(params, 'collarSwell', 0)),
+    ...buttressOptions(params),
     twist: getNumber(params, 'skinTwist', 0),
     tintVariance: getNumber(params, 'tintVariance', 0.1),
     aoStrength: getNumber(params, 'aoStrength', 0.6),
+    ...(readVertexColorOptions(params) ? { vertexColor: readVertexColorOptions(params) as VertexColorOptions } : {}),
     ...weldMeshOptions(params),
     roll: getNumber(params, 'skinRoll', 0),
     smooth: getNumber(params, 'skinSmooth', 0),
     seam: getNumber(params, 'seamReduction', 0),
+    extensionBlend: {
+      length: clamp(getNumber(params, 'extensionBlendLength', 2), 0.5, 8),
+      contrast: clamp(getNumber(params, 'extensionBlendContrast', 0.35), 0, 1),
+      noise: clamp(getNumber(params, 'extensionBlendNoise', 0.3), 0, 1),
+    },
     ...squashOptions(params),
     seed,
   };
+}
+
+/** Shape > Buttress as the mesher receives it (empty when the count is 0 or a size is 0). */
+function buttressOptions(params: NodeParams): Pick<TubeOptions, 'buttress'> {
+  const count = Math.max(0, Math.round(getNumber(params, 'buttressCount', 0)));
+  const height = Math.max(0, getNumber(params, 'buttressHeight', 1.5));
+  const length = Math.max(0, getNumber(params, 'buttressLength', 1));
+  if (count < 1 || height <= 0 || length <= 0) return {};
+  return { buttress: { count, height, length, thickness: clamp(getNumber(params, 'buttressThickness', 0.3), 0.02, 1) } };
 }
 
 /** Skin > Squash Amount (0..1) and Rotate (degrees); the single reader of both parameters. */
@@ -197,17 +244,19 @@ export function emitStructureOutput(
   table?: InstanceTable,
 ): NodeOutputs {
   applyGeneratorForces(skeleton, params, inputs, seed);
+  const seasonT = seasonNodeValue(params);
+  applySeasonGravity(skeleton, params, seasonT, seed);
   if (table) fillTableBounds(table, skeleton);
   const hiddenBranches = hiddenBranchSet(table);
   const spineOnly = isSpineOnly(params);
-  attachSkeletonWind(skeleton, parent ?? null, seed);
+  attachSkeletonWind(skeleton, parent ?? null, seed, getNumber(params, 'windPhaseVariance', 0.5));
   writeSquashAttributes(skeleton, params);
   // The Material property overrides the generator's built-in slot id; a Material Set is resolved with the node's RNG.
   const parentValue = inputs?.parent?.[0];
   const parentMaterial = parentValue && parentValue.kind === 'Structure' ? parentValue.value.materialId : undefined;
   const ref = primaryMaterialRef(params);
   const chosen = ref === MATERIAL_INHERITED ? (parentMaterial ?? materialId) : ref || materialId;
-  const resolvedMaterial = resolveMaterialRef(chosen, new Rng(seed).fork('material'));
+  const resolvedMaterial = resolveMaterialRef(chosen, new Rng(seed).fork('material'), undefined, seasonT);
   const mesh =
     spineOnly || skeleton.count === 0
       ? emptyMeshData()

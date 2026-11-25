@@ -6,6 +6,7 @@ uniform vec4 uWindD; // damping, clock (seconds * speed), tree height, base hold
 uniform vec4 uWindMesh; // amount, flutter, stiffness override (-1 = none), flutter frequency
 attribute vec3 windPivot;
 attribute vec4 windWeights;
+attribute float windPhase1; // phase of the level-1 ancestor (branch-level sway); windWeights.w = phase of the level-2 / leaf terms
 `;
 
 export const WIND_GLSL_FUNCTION = /* glsl */ `
@@ -15,8 +16,8 @@ vec3 ktWindRotate(vec3 v, vec3 axis, float a) {
   return v * c + cross(axis, v) * s + axis * dot(axis, v) * (1.0 - c);
 }
 
-// p: mesh-local vertex, wp: world-ish position (phase source), toLocal: world -> local rotation/scale.
-vec3 ktWindLocal(vec3 p, vec3 pivot, vec4 w, vec3 wp, mat3 toLocal) {
+// p: mesh-local vertex, ph1: level-1 phase, wp: world-ish position (phase source), toLocal: world -> local rotation/scale.
+vec3 ktWindLocal(vec3 p, vec3 pivot, vec4 w, float ph1, vec3 wp, mat3 toLocal) {
   float strength = uWindA.z * uWindMesh.x;
   if (strength <= 0.0 || (w.x + w.y + w.z) <= 0.0) return p;
   // Ground anchor: exactly 0 at / below the ground (z <= 0 in plant space, so every trunk of a placement disc and
@@ -30,7 +31,8 @@ vec3 ktWindLocal(vec3 p, vec3 pivot, vec4 w, vec3 wp, mat3 toLocal) {
   float freqK = 1.0 + stiff * 1.5;
   float ampK = 1.0 / (1.0 + stiff * 3.0);
   float osc = 1.0 - uWindD.x;
-  float phase = w.w * 6.2831853;
+  float phase = w.w * 6.2831853; // level-2 / leaf terms
+  float phase1 = ph1 * 6.2831853; // level-1 (branch) terms: identical on a parent point and every child that grows from it
   bool hq = uWindB.w > 0.5;
   vec3 dirW = vec3(uWindA.x, uWindA.y, 0.0);
   vec3 sideW = vec3(-uWindA.y, uWindA.x, 0.0);
@@ -44,13 +46,13 @@ vec3 ktWindLocal(vec3 p, vec3 pivot, vec4 w, vec3 wp, mat3 toLocal) {
   float o0 = sin(t * 0.7 * freqK + 0.6 * sin(t * 0.31));
   float d0 = H * 0.04 * uWindC.x * w.x * ampK * A * (1.0 + 0.6 * osc * o0);
   // level 1: branches
-  float o1 = sin(t * 1.7 * freqK + phase) + 0.5 * sin(t * 2.9 * freqK + phase * 2.3);
+  float o1 = sin(t * 1.7 * freqK + phase1) + 0.5 * sin(t * 2.9 * freqK + phase1 * 2.3);
   float p1 = A * (0.4 + 0.6 * osc * o1);
   float d1 = H * 0.015 * uWindC.y * w.y * ampK * p1;
-  float c1 = H * 0.006 * uWindC.y * w.y * ampK * A * sin(t * 1.3 * freqK + phase * 1.7) * osc;
+  float c1 = H * 0.006 * uWindC.y * w.y * ampK * A * sin(t * 1.3 * freqK + phase1 * 1.7) * osc;
   vec3 dispW = dirW * (d0 + d1) + sideW * c1;
   if (hq) {
-    float tb = sin(t * 5.3 + phase * 3.1) * 0.5 + sin(t * 3.7 + dot(wp, vec3(1.7, 1.3, 0.9))) * 0.5;
+    float tb = sin(t * 5.3 + phase1 * 3.1) * 0.5 + sin(t * 3.7 + dot(wp, vec3(1.7, 1.3, 0.9))) * 0.5;
     dispW += (dirW * 0.6 + sideW * tb) * (H * 0.004 * uWindB.y * w.y * uWindC.y * A * tb);
   }
 
@@ -87,5 +89,5 @@ export const WIND_GLSL_APPLY = /* glsl */ `
   vec3 ktWp = transformed;
   mat3 ktToLocal = mat3(1.0);
 #endif
-transformed = ktWindLocal(transformed, windPivot, windWeights, ktWp, ktToLocal);
+transformed = ktWindLocal(transformed, windPivot, windWeights, windPhase1, ktWp, ktToLocal);
 `;

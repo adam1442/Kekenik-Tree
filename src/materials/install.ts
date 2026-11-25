@@ -35,6 +35,9 @@ export function installMaterialSystem(app: AppContext): () => void {
     for (const m of lib.materials()) {
       const id = m.slots.height?.texture?.assetId;
       if (id && !hasDisplacementSource(id)) void tm.loadPixels(id);
+      // The height of a bark set is the alpha of its normal map (Displacement > Source = Material).
+      const normalId = m.slots.normal?.texture?.assetId;
+      if (!id && normalId && !hasDisplacementSource(normalId)) void tm.loadPixels(normalId);
       // Spine > Length > Match one V tile reads the aspect ratio of the colour texture.
       const colorId = m.slots.color?.texture?.assetId;
       if (colorId && !hasDisplacementSource(colorId)) void tm.loadPixels(colorId);

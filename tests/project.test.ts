@@ -5,6 +5,7 @@ import { GraphSession } from '@/app/graphSession';
 import { AutosaveStore } from '@/app/project/autosave';
 import { decodeJson, decodeProject, encodeJson, encodeProject, isGzip } from '@/app/project/codec';
 import { defaultGraph } from '@/app/project/defaultGraph';
+import { starterGraph } from './fixtures/starterGraph';
 import type { FileHandleLike, FileIO, OpenedFile } from '@/app/project/fileAccess';
 import { createProjectFile, defaultMeta, parseProject } from '@/app/project/format';
 import { MemoryKeyValueStore } from '@/app/project/kvStore';
@@ -22,7 +23,7 @@ import { getNodeDef, registerDiscoveredNodes, registerNode, unregisterNode } fro
 
 beforeAll(() => registerDiscoveredNodes());
 
-const sceneHash = async (graph: ReturnType<typeof defaultGraph>, seed: number): Promise<string[]> => {
+const sceneHash = async (graph: ReturnType<typeof starterGraph>, seed: number): Promise<string[]> => {
   const m = new GraphModel();
   m.load(graph);
   const r = await new GraphEvaluator().evaluate(snapshotGraph(m), { seed, lod: 0, token: new CancellationSource().token });
@@ -30,7 +31,7 @@ const sceneHash = async (graph: ReturnType<typeof defaultGraph>, seed: number): 
 };
 
 describe('project file round trip', () => {
-  const file = createProjectFile({ name: 'Spruce', graph: defaultGraph(), meta: defaultMeta(99), seed: 99 });
+  const file = createProjectFile({ name: 'Spruce', graph: starterGraph(), meta: defaultMeta(99), seed: 99 });
 
   it.each([false, true, 'auto'] as const)('encode/decode keeps everything (compress=%s)', (compress) => {
     const bytes = encodeProject(file, { compress });
@@ -54,6 +55,31 @@ describe('project file round trip', () => {
     expect(() => parseProject({ version: 2, graph: {}, settings: {} })).toThrow(/malformed/);
     expect(() => parseProject('hello')).toThrow(/Not a Kekenik/);
     expect(decodeJson(encodeJson({ a: 1 }, { compress: true }))).toEqual({ a: 1 });
+  });
+});
+
+describe('default project graph', () => {
+  it('is the Tree node alone: no generator, force, material or edge', () => {
+    const g = defaultGraph();
+    expect(g.nodes.map((n) => n.type)).toEqual(['output.tree']);
+    expect(g.edges).toHaveLength(0);
+    const m = new GraphModel();
+    m.load(g);
+    expect(m.nodeCount).toBe(1);
+    expect(m.getNode('tree')?.type).toBe('output.tree');
+  });
+
+  it('every call returns an independent, identical graph', () => {
+    expect(defaultGraph()).toEqual(defaultGraph());
+    expect(defaultGraph()).not.toBe(defaultGraph());
+  });
+
+  it('a new project opens with the Tree node only and an empty scene', async () => {
+    const m = new GraphModel();
+    m.load(defaultGraph());
+    const r = await new GraphEvaluator().evaluate(snapshotGraph(m), { seed: 1, lod: 0, token: new CancellationSource().token });
+    expect(r.errors).toBe(0);
+    expect(r.scene.entries).toHaveLength(0);
   });
 });
 
@@ -124,7 +150,7 @@ describe('recovery storage, recent files, templates', () => {
 
   it('node templates round-trip and paste under a parent', () => {
     const m = new GraphModel();
-    m.load(defaultGraph());
+    m.load(starterGraph());
     const payload = copySubgraph(m, ['little', 'leaf']);
     const tpl = decodeTemplate(encodeTemplate(createTemplate('Twigs', payload)));
     expect(tpl.name).toBe('Twigs');
@@ -159,12 +185,13 @@ describe('ProjectManager', () => {
     return { store, graph, undo, pm, written, kv, messages, setOpened: (o: OpenedFile) => { opened = o; } };
   }
 
-  it('starts with the default graph, tracks dirty state, saves and re-opens identically', async () => {
+  it('starts with the Tree node alone, tracks dirty state, saves and re-opens identically', async () => {
     const t = setup();
     await t.pm.start();
-    expect(t.graph.model.nodes().length).toBeGreaterThan(5);
+    expect(t.graph.model.nodes().map((n) => n.type)).toEqual(['output.tree']);
+    expect(t.graph.model.edges()).toHaveLength(0);
     expect(t.store.get().dirty).toBe(false);
-    t.graph.setParam('leaf', 'number', { value: 9 });
+    t.graph.setParam('tree', 'season', { value: 0.5 });
     expect(t.store.get().dirty).toBe(true);
     expect(t.pm.hasUnsavedChanges()).toBe(true);
 
@@ -172,12 +199,12 @@ describe('ProjectManager', () => {
     expect(t.store.get().dirty).toBe(false);
     expect(t.store.get().documents[0]?.name).toBe('tree.ktree');
     const bytes = t.written[0] as Uint8Array;
-    expect(decodeProject(bytes).graph.nodes.find((n) => n.id === 'leaf')?.params.number?.value).toBe(9);
+    expect(decodeProject(bytes).graph.nodes.find((n) => n.id === 'tree')?.params.season?.value).toBe(0.5);
 
     t.setOpened({ name: 'copy.ktree', bytes, handle: null });
     expect(await t.pm.open()).toBe(true);
     expect(t.store.get().documents).toHaveLength(2);
-    expect(t.graph.model.getNode('leaf')?.params.number?.value).toBe(9);
+    expect(t.graph.model.getNode('tree')?.params.season?.value).toBe(0.5);
     expect(t.store.get().dirty).toBe(false);
     // Silent save needs a handle; this copy has none, so Save falls back to Save As.
     expect(await t.pm.save()).toBe(true);
@@ -186,24 +213,25 @@ describe('ProjectManager', () => {
   it('asks before closing a dirty document and honours Cancel / Don’t Save', async () => {
     const cancel = setup(2);
     await cancel.pm.start();
-    cancel.graph.setParam('leaf', 'number', { value: 2 });
+    cancel.graph.setParam('tree', 'season', { value: 0.25 });
     expect(await cancel.pm.closeActive()).toBe(false);
     expect(cancel.store.get().documents).toHaveLength(1);
 
     const discard = setup(1);
     await discard.pm.start();
-    discard.graph.setParam('leaf', 'number', { value: 2 });
+    discard.graph.setParam('tree', 'season', { value: 0.25 });
     expect(await discard.pm.closeActive()).toBe(true);
-    // The last document is replaced by a fresh default project.
+    // The last document is replaced by a fresh default project (the Tree node only).
     expect(discard.store.get().documents).toHaveLength(1);
     expect(discard.store.get().dirty).toBe(false);
-    expect(discard.graph.model.getNode('leaf')?.params.number?.value).toBe(5);
+    expect(discard.graph.model.nodes().map((n) => n.type)).toEqual(['output.tree']);
+    expect(discard.graph.model.getNode('tree')?.params.season?.value).not.toBe(0.25);
   });
 
   it('autosaves dirty documents and offers recovery after a "crash"', async () => {
     const first = setup();
     await first.pm.start();
-    first.graph.setParam('leaf', 'number', { value: 11 });
+    first.graph.setParam('tree', 'season', { value: 0.75 });
     await first.pm.autosaveNow();
     expect((await new AutosaveStore(first.kv).list()).length).toBe(1);
 
@@ -211,7 +239,7 @@ describe('ProjectManager', () => {
     // reuse the same storage = same browser profile
     for (const k of await first.kv.keys()) await second.kv.set(k, await first.kv.get(k));
     await second.pm.start();
-    expect(second.graph.model.getNode('leaf')?.params.number?.value).toBe(11);
+    expect(second.graph.model.getNode('tree')?.params.season?.value).toBe(0.75);
     expect(second.store.get().dirty).toBe(true);
     expect(second.store.get().documents).toHaveLength(1);
     expect(await new AutosaveStore(second.kv).list()).toEqual([]);

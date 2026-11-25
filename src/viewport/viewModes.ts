@@ -14,6 +14,7 @@ import {
 } from 'three';
 import { MeshDebugLayer } from './debug/meshDebugLayer';
 import { createThickMaterial, createWireOverlay } from './thickLines';
+import type { VcPacking } from '@/geometry/vertexColor';
 import type { ViewMode, ViewportContent } from './types';
 
 /**
@@ -61,16 +62,33 @@ export class ViewModeController {
         gl_Position = projectionMatrix * modelViewMatrix * p; }`,
     fragmentShader: 'varying float vAo; void main() { gl_FragColor = vec4(vec3(vAo), 1.0); }',
   });
+  /** Wind weights (trunk / branch / leaf level) as RGB: a seam is a colour step between two touching pieces. Created on first use. */
+  private windWeightsMaterial: ShaderMaterial | null = null;
+  private lightmapMaterial: ShaderMaterial | null = null;
+  private readonly lightmapUniforms = { uRes: { value: 1024 }, uTarget: { value: 1 } };
   private readonly faintWire = new MeshBasicMaterial({ color: 0x8a8f99, wireframe: true, transparent: true, opacity: 0.35, depthWrite: false });
   private readonly faintThick = createThickMaterial({ color: 0x8a8f99, width: 1, opacity: 0.4 });
   private readonly vertexColorMats = new Map<Material, MeshBasicMaterial>();
+  /** Shared by every channel material: packing (0 legacy, 1 Kekenik) and the plant's z range (height channel). */
+  private readonly vcUniforms = { uPacking: { value: 0 }, uZMin: { value: 0 }, uZMax: { value: 1 } };
+  private readonly vcChannelMats = new Map<string, MeshBasicMaterial>();
   private readonly alphaMats = new Map<Material, MeshBasicMaterial>();
   private readonly debug = new MeshDebugLayer();
   private overlays: Object3D[] = [];
   /** Counts of the last debug pass (HUD / tests). */
   lastDebug = { normalSegments: 0, points: 0 };
 
+  /** Tree > Vertex Color packing the channel views decode; re-apply the view mode afterwards. */
+  setVertexColorPacking(packing: VcPacking): void {
+    this.vcUniforms.uPacking.value = packing === 'kekenik' ? 1 : 0;
+  }
+
   apply(content: ViewportContent, mode: ViewMode): void {
+    const bounds = content.bounds as ViewportContent['bounds'] | undefined;
+    if (bounds) {
+      this.vcUniforms.uZMin.value = bounds.min.z;
+      this.vcUniforms.uZMax.value = bounds.max.z;
+    }
     this.clearOverlays();
     this.debug.clear();
     this.lastDebug = { normalSegments: 0, points: 0 };
@@ -106,7 +124,16 @@ export class ViewModeController {
           if (front) this.lastDebug.normalSegments += this.debug.attachNormals(obj);
           break;
         case 'vertexColor':
-          obj.material = this.vertexColorFor(base);
+          obj.material = this.vcUniforms.uPacking.value > 0.5 ? this.vcChannelFor(-1, obj, base) : this.vertexColorFor(base);
+          break;
+        case 'vertexColorR':
+          obj.material = this.vcChannelFor(0, obj, base);
+          break;
+        case 'vertexColorG':
+          obj.material = this.vcChannelFor(1, obj, base);
+          break;
+        case 'vertexColorB':
+          obj.material = this.vcChannelFor(2, obj, base);
           break;
         case 'alpha':
           obj.material = this.alphaFor(base);
@@ -130,6 +157,12 @@ export class ViewModeController {
           break;
         case 'ao':
           obj.material = this.aoMaterial;
+          break;
+        case 'windWeights':
+          obj.material = this.windWeightsFor();
+          break;
+        case 'lightmapDensity':
+          obj.material = this.lightmapDensityFor(content);
           break;
         case 'shadedWire':
           obj.material = base;
@@ -171,6 +204,128 @@ export class ViewModeController {
     }
     this.uvMaterial = new MeshBasicMaterial({ map, side: DoubleSide });
     return this.uvMaterial;
+  }
+
+  /** Tree > Lightmap resolution the density view compares against (texels along one edge of the lightmap). */
+  setLightmapResolution(resolution: number): void {
+    this.lightmapUniforms.uRes.value = Math.max(4, resolution);
+  }
+
+  /**
+   * Texel density of UV1 per fragment (texels per metre from screen-space derivatives) against the ideal one, the density of a perfectly
+   * packed atlas of the whole plant: green = within 0.5x .. 2x of it, blue = too low, red = too high.
+   */
+  private lightmapDensityFor(content: ViewportContent): ShaderMaterial {
+    let area = 0;
+    content.root.traverse((obj: Object3D) => {
+      if (!isSurfaceMesh(obj) || obj.userData.isBackFace === true) return;
+      const pos = obj.geometry.getAttribute('position');
+      const idx = obj.geometry.getIndex();
+      if (!pos || !idx) return;
+      for (let t = 0; t + 2 < idx.count; t += 3) {
+        const a = idx.getX(t);
+        const b = idx.getX(t + 1);
+        const c = idx.getX(t + 2);
+        const ux = pos.getX(b) - pos.getX(a);
+        const uy = pos.getY(b) - pos.getY(a);
+        const uz = pos.getZ(b) - pos.getZ(a);
+        const vx = pos.getX(c) - pos.getX(a);
+        const vy = pos.getY(c) - pos.getY(a);
+        const vz = pos.getZ(c) - pos.getZ(a);
+        area += 0.5 * Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx);
+      }
+    });
+    this.lightmapUniforms.uTarget.value = area > 1e-9 ? this.lightmapUniforms.uRes.value / Math.sqrt(area) : 1;
+    if (this.lightmapMaterial) return this.lightmapMaterial;
+    this.lightmapMaterial = new ShaderMaterial({
+      side: DoubleSide,
+      uniforms: this.lightmapUniforms,
+      vertexShader: `attribute vec2 uv1; varying vec2 vUv1; varying vec3 vPos;
+        void main() { vUv1 = uv1; vec4 p = vec4(position, 1.0);
+        #ifdef USE_INSTANCING
+          p = instanceMatrix * p;
+        #endif
+        vPos = p.xyz; gl_Position = projectionMatrix * modelViewMatrix * p; }`,
+      fragmentShader: `varying vec2 vUv1; varying vec3 vPos; uniform float uRes; uniform float uTarget;
+        void main() {
+          float worldArea = length(cross(dFdx(vPos), dFdy(vPos)));
+          vec2 ux = dFdx(vUv1); vec2 uy = dFdy(vUv1);
+          float texelArea = abs(ux.x * uy.y - ux.y * uy.x) * uRes * uRes;
+          float ratio = sqrt(texelArea / max(worldArea, 1e-12)) / max(uTarget, 1e-6);
+          vec3 c = ratio < 0.5 ? vec3(0.1, 0.3, 1.0) : (ratio > 2.0 ? vec3(1.0, 0.15, 0.1) : vec3(0.1, 0.8, 0.25));
+          gl_FragColor = vec4(c, 1.0);
+        }`,
+    });
+    return this.lightmapMaterial;
+  }
+
+  private windWeightsFor(): ShaderMaterial {
+    if (this.windWeightsMaterial) return this.windWeightsMaterial;
+    this.windWeightsMaterial = new ShaderMaterial({
+      side: DoubleSide,
+      vertexShader: `attribute vec4 windWeights; varying vec3 vWw;
+        void main() { vWw = windWeights.xyz; vec4 p = vec4(position, 1.0);
+        #ifdef USE_INSTANCING
+          p = instanceMatrix * p;
+        #endif
+        gl_Position = projectionMatrix * modelViewMatrix * p; }`,
+      fragmentShader: 'varying vec3 vWw; void main() { gl_FragColor = vec4(clamp(vWw, 0.0, 1.0), 1.0); }',
+    });
+    return this.windWeightsMaterial;
+  }
+
+  /**
+   * One vertex-colour channel as grey (`channel` 0 / 1 / 2) or all three (-1), decoded like the export: Legacy = the stored
+   * colour, Kekenik = R branch tint (0.5 without one), G height over the plant, B ambient occlusion. A basic material with the
+   * cut-out of `base` (alpha map / alpha test) so leaf cards keep their shape; the colour is shown raw (no tone mapping or
+   * colour-space encode), so a channel value of 0.5 is grey 0.5.
+   */
+  private vcChannelFor(channel: number, mesh: Mesh, base: Material): MeshBasicMaterial {
+    const hasTint = mesh.geometry.getAttribute('branchTint') !== undefined;
+    const key = `${base.uuid}:${channel}:${hasTint ? 1 : 0}`;
+    let m = this.vcChannelMats.get(key);
+    if (!m) {
+      const src = base as MeshStandardMaterial;
+      m = new MeshBasicMaterial({ vertexColors: true, alphaMap: src.alphaMap ?? null, map: src.alphaMap ? null : src.alphaTest > 0 ? src.map : null, alphaTest: src.alphaTest, side: DoubleSide });
+      if (hasTint) m.defines = { HAS_TINT: '' };
+      const channelUniform = { value: channel };
+      m.onBeforeCompile = (shader) => {
+        Object.assign(shader.uniforms, this.vcUniforms, { uChannel: channelUniform });
+        shader.vertexShader = shader.vertexShader
+          .replace('#include <common>', '#include <common>\nattribute float ao;\n#ifdef HAS_TINT\nattribute float branchTint;\n#endif\nuniform float uPacking; uniform float uZMin; uniform float uZMax;')
+          .replace(
+            '#include <color_vertex>',
+            `#include <color_vertex>
+            if (uPacking > 0.5) {
+              float tint = 0.5;
+              #ifdef HAS_TINT
+                tint = branchTint;
+              #endif
+              vec4 kp = vec4(position, 1.0);
+              #ifdef USE_INSTANCING
+                kp = instanceMatrix * kp;
+              #endif
+              float h = clamp(((modelMatrix * kp).z - uZMin) / max(uZMax - uZMin, 1e-6), 0.0, 1.0);
+              vColor.rgb = vec3(tint, h, ao);
+            }`,
+          );
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', '#include <common>\nuniform float uChannel;')
+          .replace(
+            '#include <color_fragment>',
+            `#include <color_fragment>
+            {
+              vec3 kc = clamp(vColor.rgb, 0.0, 1.0);
+              if (uChannel > 1.5) kc = vec3(kc.b); else if (uChannel > 0.5) kc = vec3(kc.g); else if (uChannel > -0.5) kc = vec3(kc.r);
+              diffuseColor.rgb = kc;
+            }`,
+          )
+          .replace('#include <tonemapping_fragment>', '')
+          .replace('#include <colorspace_fragment>', '');
+      };
+      this.vcChannelMats.set(key, m);
+    }
+    return m;
   }
 
   /** Vertex colours only (baked AO / tint), keeping the cut-out of leaf cards. */
@@ -233,9 +388,12 @@ export class ViewModeController {
     this.faintWire.dispose();
     this.faintThick.dispose();
     this.vertexColorMats.forEach((m) => m.dispose());
+    this.vcChannelMats.forEach((m) => m.dispose());
+    this.vcChannelMats.clear();
     this.alphaMats.forEach((m) => m.dispose());
     this.normals.dispose();
     this.aoMaterial.dispose();
+    this.windWeightsMaterial?.dispose();
     this.uvMaterial?.dispose();
     this.uvTexture?.dispose();
     this.flat.forEach((m) => m.dispose());

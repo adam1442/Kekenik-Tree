@@ -495,7 +495,7 @@ describe('generation modes: node integration', () => {
     if (!def) throw new Error(type);
     const p: NodeParams = {};
     for (const d of def.params) p[d.id] = defaultParamState(d);
-    const base = { splitChance: 0, jumble: 0, ...over };
+    const base = { splitsChance: 0, jumble: 0, ...over };
     for (const [k, v] of Object.entries(base)) if (p[k]) p[k] = { ...(p[k] as NodeParams[string]), value: v as never };
     const ctx: NodeContext = { nodeId: type, name: type, rng: new Rng(seed), seed, cancel: new CancellationSource().token, lod: 0, logger: createLogger('dev', 'error') };
     const inputs: NodeInputs = { parent: [{ kind: 'Structure', value: { skeleton: parent } }] };

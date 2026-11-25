@@ -16,9 +16,9 @@ export type EditMode = 'generator' | 'node' | 'freehand';
 /**
  * Viewport view modes. `skeleton` = generation-coloured skeleton lines, `points` = round constant-size vertices and
  * skeleton samples, `normals` = shaded surface + vertex-normal lines, `normalColors` = normal-as-colour shading,
- * `vertexColor` = baked vertex colours only, `alpha` = alpha-coverage diagnostic of cut-out materials.
+ * `vertexColor` = baked vertex colours only (the Tree > Vertex Color packing), `vertexColorR / G / B` = one channel of it as grey (Kekenik packing: R branch tint, G height, B ambient occlusion; `ao` shows the analytic AO), `windWeights` = wind weights w0 / w1 / w2 (trunk / branch / leaf) as R / G / B, `alpha` = alpha-coverage diagnostic of cut-out materials, `lightmapDensity` = texel density of the lightmap UVs (UV1) against the Tree > Lightmap target (green = ideal, blue = too low, red = too high).
  */
-export type ViewMode = 'shaded' | 'wireframe' | 'shadedWire' | 'flat' | 'skeleton' | 'points' | 'normals' | 'uv' | 'vertexColor' | 'normalColors' | 'ao' | 'alpha';
+export type ViewMode = 'shaded' | 'wireframe' | 'shadedWire' | 'flat' | 'skeleton' | 'points' | 'normals' | 'uv' | 'vertexColor' | 'vertexColorR' | 'vertexColorG' | 'vertexColorB' | 'normalColors' | 'ao' | 'windWeights' | 'alpha' | 'lightmapDensity';
 
 /** All view modes in menu order (single source of truth for state, commands and the toolbar). */
 export const VIEW_MODE_LABELS: Record<ViewMode, string> = {
@@ -31,12 +31,17 @@ export const VIEW_MODE_LABELS: Record<ViewMode, string> = {
   normals: 'Normals (lines)',
   uv: 'UV checker',
   vertexColor: 'Vertex color',
+  vertexColorR: 'Vertex color: R channel',
+  vertexColorG: 'Vertex color: G channel',
+  vertexColorB: 'Vertex color: B channel',
   normalColors: 'Normals (colour)',
   ao: 'Ambient occlusion',
+  windWeights: 'Wind weights',
   alpha: 'Alpha coverage',
+  lightmapDensity: 'Lightmap density',
 };
 
-export const VIEW_MODES: readonly ViewMode[] = ['shaded', 'wireframe', 'shadedWire', 'flat', 'skeleton', 'points', 'normals', 'uv', 'vertexColor', 'normalColors', 'ao', 'alpha'];
+export const VIEW_MODES: readonly ViewMode[] = ['shaded', 'wireframe', 'shadedWire', 'flat', 'skeleton', 'points', 'normals', 'uv', 'vertexColor', 'normalColors', 'ao', 'windWeights', 'alpha', 'vertexColorR', 'vertexColorG', 'vertexColorB', 'lightmapDensity'];
 
 export interface DocumentInfo {
   id: string;
@@ -76,6 +81,7 @@ export interface AppState {
   showSkeletonPoints: boolean;
   showSkeletonRadii: boolean;
   showSkeletonFrames: boolean;
+  showOpenEnds: boolean;
   sunIntensity: number;
   lodLevel: 'Highest' | 'High' | 'Medium' | 'Low';
   stats: FrameStats;

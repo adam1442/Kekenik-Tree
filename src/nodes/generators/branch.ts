@@ -24,11 +24,25 @@ import {
 } from './frames';
 import { evaluateRootLevel, extractPlacement, type RootLevelKind } from './rootLevel';
 import { StructureSkeletonBuilder } from './skeletonBuild';
-import { compileSpineConfig, growSpineIntoBuilder, type CompiledSpineConfig } from './spine';
+import { compileSpineConfig, growSpineIntoBuilder, newSpineNotes, reportSpineNotes, type CompiledSpineConfig } from './spine';
 import { EXTENSION_SLOT_BASE } from '@/generators/common/extend';
+import { checkExtensionDepth } from '@/generators/split/selectOpenEnds';
+import { extensionAreaRadiusFactor, fermatBases, usesVirtualSplit, type ExtensionBase } from '@/generators/split/extensionGroup';
 import { SUB_LEVEL_ATTR } from '@/generators/skin';
-import { EXTENSION_ATTR, EXTENSION_DISPLACE_ATTR, EXTENSION_SMOOTH_ATTR, SPLIT_ATTR } from '@/generators/split';
+import { WIND_HOST_ATTR } from '@/geometry/windAttributes';
+import {
+  EXTENSION_ATTR,
+  EXTENSION_DISPLACE_ATTR,
+  EXTENSION_SMOOTH_ATTR,
+  SPLIT_ATTR,
+  SPLIT_EXPAND_ATTR,
+  SPINE_ORIGIN_ATTR,
+  SPLIT_SMOOTH_INNER_ATTR,
+  SPLIT_SHAPE_ATTRS,
+  SPLIT_SMOOTH_OUTER_ATTR,
+} from '@/generators/split';
 import { createWeldLevel, readWeldConfig, WELD_ATTR, WELD_SELF_ATTR, weldChild } from './weldApply';
+import { createFusedParents, endRingSides } from './fusedParent';
 
 function evalParentCurve(params: NodeParams, id: string, u: number, fallback = 1): number {
   const c = params[id]?.curve;
@@ -56,9 +70,13 @@ function growOneLevel(
   const subScale = levelIndex === 0 ? 1 : Math.pow(0.62, levelIndex);
 
   const builder = new StructureSkeletonBuilder(Math.min(65536, Math.max(512, parentSk.branches.length * 32)));
+  const notes = newSpineNotes();
   const env = createGenerationEnv(ctx, params, parentSk);
   const weldLevel = createWeldLevel(readWeldConfig(params), parentSk, levelIndex > 0);
+  // A split is one logical spine: ordinary children use the parent's true tube only, the fused halves are open ends for Extend parent
+  const fused = createFusedParents(parentSk);
   let written = 0;
+  let depthReported = false;
 
   for (let bi = 0; bi < parentSk.branches.length && written < maxTotalRemaining; bi++) {
     if ((bi & 31) === 0) ctx.cancel.throwIfCancelled();
@@ -68,14 +86,29 @@ function growOneLevel(
     const childGen = pb.generation + 1;
     if (childGen > maxGeneration) continue;
 
-    const prep = prepareParentBranch(parentSk, pb);
+    const prep = fused.prepare(pb, prepareParentBranch(parentSk, pb));
     const branchRng = ctx.rng.fork(`lvl:${levelIndex}:pb:${pb.id}`);
-    const placements = generateChildPlacements(prep, params, branchRng, ctx.lod, maxTotalRemaining - written, env);
+    const isHalf = fused.halves.has(pb.id);
+    const placements = generateChildPlacements(prep, params, branchRng, ctx.lod, maxTotalRemaining - written, env).filter((p) => !isHalf || p.isExtension);
     const extensionCount = placements.reduce((n, p) => n + (p.isExtension ? 1 : 0), 0);
+    // Several extensions on one open end: Count 2 is a virtual split (one fused stub, two halves); Count 3+ start on a Fermat spiral
+    let groupBases: ExtensionBase[] | null = null;
 
     for (let pi = 0; pi < placements.length && written < maxTotalRemaining; pi++) {
       if ((pi & 127) === 0) ctx.cancel.throwIfCancelled();
       const pl = placements[pi]!;
+      if (pl.isExtension) {
+        const depth = checkExtensionDepth(childGen);
+        if (!depth.ok) {
+          if (!depthReported) ctx.logger.error(depth.message ?? 'Extend parent chain is too deep.');
+          depthReported = true;
+          continue;
+        }
+      }
+      const extIndex = pl.isExtension ? Math.max(0, pl.slotIndex - EXTENSION_SLOT_BASE) : 0;
+      const pairMode = pl.isExtension && usesVirtualSplit(extensionCount) && pl.u >= 0.5;
+      // The second extension of a virtual split is the other half of the first one's fork
+      if (pairMode && extIndex > 0) continue;
       const childRng = branchRng.fork(`ch:${pl.slotIndex}`);
       const inst = scope.spawn({ parentBranch: pb.id, index: pl.slotIndex, level: levelIndex, baseU: pl.u }, builder);
       if (inst.pruned) continue;
@@ -109,7 +142,15 @@ function growOneLevel(
       const upRoll = randomUpRoll(branchRng.fork(`up:${pl.groupIndex ?? pl.slotIndex}`), childRng.fork('up'), icfg.unify);
       const aligned = alignedNormal(start.tangent, start.normal, effectiveAlignment, upRoll);
       const rolled = orthonormalNormal(start.tangent, rotateAroundAxis(aligned, start.tangent, deg2rad(icfg.spineRollDeg + inst.rollOffsetDeg)));
-      const frame = { tangent: start.tangent, normal: rolled, binormal: v3Norm(v3Cross(start.tangent, rolled), [0, 1, 0]) };
+      let frame = { tangent: start.tangent, normal: rolled, binormal: v3Norm(v3Cross(start.tangent, rolled), [0, 1, 0]) };
+      if (pl.isExtension) {
+        // An extension IS the open end: tangent and frame are the end's own (Bottom: the synthetic end at the base, pointing back
+        // out along -tangent with the normal kept and the binormal flipped). No Alignment / Roll / Start roll on top.
+        const bottom = u < 0.5;
+        const t: Vec3 = bottom ? [-sample.tangent[0], -sample.tangent[1], -sample.tangent[2]] : sample.tangent;
+        const n = orthonormalNormal(t, sample.normal);
+        frame = { tangent: t, normal: n, binormal: v3Norm(v3Cross(t, n), [0, 1, 0]) };
+      }
 
       let origin: Vec3 = sample.position;
       if (icfg.weldStart && !pl.isExtension) {
@@ -125,6 +166,19 @@ function growOneLevel(
       const sink = sampledSink(params, childRng);
       if (!pl.isExtension && Math.abs(sink) > 1e-5) {
         origin = v3Add(origin, v3Scale(frame.tangent, -sink));
+      }
+
+      // Count >= 3: each extension starts on its own Fermat-spiral point inside the end disc, with the radius of the area rule
+      let extRadiusScale = inst.radiusScale;
+      let extAzimuth = pl.azimuthRad;
+      if (pl.isExtension && extensionCount >= 2 && !pairMode) {
+        extRadiusScale *= extensionAreaRadiusFactor(extensionCount, icfg.splits.settings.areaExponent);
+        groupBases ??= fermatBases(extensionCount, sample.radius, branchRng.fork('extGroup'), pl.azimuthRad - (extIndex / extensionCount) * Math.PI * 2);
+        const base = groupBases[Math.min(extIndex, groupBases.length - 1)];
+        if (base) {
+          origin = v3Add(origin, v3Add(v3Scale(frame.normal, base.x), v3Scale(frame.binormal, base.y)));
+          extAzimuth = base.azimuth;
+        }
       }
 
       const levelCfg = subScale === 1 ? icfg : { ...icfg, lengthBase: Math.max(0.02, icfg.lengthBase * subScale) };
@@ -144,11 +198,12 @@ function growOneLevel(
           hasParent: true,
           isExtension: pl.isExtension,
           lengthScale: inst.lengthScale * (pl.isExtension ? icfg.extension.lengthScale : 1),
-          ...(pl.isExtension ? { extensionIndex: Math.max(0, pl.slotIndex - EXTENSION_SLOT_BASE), extensionCount, extensionAzimuth: pl.azimuthRad } : {}),
-          radiusScale: inst.radiusScale,
+          ...(pl.isExtension ? { extensionIndex: extIndex, extensionCount: pairMode ? 1 : extensionCount, extensionAzimuth: extAzimuth, ...(pairMode ? { extensionPair: true } : {}) } : {}),
+          radiusScale: extRadiusScale,
           side: pl.side,
           parentLengthSegments: Math.max(0, pb.count - 1),
-          parentRadialSegments: parentSk.attributes.get('radialSides')?.[pb.start] ?? 0,
+          parentRadialSegments: endRingSides(parentSk.attributes.get('radialSides')?.[pb.start] ?? 0, isHalf),
+          notes,
         },
         childRng,
         builder,
@@ -162,6 +217,7 @@ function growOneLevel(
     }
   }
 
+  reportSpineNotes(ctx.logger, notes);
   return builder.build();
 }
 
@@ -190,6 +246,12 @@ function mergeSkeletons(levels: readonly Skeleton[]): Skeleton {
     const extInfo = sk.attributes.get(EXTENSION_ATTR);
     const extSmooth = sk.attributes.get(EXTENSION_SMOOTH_ATTR);
     const extDisplace = sk.attributes.get(EXTENSION_DISPLACE_ATTR);
+    const splitExpand = sk.attributes.get(SPLIT_EXPAND_ATTR);
+    const spineOrigin = sk.attributes.get(SPINE_ORIGIN_ATTR);
+    const windHost = sk.attributes.get(WIND_HOST_ATTR);
+    const splitInner = sk.attributes.get(SPLIT_SMOOTH_INNER_ATTR);
+    const splitOuter = sk.attributes.get(SPLIT_SMOOTH_OUTER_ATTR);
+    const splitShape = SPLIT_SHAPE_ATTRS.map((d) => [d.attr, sk.attributes.get(d.attr)] as const);
     const wl = sk.attributes.get(WELD_ATTR);
     const ws = sk.attributes.get(WELD_SELF_ATTR);
     const curPointOffset = builder.pointCount;
@@ -223,7 +285,7 @@ function mergeSkeletons(levels: readonly Skeleton[]): Skeleton {
       });
       if (added.branchId >= 0 && li > 0) builder.setBranchExtra(added.branchId, SUB_LEVEL_ATTR, 1);
       if (added.branchId >= 0) {
-        for (const [attr, arr] of [[SPLIT_ATTR, splitInfo], [EXTENSION_ATTR, extInfo], [EXTENSION_SMOOTH_ATTR, extSmooth], [EXTENSION_DISPLACE_ATTR, extDisplace]] as const) {
+        for (const [attr, arr] of [[SPLIT_ATTR, splitInfo], [EXTENSION_ATTR, extInfo], [EXTENSION_SMOOTH_ATTR, extSmooth], [EXTENSION_DISPLACE_ATTR, extDisplace], [SPLIT_EXPAND_ATTR, splitExpand], [SPLIT_SMOOTH_INNER_ATTR, splitInner], [SPLIT_SMOOTH_OUTER_ATTR, splitOuter], [SPINE_ORIGIN_ATTR, spineOrigin], [WIND_HOST_ATTR, windHost], ...splitShape] as const) {
           const v = arr ? (arr[b.start] as number) : 0;
           if (v !== 0) builder.setBranchExtra(added.branchId, attr, v);
         }

@@ -15,6 +15,8 @@ export interface ContentStats {
   bones: number;
   skeletonBranches?: number;
   skeletonPoints?: number;
+  /** Leaf collision removal result (absent when the pass is off). */
+  collision?: { removed: number; shrunk: number; moved: number; orphanedParents: number; leaves: number };
 }
 
 /**

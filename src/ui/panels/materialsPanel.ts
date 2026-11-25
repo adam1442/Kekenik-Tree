@@ -262,7 +262,8 @@ function settingsTab(ctx: AssetPanelContext<MaterialDef>, mat: MaterialDef, rebu
     card(
       'Atlas',
       row('Scale', numberField({ value: mat.atlas.scale, min: 0.001, onChange: (v) => ctx.edit('Atlas scale', (m) => (m.atlas.scale = v), 'atlas') })),
-      row('Handling', createSelect({ options: ['Default', 'Cutout', 'Mesh'], value: { default: 'Default', cutout: 'Cutout', mesh: 'Mesh' }[mat.atlas.handling], width: 92, className: 'kt-sel-sm', onChange: (v) => ctx.edit('Atlas handling', (m) => (m.atlas.handling = v.toLowerCase() as MaterialDef['atlas']['handling'])) })),
+      row('Handling', createSelect({ options: ['Default', 'Cutout', 'Mesh', 'Force out'], value: { default: 'Default', cutout: 'Cutout', mesh: 'Mesh', forceOut: 'Force out' }[mat.atlas.handling], width: 92, className: 'kt-sel-sm', onChange: (v) => ctx.edit('Atlas handling', (m) => (m.atlas.handling = v === 'Force out' ? 'forceOut' : (v.toLowerCase() as MaterialDef['atlas']['handling']))) })),
+      row('Unwrap scale', numberField({ value: mat.atlas.unwrapScale ?? 1, min: 0.01, onChange: (v) => ctx.edit('Unwrap scale', (m) => (m.atlas.unwrapScale = v), 'atlas') })),
       row('Name', textField(mat.atlas.name, (v) => ctx.edit('Atlas name', (m) => (m.atlas.name = v)))),
     ),
     card(

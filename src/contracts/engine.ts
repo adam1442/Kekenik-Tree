@@ -1,4 +1,5 @@
 import type { InstanceTable } from '@/instances/types';
+import type { DynamicLodConfig } from '@/lod/dynamic/types';
 import type { AttachmentSet } from './attachment';
 import type { WindSettings } from './material';
 import type { MeshData } from './mesh';
@@ -72,16 +73,27 @@ export interface MeshWindOverride {
 }
 
 /** One renderable piece of the plant (one graph node's geometry). */
+/** Suffix of the scene-entry id of a leaf node's dropped-leaf ground cards. */
+export const GROUND_SUFFIX = '#dropped';
+/** Graph node id of a scene entry id. */
+export const entryNodeId = (id: string): string => (id.endsWith(GROUND_SUFFIX) ? id.slice(0, -GROUND_SUFFIX.length) : id);
+
 export interface SceneEntry {
   nodeId: string;
   /** NodeDef.type of the producing node. */
   type: string;
   statsGroup: string;
   mesh: MeshData;
+  /** Dropped-leaf ground cards (Season > Show dropped leaves): not animated by wind, exported only on request. */
+  ground?: boolean;
   /** Revision token: changes whenever the mesh content may have changed (cache key of the producing node). */
   rev: string;
   /** Wind multipliers for this piece (absent = neutral). */
   wind?: MeshWindOverride;
+  /** Dynamic LOD: the generator's Weight (0..1, 0.5 = neutral); higher survives longer among pieces of the same type. */
+  lodWeight?: number;
+  /** Lightmap weight of the producing generator (relative texel density, 0 = one texel per piece); absent = 1. */
+  lightmapWeight?: number;
 }
 
 export interface SceneSkeleton {
@@ -92,6 +104,21 @@ export interface SceneSkeleton {
   instances?: InstanceTable;
   /** Cutout attachment frames of the instances. */
   attachments?: AttachmentSet;
+}
+
+/** Result of the leaf-collision post pass (Tree > Collision). */
+export interface SceneCollisionStats {
+  /** Leaves that took part. */
+  leaves: number;
+  removed: number;
+  shrunk: number;
+  moved: number;
+  /** Parent twigs whose leaves were all removed (Parent = Remove parent). */
+  orphanedParents: number;
+  /** Narrow-phase tests run. */
+  tests: number;
+  /** Quality used (after the LOD step-down). */
+  level: string;
 }
 
 export interface SceneStats {
@@ -105,6 +132,8 @@ export interface SceneStats {
   skeletonBranches?: number;
   /** Total skeleton sample points across all structure generators. */
   skeletonPoints?: number;
+  /** Leaf collision removal result (absent when the pass is off). */
+  collision?: SceneCollisionStats;
 }
 
 /** Combined result of one evaluation pass: what the viewport shows. */
@@ -114,6 +143,14 @@ export interface SceneModel {
   stats: SceneStats;
   /** Wind node attached to the Tree output: overrides the project wind settings. */
   wind?: WindSettings | null;
+  /** Season of the Tree node this scene was generated at. */
+  season?: { value: number; showDropped: boolean; exportDropped: boolean };
+  /** Tree > Dynamic LOD settings (absent when the Tree node has none). */
+  dynamicLod?: DynamicLodConfig;
+  /** Tree > Vertex Color (absent when the scene has no Tree node: legacy packing, colours computed). */
+  vertexColor?: { compute: boolean; packing: 'legacy' | 'kekenik' };
+  /** Tree > Lightmap (export packs a lightmap UV set when enabled). */
+  lightmap?: { enabled: boolean; resolution: number; layout: 'atlas' | 'udim' };
 }
 
 export interface EvaluationSummary {

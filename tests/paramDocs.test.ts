@@ -76,7 +76,7 @@ const COMMON_NOTES = [
   '',
   '* **Boundaries.** *First* / *Last* = lowest / highest point on the parent where nodes occur. *Clip* (checkbox; the value insets the range as a fraction of First..Last): nodes that Spread or Position push outside First..Last are removed instead of being held on the boundary.',
   '* **Common.** *Active* (curve over the level of detail, left = highest detail: active where the curve is above 0.5). *Pass* (integer >= 1): generators compute in pass order; a node whose pass is lower than an ancestor\'s gets an error badge. *Rotation* turns all nodes of a parent around it as a group (variance jumbles it per parent). *Position* shifts all nodes along the parent (variance per parent). *Sink* moves the start of the nodes into (+) or out of (-) the parent (variance per node). *Pruning* curve runs from First (left) to Last (right); nodes are removed where it is below 0.5.',
-  '* **Extend parent** (Branch, Cap, Leaf, Batched leaf; valid under a Branch parent). *Type*: None, Any (tip), Bottom (base), Breaks only (tip of parents that end in a break; detected from the thick tip of the parent), Split 1 / Split 2 / Skinny / Fat (kept as entries, behave like Any until the split data exists). *Count* = extensions per parent.',
+  '* **Extend parent** (Branch, Cap, Leaf, Batched leaf; valid under a Branch parent). *Type*: None, Any (tip), Bottom (base), Breaks only (tip of parents that end in a break; detected from the thick tip of the parent), Split 1 / Split 2 / Skinny / Fat (choose one open end of a split; the end is the parent\'s real open end, see docs/SPLITS.md). *Count* = extensions per open end (2 = a fused Y fork, 3+ = a bundle that follows the pipe model; Extensions group). The Type / Count rows are disabled under a parent that is not a Branch generator.',
   '* **Knockout.** *Amount* = share of nodes removed at random after the mode ran (curve along the parent). *+ Resolution* is added to the amount for every level of detail below the highest (negative = fewer removed).',
   '* **Force containers.** *Include* / *Exclude* list Force nodes by name. Give a Force node a volume in its *Volume* section (Shape None / Sphere / Box + Center, Radius or Size). Include keeps only nodes inside at least one named volume, Exclude removes nodes inside any. Unknown names are ignored. The volume works whether or not the force is Active. Nodes are tested where they leave the parent surface.',
   '* **More.** *Click place* (Ready / None / Any / Number) is stored and takes effect with Freehand mode. *Mesh alignment* (Leaf, Batched leaf): when the parent is a Mesh Instance, the leaf grows along the parent Tangent / Binormal, a parent axis (X = normal, Y = tangent, Z = their cross product) or a world axis. *Size scalar* scales the node (length, radius, leaf / mesh scale ...) and is multiplied into the scalar handed to every node below it; the Tree node\'s *Size scalar* is the start value.',
@@ -180,10 +180,40 @@ const KNOT_NOTES = [
   '',
 ].join('\n');
 
-function knotTables(): string {
-  const def = getNodeDef('generator.knot');
-  if (!def) throw new Error('generator.knot');
-  const lines: string[] = [`## ${def.label} (\`generator.knot\`)`, '', def.description ?? '', ''];
+const DECAL_NOTES = [
+  '### Decal geometry (T15)',
+  '',
+  'Pure maths: `src/generators/decal/decalMesh.ts` (shape: `src/generators/surfaceDetail/planarShape.ts`); node: `src/nodes/generators/decal.ts` (placement = the knot\'s `collectPlacements` + `knotFrame`, skin = the knot\'s `parentSkin`).',
+  '',
+  '* **Skin projection.** The patch is a `Resolution x Resolution` grid in the tangent plane of the parent (x around, y along, rolled by *Rotation* + *Random rotation*); every vertex is mapped onto the parent cone (axis point, ring frame, radius x polygon-sag scale, taper) and lifted by `Offset + displacement` along the skin normal.',
+  '* **Size.** Length along the parent = *Size* (variance, curve along the parent) + *+ % of parent* x parent radius; width = length x *Aspect*.',
+  '* **Height.** `displacement = Height x map(u, v) x fade`, bounded by `|Height|`. The map is the material Height texture or, as for bark sets (T07), the alpha channel of its normal map; a material without a decoded height map leaves the patch flat. *Edge fade* ramps the relief to 0 at the border, so the border floats exactly *Offset* above the bark; the colour map\'s alpha (cut-out) blends the rim.',
+  '* **UV / material.** UVs cover the material once (0..1). *Type* picks a row by weight (Material Sets by season); a None row uses the parent material. A row with a **cutout mesh** replaces the grid by the cutout outline (refined to *Resolution*, then projected exactly like the grid: skin projection, height and edge fade - the distance to the outline - all apply); the cutout\'s anchors are exported for child generators.',
+  '* **Wind.** Every vertex copies the parent\'s wind at its own position along the axis (interpolated like the parent\'s rings; level phases unchanged): the decal moves with the skin under it.',
+  '* **Placement.** All Generation modes, Knockout, Masks, First / Last, Extend parent; split parents are cut at the crotch (`createFusedParents`), so decals are never placed in the transition.',
+  '* **LOD.** *Cull amount* removes a seeded share at lower detail; *Resolution* x Dynamic LOD radial scalar per step; *Mesh LOD offset* shifts the level used for the resolution. Decals count as decorations. Not implemented: Post > Collision / Shade pruning.',
+  '',
+].join('\n');
+
+const FIN_NOTES = [
+  '### Fin geometry (T15)',
+  '',
+  'Pure maths: `src/generators/fin/finMesh.ts`; node: `src/nodes/generators/fin.ts`.',
+  '',
+  '* **Base ring.** The `Width segments + 1` base vertices are skin points of the parent (distance 0, zero gap) along a line in the tangent plane. Fold, curl and noise grow from the base, so the ring never leaves the skin.',
+  '* **Orientation.** *Style*: Perpendicular (the flap runs around the parent), Along spine (along it), Up (towards +Z). The fin leaves along `cos(Start angle) x e + sin(Start angle) x n` (e = style direction, n = surface normal): 0 degrees lies on the bark, 90 stands out; *Roll* turns it about n.',
+  '* **Deformation.** *Fold* turns the two halves towards each other about the centre line (growing to the tip); *Curl* bends the length axis towards the face; *Vertex Amount / Noise scale / Seed* is seeded simplex displacement x distance from the base; *Scale X / Y / Z* scale width, length and the out-of-plane amount. *Flip* mirrors U and reverses fold / curl.',
+  '* **Lighting.** *Puffiness* blends all normals towards the parent surface normal; *Match surface* blends the base normals into it, fading out towards the tip.',
+  '* **Wind.** Base ring = the parent\'s wind exactly (per vertex along the axis); `w2 = host + (1 - host) x min(1, 0.8 x Ripple) x t^1.5`, so the weight never decreases and never exceeds 1. Level phases are copied.',
+  '* **Type: Material / Mesh / Weight.** A row with a cutout mesh gives the flap the cutout outline (normalised to Width x Size, refined to the segment counts, then mapped with the same fold / curl / noise / wind code as the grid; its base line is where the cutout touches the bark). The cutout\'s anchors are exported for child generators.',
+  '* **Not implemented:** Growth, Post > Collision / Shade pruning.',
+  '',
+].join('\n');
+
+function knotTables(type = 'generator.knot', notes = KNOT_NOTES): string {
+  const def = getNodeDef(type);
+  if (!def) throw new Error(type);
+  const lines: string[] = [`## ${def.label} (\`${type}\`)`, '', def.description ?? '', ''];
   const groups: string[] = [];
   for (const p of def.params) if (!groups.includes(p.group)) groups.push(p.group);
   for (const group of groups) {
@@ -195,7 +225,7 @@ function knotTables(): string {
     }
     lines.push('');
   }
-  return lines.join('\n') + '\n' + KNOT_NOTES;
+  return lines.join('\n') + '\n' + notes;
 }
 
 function leafTab(): string {
@@ -213,8 +243,20 @@ function leafTab(): string {
     if (group === 'Leaves') lines.push(LEAF_NOTES);
     if (group === 'Lighting') lines.push(LIGHTING_NOTES);
   }
-  return lines.join('\n') + '\n' + DEFORM_NOTES + '\n' + BATCHED_NOTES + '\n' + FROND_VARIANCE_NOTES;
+  return lines.join('\n') + '\n' + DEFORM_NOTES + '\n' + BATCHED_NOTES + '\n' + FROND_VARIANCE_NOTES + '\n' + SPLIT_NOTES;
 }
+
+const SPLIT_NOTES = [
+  '## Splits, Extend parent, Extensions and Root splitting (notes)',
+  '',
+  '* **Skin > Splits** (Trunk, Branch, Root). *Chance* decides per spine whether its tip forks into two fused halves (one skin, one crotch vertex). *Balance* moves cross-section area between the halves (pipe model: r1^2 + r2^2 stays the parent area at Expand 1); *Side 1 / Side 2* are the half angles, *Expand* widens one half, *Smooth > Inner / Outer* shape the valley and the shoulders (Inner 0 keeps a sharp crease, the only place a normal jump above 25 degrees is expected). *Seed* re-rolls only the splits. The halves are the two open ends that Extend parent and Cap continue.',
+  '* **One spine.** A split counts as ONE spine for every generator below it: Branch, Split, Leaf, Frond, Decal, Fin, Knot and the other placement generators place their nodes on the parent up to the start of the shared transition and never on the two halves (the halves only take Extend parent / Cap), so a generator is never repeated per half. Children therefore sit on the true tube and weld to it.',
+  '* **Split generator > Split parents only.** Forks only the parents that already split (Skin > Splits). Off = every parent (halves excluded).',
+  '* **Ring counts.** A half ends in a ring of N / 2 vertices; its extension or cap uses exactly that ring and starts on the half\'s real end ring (no gap). Every further split of a split halves the count again, so give the first spine a high Resolution (32 supports three levels).',
+  '* **Root splitting.** Roots split with the same engine (Down bias tilts both halves towards gravity). Roots anchor on the ground base only, never on a split half or an extension.',
+  '* **View > Show open ends.** Draws every open end as a ring with a direction arrow and one or two ticks (index): orange = fat half, blue = skinny half, red = break, green = bottom. Off by default.',
+  '',
+].join('\n');
 
 describe('PARAMETERS.md', () => {
   it('lists every tab / section / parameter of Tree, Trunk, Branch and Spine', () => {
@@ -229,7 +271,7 @@ describe('PARAMETERS.md', () => {
       '* Curves on a parameter are evaluated along the *parent* (0 = base, 1 = tip) for placement params, and along the *spine* for shape params.',
       '',
     ].join('\n');
-    const doc = [header, MODE_NOTES, COMMON_NOTES, ...['output.tree', 'generator.trunk', 'generator.branch', 'generator.spine'].map((type) => (type === 'generator.branch' ? `${table(type)}\n${UV_NOTES}` : table(type))), leafTab(), knotTables()].join('\n');
+    const doc = [header, MODE_NOTES, COMMON_NOTES, ...['output.tree', 'generator.trunk', 'generator.branch', 'generator.spine'].map((type) => (type === 'generator.branch' ? `${table(type)}\n${UV_NOTES}` : table(type))), leafTab(), knotTables(), knotTables('generator.decal', DECAL_NOTES), knotTables('generator.fin', FIN_NOTES)].join('\n');
     expect(doc).toContain('Tree placement');
     expect(doc).toContain('Noise offset');
     expect(doc).toContain('Internode length');

@@ -333,7 +333,7 @@ describe('features on a real spine', () => {
     const graph = (extra: Record<string, unknown>): NodeSpec[] => [
       { id: 'tree', type: 'output.tree', parent: null },
       { id: 'tr', type: 'generator.trunk', parent: 'tree', params: { length: { value: 8, variance: 0 } } },
-      { id: 'br', type: 'generator.branch', parent: 'tr', params: { number: 40, breakChance: 0.5, splitChance: 0, ...extra } as NodeSpec['params'] },
+      { id: 'br', type: 'generator.branch', parent: 'tr', params: { number: 40, breakChance: 0.5, ...extra } as NodeSpec['params'] },
     ];
     const flags = async (extra: Record<string, unknown>): Promise<number[]> => {
       const sk = skeletonOf(await run(graph(extra)), 'br');
@@ -353,7 +353,7 @@ describe('features on a real spine', () => {
     const graph = (breakChance: number, extend: string): NodeSpec[] => [
       { id: 'tree', type: 'output.tree', parent: null },
       { id: 'tr', type: 'generator.trunk', parent: 'tree', params: { length: { value: 8, variance: 0 } } },
-      { id: 'br', type: 'generator.branch', parent: 'tr', params: { number: 12, breakChance, splitChance: 0 } as NodeSpec['params'] },
+      { id: 'br', type: 'generator.branch', parent: 'tr', params: { number: 12, breakChance } as NodeSpec['params'] },
       { id: 'ext', type: 'generator.branch', parent: 'br', params: { number: 0, extendParent: extend, extendCount: 1 } as NodeSpec['params'] },
     ];
     const count = async (breakChance: number, extend: string): Promise<number> =>

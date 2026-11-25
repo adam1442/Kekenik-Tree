@@ -22,9 +22,17 @@ export const WIND_VERTEX_LAYOUT = {
       threeAttribute: 'windWeights',
       itemSize: 4,
       type: 'float32',
-      semantic: '(trunk weight, branch weight, leaf weight, phase)',
+      semantic: '(trunk weight, branch weight, leaf weight, phase of the level-2 / leaf terms)',
       range: [0, 1],
       components: ['trunk', 'branch', 'leaf', 'phase'],
+    },
+    {
+      meshField: 'wind.phase1',
+      threeAttribute: 'windPhase1',
+      itemSize: 1,
+      type: 'float32',
+      semantic: 'Phase of the level-1 ancestor (branch-level sway terms); optional, falls back to the phase in wind.weights.',
+      range: [0, 1],
     },
   ],
   /** Suggested packed encodings for game engines. */
@@ -94,6 +102,16 @@ export function validateWindAttributes(mesh: MeshData): WindAttributeReport {
     if (!Number.isFinite(v) || v < -1e-4 || v > 1 + 1e-4) {
       issues.push(`weights[${i}]=${v} outside 0..1`);
       break;
+    }
+  }
+  if (w.phase1) {
+    if (w.phase1.length !== n) issues.push(`phase1 length ${w.phase1.length} != ${n}`);
+    for (let i = 0; i < w.phase1.length; i++) {
+      const v = w.phase1[i] as number;
+      if (!Number.isFinite(v) || v < -1e-4 || v > 1 + 1e-4) {
+        issues.push(`phase1[${i}]=${v} outside 0..1`);
+        break;
+      }
     }
   }
   return { ok: issues.length === 0, issues };

@@ -9,14 +9,19 @@ import { deg2rad } from '@/core/math';
 import type { Rng } from '@/core/rng';
 import { sampleVariance } from '@/graph/engine/seeds';
 import { pickMaterialMesh, readMaterialSlots, type PickedMaterialMesh } from '@/materials/meshSelection';
-import { WIND_ATTRIBUTES } from '@/geometry/windAttributes';
+import { WIND_ATTRIBUTES, windPhase1OfTuple, type WindTuple } from '@/geometry/windAttributes';
+import { parentWindAt, windArraysOf } from '@/geometry/weldWind';
 import { hash01, norm, type V3 } from '@/geometry/math3';
 import type { AttachmentSet } from '@/contracts/attachment';
 import { isGeneratorActive } from './common';
+import { itemBranchTint, itemColorFn, type ItemColorFn, type ItemColorSpec } from '@/geometry/vertexColor';
+
+export { readVertexColorOptions } from './common';
 import { generateChildPlacements, type ChildPlacement } from './distribution';
 import { createGenerationEnv } from './generationEnv';
 import type { AnchorSlot } from './cutoutPlacement';
 import { prepareParentBranch, sampleParentBranch, type ParentSample } from './frames';
+import { createFusedParents } from './fusedParent';
 import { attachSkeletonWind } from '@/geometry/windAttributes';
 
 export const MAX_FOLIAGE_ITEMS = 60_000;
@@ -50,11 +55,13 @@ export interface Placement {
 export function collectPlacements(ctx: NodeContext, parent: Skeleton, params: NodeParams, max = MAX_FOLIAGE_ITEMS): Placement[] {
   const out: Placement[] = [];
   const env = createGenerationEnv(ctx, params, parent);
+  // A split is one logical spine: the true tube of the parent only, the fused halves are not parents (see fusedParent.ts)
+  const fused = createFusedParents(parent);
   for (const pb of parent.branches) {
     if (out.length >= max) break;
-    if (pb.count < 2) continue;
+    if (pb.count < 2 || fused.halves.has(pb.id)) continue;
     ctx.cancel.throwIfCancelled();
-    const prep = prepareParentBranch(parent, pb);
+    const prep = fused.prepare(pb, prepareParentBranch(parent, pb));
     const branchRng = ctx.rng.fork(`pb:${pb.id}`);
     for (const placement of generateChildPlacements(prep, params, branchRng, ctx.lod, max - out.length, env)) {
       out.push({
@@ -80,22 +87,44 @@ export function outwardAt(s: ParentSample, azimuth: number): V3 {
   ]);
 }
 
-/** Wind channels of the parent at the attachment point (hierarchy 0..2, phase) + a per-item phase offset. */
-export function parentWind(parent: Skeleton, point: number, salt: number): [number, number, number, number] {
+/** Index of the branch owning every point of a skeleton (cached per skeleton; -1 for points outside any branch). */
+const branchOfPoint = new WeakMap<Skeleton, Int32Array>();
+function branchIndexAt(sk: Skeleton, point: number): number {
+  let map = branchOfPoint.get(sk);
+  if (!map) {
+    map = new Int32Array(sk.count).fill(-1);
+    sk.branches.forEach((b, bi) => map?.fill(bi, b.start, Math.min(sk.count, b.start + b.count)));
+    branchOfPoint.set(sk, map);
+  }
+  return point >= 0 && point < map.length ? (map[point] as number) : -1;
+}
+
+/**
+ * Wind channels of the parent at the attachment (hierarchy 0..2, phase, level-1 phase) + a per-item phase offset.
+ * With `at` (the item's rest position on / next to the parent spine) the weights are interpolated along the parent exactly like
+ * the parent's own mesh rings, so the item's base moves with the parent vertex it touches (no step to the nearest skeleton point).
+ */
+export function parentWind(parent: Skeleton, point: number, salt: number, at?: ArrayLike<number>): [number, number, number, number, number] {
   const g = (k: (typeof WIND_ATTRIBUTES)[number]): number => {
     const a = parent.attributes.get(k);
     return a && point >= 0 && point < a.length ? (a[point] as number) : 0;
   };
-  const ph = g('windPhase') * 0.6 + hash01(salt, 17) * 0.4;
-  return [g('wind0'), g('wind1'), g('wind2'), ph - Math.floor(ph)];
+  let tuple: WindTuple = [g('wind0'), g('wind1'), g('wind2'), g('windPhase'), parent.attributes.get('windPhase1') ? g('windPhase1') : g('windPhase')];
+  const arrays = at ? windArraysOf(parent.attributes) : null;
+  const branch = at && arrays ? parent.branches[branchIndexAt(parent, point)] : undefined;
+  if (at && arrays && branch && branch.count >= 2) {
+    tuple = parentWindAt({ arrays, start: branch.start, count: branch.count, position: parent.position }, at[0] as number, at[1] as number, at[2] as number);
+  }
+  const ph = (tuple[3] as number) * 0.6 + hash01(salt, 17) * 0.4;
+  return [tuple[0] as number, tuple[1] as number, tuple[2] as number, ph - Math.floor(ph), windPhase1OfTuple(tuple)];
 }
 
 /**
  * Weighted pick from the Material tab's "Type" list (Material / Mesh / Weight rows): material (Material Sets resolved
  * by weight and season), then one of that material's cutout meshes. A None / mesh-less row yields the unit square.
  */
-export function pickLeafType(rng: Rng, p: NodeParams, fallbackMaterial: string): PickedMaterialMesh {
-  return pickMaterialMesh(readMaterialSlots(p), { rng, fallbackMaterial });
+export function pickLeafType(rng: Rng, p: NodeParams, fallbackMaterial: string, season?: number): PickedMaterialMesh {
+  return pickMaterialMesh(readMaterialSlots(p), { rng, fallbackMaterial, ...(season !== undefined ? { season } : {}) });
 }
 
 export const LOD_FOLIAGE_DETAIL = (lod: number): number => Math.pow(0.7, Math.min(Math.max(lod, 0), 3));
@@ -106,6 +135,12 @@ export function leafTint(rng: Rng, p: NodeParams): V3 {
   const v = getNumber(p, 'vertexColorVariance', 0.1);
   const k = 0.75 + rng.range(-v, v);
   return [0.13 * k * (tint[0] ?? 1) * 1.6, 0.3 * k * (tint[1] ?? 1) * 1.6, 0.07 * k * (tint[2] ?? 1) * 1.6];
+}
+
+/** Per-item vertex colour data of Leaf / Frond / Decal / Fin / Cluster: the Kekenik R tint and (non-neutral Mode only) the colour function. */
+export function itemVertexColor(spec: ItemColorSpec, key: number, seed: number): { tint: number; colorAt?: ItemColorFn } {
+  const colorAt = itemColorFn(spec);
+  return { tint: itemBranchTint(key, seed), ...(colorAt ? { colorAt } : {}) };
 }
 
 export function leafAo(p: NodeParams, u: number, rng: Rng): number {

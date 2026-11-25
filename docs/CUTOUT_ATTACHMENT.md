@@ -2,7 +2,7 @@
 
 Source of truth: `src/materials/cutouts/frame.ts` (axis, anchors, UV -> local), `src/geometry/cardPose.ts` (deformation),
 `src/geometry/rigid.ts` (`composeFrame`), `src/geometry/attachments.ts` (`AttachmentSet` builder / queries),
-`src/nodes/generators/cutoutPlacement.ts` (child placement shared by Leaf, Mesh, Decoration).
+`src/nodes/generators/cutoutPlacement.ts` (child placement shared by Leaf and Mesh).
 
 ## Data (stored in `CutoutMesh`, shared by High / Med / Low and imported LODs)
 | Spec name | Stored as | Notes |
@@ -37,7 +37,7 @@ normalised on load; it is idempotent.
   `Orient` only applies to imported 3D meshes (authored cards are generated in generator space).
   The idle label `X Y Z` means "no flip".
 
-## Placement pipeline (Leaf, Mesh, Decoration)
+## Placement pipeline (Leaf, Mesh)
 1. Attachment: along-parent sample (spine point + tangent + normal) or a parent anchor frame.
 2. Child base `O` = attachment point; `+Y` = growth direction (parent tangent rotated by Angle / Pitch / Yaw, or the
    anchor direction blended by `Align to anchor direction`, plus `Direction spread` cone); `+Z` = facing (Parent / Up /
@@ -48,7 +48,7 @@ normalised on load; it is idempotent.
 5. Output: mesh + `StructureData.attachments` (`AttachmentSet`) + skeleton with one 2-point branch per instance
    (`instanceBranch` maps branch -> instance).
 
-Decoration: the cutout's base pivot stands on the surface point (`radius + offset`) instead of the card centre.
+Decal / Fin (`src/generators/surfaceDetail/planarShape.ts`): the cutout outline is normalised into a planar shape, refined and projected onto the parent skin; its anchors are mapped through the same triangles (`shapeSampleAt`) and exported with the instance, so children can be planted on them.
 Mesh instance: cutout assets use local `+Y` = growth, `+Z` = normal (other meshes keep `+Z` = direction).
 Frond / Spine: not changed (ribbons already follow the spine).
 
@@ -61,7 +61,7 @@ Auto with a parent that has no anchors falls back to the normal distribution.
 ## Queries
 `ctx.getParentAttachments(instanceKey)` -> `AttachmentFrame[]` (position, direction, up, scale, anchorId, anchorIndex,
 axisT, tags). Instance keys: `instanceKey(nodeId, parentKey, slot, sub)` (FNV-1a hash). `composeFrame(parentInstance,
-anchor, childBase = identity)` = `parent * anchor * inverse(childBase)`. Graph rule: Leaf / Mesh / Decoration expose a
+anchor, childBase = identity)` = `parent * anchor * inverse(childBase)`. Graph rule: Leaf / Mesh / Decal / Fin expose a
 `children` port; Frond / Spine / Cluster / Cap accept a parent but do not use anchors.
 
 ## Edit Mesh

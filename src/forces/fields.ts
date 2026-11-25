@@ -1,6 +1,8 @@
 import { getNumber, getString, type NodeParams } from '@/contracts/params';
 import { clamp } from '@/core/math';
 import { createSimplex } from '@/core/noise';
+import { geometryQueryForParams } from './geometry/query';
+import type { ForceCollider } from './geometry/collide';
 import { registerForceType } from './registry';
 import type { FieldFn, FieldPoint, V3 } from './types';
 
@@ -182,6 +184,127 @@ function collisionField(params: NodeParams): FieldFn {
   };
 }
 
+const TWO_PI = Math.PI * 2;
+
+/** Two unit vectors perpendicular to the unit vector `a` (and to each other). Deterministic. */
+function perpBasis(a: V3, e1: V3, e2: V3): void {
+  const rx = Math.abs(a[2]) < 0.9 ? 0 : 1;
+  const rz = rx === 0 ? 1 : 0;
+  let x = a[1] * rz - a[2] * 0;
+  let y = a[2] * rx - a[0] * rz;
+  let z = a[0] * 0 - a[1] * rx;
+  const l = Math.hypot(x, y, z) || 1;
+  x /= l;
+  y /= l;
+  z /= l;
+  e1[0] = x;
+  e1[1] = y;
+  e1[2] = z;
+  e2[0] = a[1] * z - a[2] * y;
+  e2[1] = a[2] * x - a[0] * z;
+  e2[2] = a[0] * y - a[1] * x;
+}
+
+/** Gnarl: spirals the spine around a world-space vector (axis) with noisy turns and a swirl around the axis. */
+function gnarlField(params: NodeParams): FieldFn {
+  const a = normalize3(readVec3(params, 'axis', [0, 0, 1]));
+  const freq = Math.max(0.001, getNumber(params, 'frequency', 1));
+  const irregularity = clamp(getNumber(params, 'gnarlIrregularity', 0.4), 0, 1);
+  const noise = createSimplex(Math.round(getNumber(params, 'noiseSeed', 1)) || 1);
+  const e1: V3 = [1, 0, 0];
+  const e2: V3 = [0, 1, 0];
+  perpBasis(a, e1, e2);
+  return (p, out) => {
+    const along = p.x * a[0] + p.y * a[1] + p.z * a[2];
+    const n = noise.noise3(p.x * freq * 0.5, p.y * freq * 0.5, p.z * freq * 0.5);
+    const phase = TWO_PI * freq * along + irregularity * 3 * n;
+    const c = Math.cos(phase);
+    const s = Math.sin(phase);
+    const k = 1 + irregularity * n;
+    // Helical component (acts on straight spines) + swirl around the axis (acts on bent ones).
+    const swx = a[1] * p.dz - a[2] * p.dy;
+    const swy = a[2] * p.dx - a[0] * p.dz;
+    const swz = a[0] * p.dy - a[1] * p.dx;
+    set(out, (c * e1[0] + s * e2[0]) * k + swx * 0.5, (c * e1[1] + s * e2[1]) * k + swy * 0.5, (c * e1[2] + s * e2[2]) * k + swz * 0.5);
+  };
+}
+
+/** Twist: turns the growth direction around the segment's local up vector (its undeformed direction): a helix along the branch. */
+function twistField(params: NodeParams): FieldFn {
+  const turns = getNumber(params, 'turns', 2);
+  const phase0 = (getNumber(params, 'phase', 0) * Math.PI) / 180;
+  const up: V3 = [0, 0, 1];
+  const e1: V3 = [1, 0, 0];
+  const e2: V3 = [0, 1, 0];
+  return (p, out) => {
+    up[0] = p.ox;
+    up[1] = p.oy;
+    up[2] = p.oz;
+    perpBasis(up, e1, e2);
+    const phase = phase0 + TWO_PI * turns * p.t;
+    const c = Math.cos(phase);
+    const s = Math.sin(phase);
+    set(out, c * e1[0] + s * e2[0], c * e1[1] + s * e2[1], c * e1[2] + s * e2[2]);
+  };
+}
+
+/** Planar: confines growth to the plane (position, normal): pulls points onto it and flattens the direction into it. */
+function planarField(params: NodeParams): FieldFn {
+  const o = readVec3(params, 'position', [0, 0, 0]);
+  const n = normalize3(readVec3(params, 'normal', [0, 1, 0]), [0, 1, 0]);
+  const soft = Math.max(0.01, getNumber(params, 'planeSoftness', 0.25));
+  return (p, out) => {
+    const dist = (p.x - o[0]) * n[0] + (p.y - o[1]) * n[1] + (p.z - o[2]) * n[2];
+    const dn = p.dx * n[0] + p.dy * n[1] + p.dz * n[2];
+    const k = -(clamp(dist / soft, -1, 1) + dn);
+    set(out, n[0] * k, n[1] * k, n[2] * k);
+  };
+}
+
+/** Return: steers every segment back to its original (undeformed) growth direction. */
+const returnField: FieldFn = (p, out) => set(out, p.ox - p.dx, p.oy - p.dy, p.oz - p.dz);
+
+function geometryField(params: NodeParams): FieldFn {
+  const query = geometryQueryForParams(params);
+  const behaviour = getString(params, 'geometryForce', 'avoid');
+  if (!query || behaviour === 'none') return (_p, out) => set(out, 0, 0, 0);
+  const range = Math.max(0.001, getNumber(params, 'geometryRange', 1));
+  const exponent = getNumber(params, 'geometryFalloff', 1);
+  const sign = behaviour === 'attract' ? -1 : 1;
+  const n: V3 = [0, 0, 1];
+  return (p, out) => {
+    const sd = query.signed(p.x, p.y, p.z, n);
+    if (sd >= range) return set(out, 0, 0, 0);
+    // Inside the mesh the push is always out of it (Avoid) or towards the surface (Attract); outside it fades with distance.
+    const w = sd <= 0 ? 1 : Math.pow(1 - sd / range, Math.max(0.05, exponent));
+    const k = sd <= 0 ? 1 : sign * w;
+    let tx = 0;
+    let ty = 0;
+    let tz = 0;
+    const dn = p.dx * n[0] + p.dy * n[1] + p.dz * n[2];
+    if (sign > 0 && dn < 0) {
+      // Avoid: a branch heading into the surface is also turned along it (so a head-on approach slides around the obstacle).
+      tx = p.dx - dn * n[0];
+      ty = p.dy - dn * n[1];
+      tz = p.dz - dn * n[2];
+      const tl = Math.hypot(tx, ty, tz);
+      const kk = tl > 1e-6 ? (-dn * w) / tl : 0;
+      tx *= kk;
+      ty *= kk;
+      tz *= kk;
+    }
+    set(out, n[0] * k + tx, n[1] * k + ty, n[2] * k + tz);
+  };
+}
+
+function geometryCollider(params: NodeParams): ForceCollider | null {
+  const mode = getString(params, 'geometryCollide', 'none');
+  if (mode !== 'obstruct' && mode !== 'prune' && mode !== 'stop') return null;
+  const query = geometryQueryForParams(params);
+  if (!query) return null;
+  return { mode, query, skin: Math.max(0, getNumber(params, 'geometrySkin', 0.02)) };
+}
+
 let registered = false;
 
 /** Registers the built-in force types (idempotent). */
@@ -244,4 +367,10 @@ export function registerBuiltinForceTypes(): void {
   });
   registerForceType({ type: 'groundAvoid', mode: 'steer', loadExponent: 0, compile: groundField });
   registerForceType({ type: 'collision', mode: 'steer', loadExponent: 0, compile: collisionField });
+  registerForceType({ type: 'gnarl', mode: 'steer', loadExponent: 0, compile: gnarlField });
+  registerForceType({ type: 'twist', mode: 'steer', loadExponent: 0, compile: twistField });
+  registerForceType({ type: 'planar', mode: 'steer', loadExponent: 0, compile: planarField });
+  registerForceType({ type: 'return', mode: 'steer', loadExponent: 0, compile: () => returnField });
+  registerForceType({ type: 'knockout', mode: 'steer', loadExponent: 0, inert: true, compile: () => (_p, out) => set(out, 0, 0, 0) });
+  registerForceType({ type: 'geometry', mode: 'steer', loadExponent: 0, compile: geometryField, collider: geometryCollider });
 }

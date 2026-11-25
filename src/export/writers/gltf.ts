@@ -1,3 +1,4 @@
+import { windPhase1Array } from '@/contracts/mesh';
 import type { PlantGeometry } from '../geometry';
 import type { ExportFile } from '../types';
 
@@ -214,8 +215,10 @@ export function writeGltf(scene: GltfScene, opts: GltfOptions): GltfResult {
       if (g.wind) {
         base._WIND_PIVOT = buf.addAccessor(g.wind.pivot, 'VEC3', ARRAY_BUFFER);
         base._WIND_WEIGHTS = buf.addAccessor(g.wind.weights, 'VEC4', ARRAY_BUFFER);
+        base._WIND_PHASE1 = buf.addAccessor(g.wind.phase1 ?? windPhase1Array({ pivot: g.wind.pivot, weights: g.wind.weights }), 'SCALAR', ARRAY_BUFFER);
       }
       if (g.ao) base._AO = buf.addAccessor(g.ao, 'SCALAR', ARRAY_BUFFER);
+      if (g.blend) base._BLEND = buf.addAccessor(g.blend, 'SCALAR', ARRAY_BUFFER);
     }
     const vertexCount = g.positions.length / 3;
     const primitives = g.primitives.map((p) => {

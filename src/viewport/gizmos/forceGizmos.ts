@@ -1,4 +1,4 @@
-import { BoxGeometry, type BufferGeometry, Group, Mesh, PlaneGeometry, SphereGeometry, Vector3, type Object3D } from 'three';
+import { BoxGeometry, Quaternion, type BufferGeometry, Group, Mesh, PlaneGeometry, SphereGeometry, Vector3, type Object3D } from 'three';
 import { ThickSegment, createThickMaterial, createWireOverlay } from '../thickLines';
 import type { AppContext } from '@/app/context';
 import { readVec3 } from '@/forces/fields';
@@ -10,7 +10,7 @@ const COLOR = 0x9a86e8;
 const round = (n: number): number => Math.round(n * 1000) / 1000;
 
 /** Node types that own a gizmo. */
-export const FORCE_GIZMO_TYPES = new Set(['force.gravity', 'force.directional', 'force.phototropism', 'force.point', 'force.vortex', 'force.curl', 'force.pullToAxis', 'force.groundAvoid', 'utility.collision']);
+export const FORCE_GIZMO_TYPES = new Set(['force.gravity', 'force.directional', 'force.phototropism', 'force.point', 'force.vortex', 'force.curl', 'force.pullToAxis', 'force.groundAvoid', 'force.gnarl', 'force.twist', 'force.planar', 'force.return', 'force.knockout', 'force.geometry', 'force.seasonLight', 'force.seasonWind', 'utility.collision']);
 
 /**
  * Editable 3D gizmos for the selected force nodes (arrows for directions / axes, spheres for positions and ranges).
@@ -122,12 +122,13 @@ export class ForceGizmos {
     const size = bounds.isEmpty() ? new Vector3(2, 2, 4) : bounds.getSize(new Vector3());
     const height = Math.max(1, size.z);
     const anchor = new Vector3(0, 0, height * 0.55);
-    const len = Math.max(1, height * 0.3);
+    const baseLen = Math.max(1, height * 0.3);
     const handles: Handle[] = [];
     for (const id of this.app.store.get().selection) {
       const node = model.getNode(id);
       if (!node || !FORCE_GIZMO_TYPES.has(node.type)) continue;
       const p: NodeParams = node.params;
+      const len = baseLen * Math.max(0.1, Number(p.indicatorScale?.value ?? 1));
       const g = new Group();
       this.root.add(g);
       const push = (h: Handle | null): void => {
@@ -138,8 +139,12 @@ export class ForceGizmos {
         case 'force.gravity':
           this.arrow(g, id, 'none', () => anchor, new Vector3(0, 0, -1), len, false);
           break;
+        case 'force.seasonWind':
         case 'force.directional':
           push(this.arrow(g, id, 'direction', () => anchor, vec('direction', [1, 0, 0]).normalize(), len));
+          break;
+        case 'force.seasonLight':
+          push(this.arrow(g, id, 'direction', () => anchor, vec('direction', [0, 0, 1]).normalize(), len));
           break;
         case 'force.phototropism':
           push(this.arrow(g, id, 'lightDirection', () => anchor, vec('lightDirection', [0.4, 0.2, 1]).normalize(), len));
@@ -147,6 +152,41 @@ export class ForceGizmos {
         case 'force.curl':
           push(this.arrow(g, id, 'axis', () => anchor, vec('axis', [0, 0, 1]).normalize(), len));
           break;
+        case 'force.gnarl':
+          push(this.arrow(g, id, 'axis', () => anchor, vec('axis', [0, 0, 1]).normalize(), len));
+          break;
+        case 'force.knockout':
+          push(this.arrow(g, id, 'direction', () => anchor, vec('direction', [0, 0, -1]).normalize(), len));
+          break;
+        case 'force.twist':
+        case 'force.return':
+          this.arrow(g, id, 'none', () => anchor, new Vector3(0, 0, 1), len, false);
+          break;
+        case 'force.planar': {
+          const c = vec('position', [0, 0, 0]);
+          const n = vec('normal', [0, 1, 0]).normalize();
+          const plane = this.wire(new PlaneGeometry(height * 2, height * 2, 8, 8));
+          const orient = (): void => {
+            plane.position.copy(c);
+            plane.quaternion.copy(new Quaternion().setFromUnitVectors(new Vector3(0, 0, 1), n));
+          };
+          orient();
+          g.add(plane);
+          push(this.positionHandle(g, id, 'position', c, orient));
+          push(this.arrow(g, id, 'normal', () => c, n, len * 0.6));
+          break;
+        }
+        case 'force.geometry': {
+          const c = vec('geometryPosition', [0, 0, 0]);
+          const sc = Math.max(0.001, Number(p.geometryScale?.value ?? 1));
+          const box = this.wire(new BoxGeometry(sc, sc, sc));
+          box.position.copy(c);
+          g.add(box);
+          push(this.positionHandle(g, id, 'geometryPosition', c, () => {
+            box.position.copy(c);
+          }));
+          break;
+        }
         case 'force.point': {
           const pos = vec('position', [0, 0, 5]);
           const shape = typeof p.shape?.value === 'string' ? p.shape.value : 'point';

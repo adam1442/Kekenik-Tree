@@ -11,10 +11,13 @@ export function composeMatrix(pos: V3, x: V3, y: V3, z: V3, scale: number, out: 
   m[offset + 12] = pos[0]; m[offset + 13] = pos[1]; m[offset + 14] = pos[2]; m[offset + 15] = 1;
 }
 
+/** Floats per instance in {@link PlaceOptions.wind}. */
+export const WIND_INSTANCE_STRIDE = 5;
+
 export interface PlaceOptions {
   /** rgb multiplier per instance (3 floats each). */
   tints?: Float32Array;
-  /** wind weights per instance (4 floats each); default (0, 0, 1, 0). */
+  /** wind channels per instance ({@link WIND_INSTANCE_STRIDE} floats each: w0, w1, w2, phase, phase1); default (0, 0, 1, 0, 0). */
   wind?: Float32Array;
 }
 
@@ -31,6 +34,7 @@ export function placeMeshes(base: MeshData, matrices: Float32Array, count: numbe
   const ao = new Float32Array(nv * count);
   const pivot = new Float32Array(nv * count * 3);
   const weights = new Float32Array(nv * count * 4);
+  const phase1 = new Float32Array(nv * count);
   const indices = new Uint32Array(ni * count);
   const cells = Math.max(1, Math.ceil(Math.sqrt(count)));
   for (let k = 0; k < count; k++) {
@@ -74,17 +78,18 @@ export function placeMeshes(base: MeshData, matrices: Float32Array, count: numbe
       colors[vi * 4 + 2] = (base.colors ? (base.colors[i * 4 + 2] as number) : 1) * tb;
       colors[vi * 4 + 3] = 1;
       pivot[vi * 3] = tx; pivot[vi * 3 + 1] = ty; pivot[vi * 3 + 2] = tz;
-      weights[vi * 4] = opts.wind ? (opts.wind[k * 4] as number) : 0;
-      weights[vi * 4 + 1] = opts.wind ? (opts.wind[k * 4 + 1] as number) : 0;
-      weights[vi * 4 + 2] = opts.wind ? (opts.wind[k * 4 + 2] as number) : 1;
-      weights[vi * 4 + 3] = opts.wind ? (opts.wind[k * 4 + 3] as number) : 0;
+      weights[vi * 4] = opts.wind ? (opts.wind[k * WIND_INSTANCE_STRIDE] as number) : 0;
+      weights[vi * 4 + 1] = opts.wind ? (opts.wind[k * WIND_INSTANCE_STRIDE + 1] as number) : 0;
+      weights[vi * 4 + 2] = opts.wind ? (opts.wind[k * WIND_INSTANCE_STRIDE + 2] as number) : 1;
+      weights[vi * 4 + 3] = opts.wind ? (opts.wind[k * WIND_INSTANCE_STRIDE + 3] as number) : 0;
+      phase1[vi] = opts.wind ? (opts.wind[k * WIND_INSTANCE_STRIDE + 4] as number) : 0;
     }
     for (let i = 0; i < ni; i++) indices[k * ni + i] = (base.indices[i] as number) + k * nv;
   }
   if (base.slots.length <= 1) {
     return {
       positions, normals, tangents, uv0, uv1, colors, ao, indices,
-      wind: { pivot, weights },
+      wind: { pivot, weights, phase1 },
       slots: [{ materialId: base.slots[0]?.materialId ?? 'default', indexStart: 0, indexCount: indices.length }],
     };
   }
@@ -100,7 +105,7 @@ export function placeMeshes(base: MeshData, matrices: Float32Array, count: numbe
     }
     outSlots.push({ materialId: s.materialId, indexStart: start, indexCount: o - start });
   }
-  return { positions, normals, tangents, uv0, uv1, colors, ao, indices: ordered, wind: { pivot, weights }, slots: outSlots };
+  return { positions, normals, tangents, uv0, uv1, colors, ao, indices: ordered, wind: { pivot, weights, phase1 }, slots: outSlots };
 }
 
 /** Expand a GPU-instanced MeshData into plain geometry (exporters / non-instancing consumers). */

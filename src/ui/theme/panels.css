@@ -316,6 +316,17 @@
   pointer-events: none;
   white-space: nowrap;
 }
+.kt-vp-lod {
+  position: absolute;
+  left: 30px;
+  bottom: 4px;
+  font-size: var(--kt-fs-xs);
+  color: var(--kt-text-strong);
+  background: var(--kt-overlay-bg);
+  padding: 0 var(--kt-space-2);
+  pointer-events: none;
+  white-space: nowrap;
+}
 .kt-vp-more {
   position: absolute;
   left: 6px;

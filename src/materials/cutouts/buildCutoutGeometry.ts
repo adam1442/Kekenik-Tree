@@ -8,6 +8,7 @@ import type {
   WindGrowthAxis,
 } from '@/contracts/material';
 import { emptyMeshData, type MeshData } from '@/contracts/mesh';
+import { windPhase1OfTuple, type WindTuple } from '@/geometry/windAttributes';
 import { cross, dot, len, norm, perpendicular, sub, type V3 } from '@/geometry/math3';
 import { cardPointAt, type CardPose } from '@/geometry/cardPose';
 import { buildCutoutFrame, cardPoseFor, flipSigns, uvToLocal, type CutoutMetric } from './frame';
@@ -56,7 +57,7 @@ export interface BuildCutoutGeometryOptions {
   /** Override material id (default cutout.materialId). */
   materialId?: string;
   /** Base wind weights [h0, h1, h2, phase] from parent branch (default [0, 0, 0.2, 0]). */
-  wind?: [number, number, number, number];
+  wind?: WindTuple;
   /** Lightmap cell index and grid count for UV1 packing. */
   cellIndex?: number;
   cellCount?: number;
@@ -203,7 +204,7 @@ export function buildCutoutGeometry(
   const baseColor: V3 = opts.color ?? [1, 1, 1];
   const baseAo = opts.ao ?? 1;
   const [u0, v0, u1, v1] = opts.atlas ?? [0, 0, 1, 1];
-  const baseWind: [number, number, number, number] = opts.wind ?? [0, 0, 0.2, 0];
+  const baseWind: WindTuple = opts.wind ?? [0, 0, 0.2, 0, 0];
   const cellIndex = opts.cellIndex ?? 0;
   const cellCount = Math.max(1, opts.cellCount ?? 1);
   const cx = cellIndex % cellCount;
@@ -220,6 +221,7 @@ export function buildCutoutGeometry(
   const aoArr = new Float32Array(vCount);
   const windPivot = new Float32Array(vCount * 3);
   const windWeights = new Float32Array(vCount * 4);
+  const windPhase1 = new Float32Array(vCount);
   const cutoutSection = new Uint8Array(vCount);
   const cutoutMask = new Float32Array(vCount);
   const bendWeights = new Float32Array(vCount);
@@ -277,6 +279,7 @@ export function buildCutoutGeometry(
     windWeights[i * 4 + 1] = baseWind[1];
     windWeights[i * 4 + 2] = flutterWeight;
     windWeights[i * 4 + 3] = baseWind[3];
+    windPhase1[i] = windPhase1OfTuple(baseWind);
   }
 
   // Indices & optional winding fix
@@ -335,7 +338,7 @@ export function buildCutoutGeometry(
     colors,
     ao: aoArr,
     indices,
-    wind: { pivot: windPivot, weights: windWeights },
+    wind: { pivot: windPivot, weights: windWeights, phase1: windPhase1 },
     slots: [{ materialId, indexStart: 0, indexCount: iCount }],
     cutoutSection,
     cutoutMask,
@@ -357,7 +360,7 @@ function buildImportedLodGeometry(
   const origin: V3 = opts.origin ?? [0, 0, 0];
   const baseColor: V3 = opts.color ?? [1, 1, 1];
   const baseAo = opts.ao ?? 1;
-  const baseWind: [number, number, number, number] = opts.wind ?? [0, 0, 0.2, 0];
+  const baseWind: WindTuple = opts.wind ?? [0, 0, 0.2, 0, 0];
 
   const positions = new Float32Array(vCount * 3);
   const normals = new Float32Array(vCount * 3);
@@ -368,6 +371,7 @@ function buildImportedLodGeometry(
   const aoArr = new Float32Array(vCount);
   const windPivot = new Float32Array(vCount * 3);
   const windWeights = new Float32Array(vCount * 4);
+  const windPhase1 = new Float32Array(vCount);
 
   const nSign = cutout.transform.flipNormals ? -1 : 1;
   // Placement basis: local +X -> side, +Y -> growth axis (attachment base tangent), +Z -> card normal.
@@ -432,6 +436,7 @@ function buildImportedLodGeometry(
     windWeights[i * 4 + 1] = baseWind[1];
     windWeights[i * 4 + 2] = Math.min(1, baseWind[2] + (1 - baseWind[2]) * gCoord * 0.8);
     windWeights[i * 4 + 3] = baseWind[3];
+    windPhase1[i] = windPhase1OfTuple(baseWind);
   }
 
   const indices = new Uint32Array(iCount);
@@ -452,7 +457,7 @@ function buildImportedLodGeometry(
     colors,
     ao: aoArr,
     indices,
-    wind: { pivot: windPivot, weights: windWeights },
+    wind: { pivot: windPivot, weights: windWeights, phase1: windPhase1 },
     slots: [{ materialId, indexStart: 0, indexCount: iCount }],
     cutoutPivot: [origin[0], origin[1], origin[2]],
   };

@@ -14,6 +14,7 @@ type ViewPrefs = Pick<
   | 'showSkeletonPoints'
   | 'showSkeletonRadii'
   | 'showSkeletonFrames'
+  | 'showOpenEnds'
   | 'spinesOnTop'
   | 'showAttachmentFrames'
   | 'sunIntensity'
@@ -30,6 +31,7 @@ const DEFAULT_VIEW: ViewPrefs = {
   showSkeletonPoints: true,
   showSkeletonRadii: true,
   showSkeletonFrames: false,
+  showOpenEnds: false,
   spinesOnTop: true,
   showAttachmentFrames: false,
   sunIntensity: 1.5,
@@ -51,6 +53,7 @@ function loadViewPrefs(): ViewPrefs {
     showSkeletonPoints: bool('showSkeletonPoints', true),
     showSkeletonRadii: bool('showSkeletonRadii', true),
     showSkeletonFrames: bool('showSkeletonFrames', false),
+    showOpenEnds: bool('showOpenEnds', false),
     spinesOnTop: bool('spinesOnTop', true),
     showAttachmentFrames: bool('showAttachmentFrames', false),
     sunIntensity: typeof r.sunIntensity === 'number' ? r.sunIntensity : DEFAULT_VIEW.sunIntensity,
@@ -94,6 +97,7 @@ export function createAppStore(): Store<AppState> {
       'showSkeletonPoints',
       'showSkeletonRadii',
       'showSkeletonFrames',
+      'showOpenEnds',
       'spinesOnTop',
       'showAttachmentFrames',
       'sunIntensity',

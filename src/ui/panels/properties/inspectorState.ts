@@ -24,6 +24,7 @@ const COUPLED_PARENT_SECTION: Record<string, string> = {
   'Skin/Split spread': 'Splits>Spread',
   'Skin/Split expand': 'Splits>Expand',
   'Skin/Split smooth': 'Splits>Smooth',
+  'Skin/Split advanced': 'Splits>Advanced',
   'UV/Fractional': 'U>Fractional',
   'UV/Twist': 'U>Twist',
   'Outer/Noise shape': 'Noise>Shape',
@@ -156,7 +157,7 @@ export const STRUCTURE_TABS: readonly InspectorTab[] = [
 ];
 
 /** Tab strip of the Tree node. */
-export const TREE_TABS: readonly InspectorTab[] = [tab('All'), tab('Generation', 'Gen'), tab('Shape'), tab('LOD'), tab('Collision'), tab('Lighting')];
+export const TREE_TABS: readonly InspectorTab[] = [tab('All'), tab('Generation', 'Gen'), tab('Shape'), tab('LOD'), tab('Collision'), tab('Vertex Color', 'Color'), tab('Lighting')];
 
 const STRUCTURE_TYPES = new Set(['generator.trunk', 'generator.branch', 'generator.spine', 'generator.root']);
 

@@ -17,7 +17,7 @@ import {
 } from './frames';
 import { evaluateRootLevel } from './rootLevel';
 import { StructureSkeletonBuilder } from './skeletonBuild';
-import { compileSpineConfig, growSpineIntoBuilder } from './spine';
+import { compileSpineConfig, growSpineIntoBuilder, newSpineNotes, reportSpineNotes } from './spine';
 
 /**
  * Trunk generator (`generator.trunk`): root of the tree skeleton hierarchy.
@@ -35,6 +35,7 @@ export function evaluateTrunk(ctx: NodeContext, inputs: NodeInputs, params: Node
   // When Trunk is connected under another structure node with actual points, grow off that parent
   if (parent.count > 0 && parent.branches.length > 0) {
     const builder = new StructureSkeletonBuilder(Math.max(256, parent.branches.length * (cfg.baseSegments + 2)));
+    const notes = newSpineNotes();
     const nextGen = (parent.branches[0]?.generation ?? 0) + 1;
     let total = 0;
     const scope = new InstanceScope(ctx.nodeId, params, extractParentTable(inputs));
@@ -86,6 +87,7 @@ export function evaluateTrunk(ctx: NodeContext, inputs: NodeInputs, params: Node
             isExtension: pl.isExtension,
             lengthScale: inst.lengthScale,
             radiusScale: inst.radiusScale,
+            notes,
           },
           childRng,
           builder,
@@ -94,6 +96,7 @@ export function evaluateTrunk(ctx: NodeContext, inputs: NodeInputs, params: Node
         scope.finish(inst, builder);
       }
     }
+    reportSpineNotes(ctx.logger, notes);
     return emitStructureOutput(builder.build(), params, ctx.lod, 'bark', undefined, parent, ctx.seed, inputs, scope.table());
   }
 

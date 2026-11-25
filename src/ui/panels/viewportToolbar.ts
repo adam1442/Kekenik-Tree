@@ -1,9 +1,10 @@
 import { commandItem } from '@/app/menus';
+import { getSeason, getSeasonFlag, setSeason, setSeasonFlag } from '@/app/seasonControl';
 import { setWindParam } from '@/app/windControl';
 import type { AppContext } from '@/app/context';
 import { formatShortcut } from '@/app/shortcuts';
 import { VIEW_MODES, VIEW_MODE_LABELS, type EditMode, type ViewMode } from '@/contracts/app';
-import { getMaterialLibrary } from '@/materials/library';
+import { getLodPreview } from '@/export/lod/lodPreview';
 import { getLighting, setLighting } from '@/viewport/lighting';
 import { DEBUG_VIEW_LIMITS, getDebugView, setDebugView } from '@/viewport/debug/debugSettings';
 import { applyQualityPreset, getQuality, QUALITY_PRESETS, type QualityPreset } from '@/viewport/quality/qualitySettings';
@@ -106,21 +107,39 @@ export function buildViewportToolbar(app: AppContext, ctx: PanelContext): HTMLEl
     }),
   );
 
-  const season = btn('tbSeason', 'Season', 'Season 0..1: drives Material Set members, Season curves and Variations', (b) =>
+  const season = btn('tbSeason', 'Season', 'Season 0..1: every node turns it into its own transition value and picks its Material Set member by weight x Season curve (arrow keys step 0.01, PageUp / PageDown 0.1)', (b) =>
     showPopover(b, 'Season', (body) => {
-      const lib = getMaterialLibrary();
-      body.append(popSlider('Season', 0, 1, 0.01, () => lib.season(), (v) => lib.setSeason(v)), popNote('Material Set members fade in / out with their Season curves; Override season on a set wins.'));
+      body.append(
+        popSlider('Season', 0, 1, 0.01, () => getSeason(app), (v) => setSeason(app, v, true)),
+        popToggle('Show dropped leaves', () => getSeasonFlag(app, 'showDroppedLeaves'), (v) => setSeasonFlag(app, 'showDroppedLeaves', v)),
+        popToggle('Export dropped leaves', () => getSeasonFlag(app, 'exportDroppedLeaves'), (v) => setSeasonFlag(app, 'exportDroppedLeaves', v)),
+        popNote('Each change regenerates the model (not meant for animation). Materials are always all assigned; the slider only changes the probabilities. Undo / Redo restore the value.'),
+      );
     }),
   );
 
   const lod = btn('tbLod', 'LOD', 'Level of detail used for generation and the viewport', (b) =>
     showPopover(b, 'LOD preview', (body) => {
       const tris = app.engine.latest?.scene.stats.triangles ?? 0;
+      const liveTris = h('span', 'kt-pop-value', '');
+      const showLive = (): void => {
+        const d = getLodPreview().dynamicInfo();
+        liveTris.textContent = d?.enabled ? `${d.triangles.toLocaleString('en-US')} / ${d.fullTriangles.toLocaleString('en-US')}` : tris.toLocaleString('en-US');
+      };
+      showLive();
+      const off = getLodPreview().onChange(() => {
+        if (!liveTris.isConnected) off();
+        else showLive();
+      });
       body.append(
         popSelect('Level', ['Highest', 'High', 'Medium', 'Low'].map((v) => ({ value: v, label: v })), () => store.get().lodLevel, (v) => store.set({ lodLevel: v as 'Highest' | 'High' | 'Medium' | 'Low' })),
         popRow('Triangles', h('span', 'kt-pop-value', tris.toLocaleString('en-US'))),
-        popToggle('Auto by distance', () => false, () => undefined, NA),
-        popNote('The fixed levels re-generate the plant at that LOD (Dynamic LOD curves live on the Tree node).'),
+        popHeading('Dynamic LOD'),
+        popToggle('Enable', () => getLodPreview().dynamicInfo()?.enabled === true, (v) => getLodPreview().setDynamic({ enabled: v })),
+        popToggle('Screen area (follows the camera distance)', () => getLodPreview().dynamicInfo()?.mode === 'screen', (v) => getLodPreview().setDynamic({ mode: v ? 'screen' : 'manual' })),
+        popSlider('LOD value', 0, 1, 0.005, () => getLodPreview().dynamicInfo()?.value ?? 0, (v) => getLodPreview().setDynamic({ value: v, mode: 'manual' }), 3),
+        popRow('Live triangles', liveTris),
+        popNote('Dynamic LOD shrinks and removes parts (interior first) without re-generating the plant. The curves, Grow scale and the export levels live on the Tree node > LOD tab; moving the slider switches to Manual.'),
       );
     }),
   );
@@ -223,6 +242,7 @@ export function buildViewportToolbar(app: AppContext, ctx: PanelContext): HTMLEl
         ['Skeleton: sample points', 'view.toggle.skeletonPoints'],
         ['Skeleton: radius circles', 'view.toggle.skeletonRadii'],
         ['Skeleton: normal frames', 'view.toggle.skeletonFrames'],
+        ['Show open ends', 'view.toggle.openEnds'],
         ['Attachment frames', 'view.toggle.showAttachmentFrames'],
       ];
       for (const [label, id] of toggles) {
@@ -264,7 +284,7 @@ export function buildViewportToolbar(app: AppContext, ctx: PanelContext): HTMLEl
   const collision = btn('tbCollision', 'Collision', 'Collision objects', () => undefined, true);
   const shade = btn('tbShade', 'Shade', 'Shading preview: lit, flat, vertex colour, normals, UV', (b) =>
     showPopover(b, 'Shade', (body, close) => {
-      const modes: ViewMode[] = ['shaded', 'flat', 'vertexColor', 'normalColors', 'uv', 'ao'];
+      const modes: ViewMode[] = ['shaded', 'flat', 'vertexColor', 'vertexColorR', 'vertexColorG', 'vertexColorB', 'normalColors', 'uv', 'ao'];
       for (const m of modes) {
         const row = h('button', `kt-tb-lbl${store.get().viewMode === m ? ' active' : ''}`, VIEW_MODE_LABELS[m]);
         row.type = 'button';

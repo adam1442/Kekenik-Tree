@@ -21,7 +21,9 @@ import {
   type Vec3,
 } from './frames';
 import { StructureSkeletonBuilder } from './skeletonBuild';
-import { compileSpineConfig, growSpineIntoBuilder } from './spine';
+import { compileSpineConfig, growSpineIntoBuilder, newSpineNotes, reportSpineNotes } from './spine';
+import { EXTENSION_SLOT_BASE } from '@/generators/common/extend';
+import { checkExtensionDepth, isGroundBase, SPINE_ORIGIN_ATTR, spineOriginName } from '@/generators/split';
 import { createWeldLevel, readWeldConfig, weldChild } from './weldApply';
 
 function evalParentCurve(params: NodeParams, id: string, u: number, fallback = 1): number {
@@ -67,6 +69,7 @@ export function evaluateRoot(ctx: NodeContext, inputs: NodeInputs, params: NodeP
     const sweep = clamp(getNumber(params, 'sweep', 1), 0.01, 1);
     const groupRoll = getNumber(params, 'roll', 0) * Math.PI + deg2rad(getNumber(params, 'rotationOffset', 0));
     const builder = new StructureSkeletonBuilder(rootCount * (cfg.baseSegments + 4));
+    const notes = newSpineNotes();
 
     for (let k = 0; k < rootCount; k++) {
       if ((k & 63) === 0) ctx.cancel.throwIfCancelled();
@@ -102,6 +105,7 @@ export function evaluateRoot(ctx: NodeContext, inputs: NodeInputs, params: NodeP
           parentRadius: cfg.radiusBase * 1.8,
           hasParent: false,
           isExtension: false,
+          notes,
         },
         rootRng,
         builder,
@@ -109,38 +113,78 @@ export function evaluateRoot(ctx: NodeContext, inputs: NodeInputs, params: NodeP
       );
     }
 
+    reportSpineNotes(ctx.logger, notes);
     return emitRootOutput(builder.build(), params, ctx.lod, 'bark', undefined, parent, ctx.seed, inputs);
   }
 
   // Case 2: Parented to Trunk or upstream Root skeleton -> grow roots along [first..last] downward & outward
   const builder = new StructureSkeletonBuilder(Math.min(32768, Math.max(256, parent.branches.length * 24)));
+  const notes = newSpineNotes();
   let written = 0;
   const env = createGenerationEnv(ctx, params, parent);
   const weldLevel = createWeldLevel(readWeldConfig(params), parent, false);
 
+  const originAttr = parent.attributes.get(SPINE_ORIGIN_ATTR);
+  const radialAttr = parent.attributes.get('radialSides');
+  // Extensions start exactly on the parent's open end / base ring: no trunk-style flare on top of the parent's radius
+  const extensionCfg = { ...cfg, flareRadiusBase: 0 };
+  // Roots draw from streams keyed by the ordinal among the primary spines (not by the branch id): the fused halves a split adds to
+  // the parent never shift a root's seed, count or position.
+  let primaryOrdinal = 0;
+  let depthReported = false;
+
   for (let bi = 0; bi < parent.branches.length && written < MAX_BRANCHES_PER_NODE; bi++) {
     if ((bi & 31) === 0) ctx.cancel.throwIfCancelled();
     const pb = parent.branches[bi]!;
+    const origin0 = spineOriginName(originAttr?.[pb.start]);
+    const stableId = origin0 === 'primary' ? primaryOrdinal++ : pb.id;
+    const streamKey = origin0 === 'primary' ? `rpb:${stableId}` : `rpx:${stableId}`;
     if (pb.count < 2) continue;
 
     const childGen = pb.generation + 1;
     if (childGen > maxGeneration) continue;
 
+    // Ground base: the start of a primary spine that grows from nothing (the trunk instance). Roots anchor only there.
+    const groundBase = isGroundBase(pb.parentBranch, origin0);
     const prep = prepareParentBranch(parent, pb);
-    const branchRng = ctx.rng.fork(`rpb:${pb.id}`);
-    const placements = generateChildPlacements(prep, params, branchRng, ctx.lod, MAX_BRANCHES_PER_NODE - written, env);
-
     const parentIsAerialStem = (prep.tangents[2] as number) >= 0;
+    const branchRng = ctx.rng.fork(streamKey);
+    // The placement phase of a parent derives from its branch id: hand it the ordinal so the halves of an earlier trunk (which shift
+    // the ids) cannot rotate the roots of a later one.
+    const placementPrep = origin0 === 'primary' && stableId !== pb.id ? { ...prep, branch: { ...prep.branch, id: stableId } } : prep;
+    const placements = generateChildPlacements(placementPrep, params, branchRng, ctx.lod, MAX_BRANCHES_PER_NODE - written, env);
 
     for (let pi = 0; pi < placements.length && written < MAX_BRANCHES_PER_NODE; pi++) {
       const pl = placements[pi]!;
+      if (pl.isExtension) {
+        // Bottom continues the base ring of a ground base only; the other types continue open ends. One extension per end.
+        if (pl.u < 0.5 && !groundBase) continue;
+        if (pl.slotIndex > EXTENSION_SLOT_BASE) continue;
+        const depth = checkExtensionDepth(childGen);
+        if (!depth.ok) {
+          if (!depthReported) ctx.logger.error(depth.message ?? 'Extend parent chain is too deep.');
+          depthReported = true;
+          continue;
+        }
+      } else if (parentIsAerialStem) {
+        if (!groundBase) continue;
+      } else if (origin0 === 'splitHalf') {
+        // Lateral roots never leave the fused halves of a root parent
+        continue;
+      }
       const childRng = branchRng.fork(`rch:${pl.slotIndex}`);
       const sample = sampleParentBranch(prep, pl.u);
 
       let frame: Frame3;
       let origin: Vec3 = sample.position;
 
-      if (parentIsAerialStem) {
+      if (pl.isExtension) {
+        // An extension IS the open end: the end's own tangent and frame (Bottom: the synthetic end at the base, pointing back out
+        // along -tangent with the normal kept and the binormal flipped), origin on the end, radius of the end.
+        const t: Vec3 = pl.u < 0.5 ? [-sample.tangent[0], -sample.tangent[1], -sample.tangent[2]] : sample.tangent;
+        const n = orthonormalNormal(t, sample.normal);
+        frame = { tangent: t, normal: n, binormal: v3Norm(v3Cross(t, n), [0, 1, 0]) };
+      } else if (parentIsAerialStem) {
         // Sprouting from lower Trunk base: sweep radially outward and angle downward into ground
         const ca = Math.cos(pl.azimuthRad);
         const sa = Math.sin(pl.azimuthRad);
@@ -192,7 +236,7 @@ export function evaluateRoot(ctx: NodeContext, inputs: NodeInputs, params: NodeP
 
       const firstBranch = builder.branchCount;
       const grown = growSpineIntoBuilder(
-        cfg,
+        pl.isExtension ? extensionCfg : cfg,
         {
           parentBranch: pb.id,
           parentPoint: sample.parentPoint,
@@ -205,6 +249,16 @@ export function evaluateRoot(ctx: NodeContext, inputs: NodeInputs, params: NodeP
           parentRadius: sample.radius,
           hasParent: true,
           isExtension: pl.isExtension,
+          ...(pl.isExtension
+            ? {
+                extensionIndex: 0,
+                extensionCount: 1,
+                extensionAzimuth: pl.azimuthRad,
+                parentLengthSegments: Math.max(0, pb.count - 1),
+                parentRadialSegments: radialAttr?.[pb.start] ?? 0,
+              }
+            : {}),
+          notes,
         },
         childRng,
         builder,
@@ -217,5 +271,6 @@ export function evaluateRoot(ctx: NodeContext, inputs: NodeInputs, params: NodeP
     }
   }
 
+  reportSpineNotes(ctx.logger, notes);
   return emitRootOutput(builder.build(), params, ctx.lod, 'bark', undefined, parent, ctx.seed, inputs);
 }

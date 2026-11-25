@@ -1,6 +1,6 @@
 /**
  * Attachment frames. Every placed cutout instance exports the frames of its Anchors so that child
- * generators (Leaf, Mesh, Decoration, ...) can be planted exactly on them.
+ * generators (Leaf, Mesh, ...) can be planted exactly on them.
  *
  * Frame convention (all world space, Z-up, metres): `direction` = +Y of the frame (growth axis), `up` = +Z
  * (card normal), +X = direction x up.

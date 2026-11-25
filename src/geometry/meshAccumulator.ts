@@ -12,20 +12,24 @@ export interface VertexAttrs {
   ao: number;
   /** Wind pivot. */
   pvx: number; pvy: number; pvz: number;
-  /** Wind weights (hierarchy 0..2, phase). */
+  /** Wind weights (hierarchy 0..2, leaf-level phase). */
   w0: number; w1: number; w2: number; w3: number;
+  /** Phase of the level-1 ancestor (what the branch-level sway terms use). */
+  w4: number;
   /** Weld blend (R13): blend 0 parent .. 1 child, parent UV, contrast, noise, active flag (0 = vertex is not blended). */
   wb: number; wu: number; wv: number; wc: number; wn: number; wa: number;
+  /** Per-branch random tint 0..1 (vertex colour packing R); negative = not written (leaves, cards). */
+  bt: number;
 }
 
 export const newVertex = (): VertexAttrs => ({
   px: 0, py: 0, pz: 0, nx: 0, ny: 0, nz: 1, tx: 1, ty: 0, tz: 0, tw: 1,
   u: 0, v: 0, u1: 0, v1: 0, r: 1, g: 1, b: 1, ao: 1,
-  pvx: 0, pvy: 0, pvz: 0, w0: 0, w1: 0, w2: 0, w3: 0,
-  wb: 0, wu: 0, wv: 0, wc: 0, wn: 0, wa: 0,
+  pvx: 0, pvy: 0, pvz: 0, w0: 0, w1: 0, w2: 0, w3: 0, w4: 0,
+  wb: 0, wu: 0, wv: 0, wc: 0, wn: 0, wa: 0, bt: -1,
 });
 
-const STRIDE = 31;
+const STRIDE = 33;
 
 /**
  * Growable interleaved vertex/index store. Triangles must be appended material-by-material
@@ -37,6 +41,8 @@ export class MeshAccumulator {
   private nv = 0;
   /** True once a vertex with the weld blend flag was added. */
   private weldUsed = false;
+  /** True once a vertex carried a per-branch tint. */
+  private tintUsed = false;
   private ni = 0;
   private readonly slotList: MaterialSlotRange[] = [];
 
@@ -72,8 +78,11 @@ export class MeshAccumulator {
     d[o++] = a.r; d[o++] = a.g; d[o++] = a.b; d[o++] = a.ao;
     d[o++] = a.pvx; d[o++] = a.pvy; d[o++] = a.pvz;
     d[o++] = a.w0; d[o++] = a.w1; d[o++] = a.w2; d[o++] = a.w3;
-    d[o++] = a.wb; d[o++] = a.wu; d[o++] = a.wv; d[o++] = a.wc; d[o++] = a.wn; d[o] = a.wa;
+    d[o++] = a.wb; d[o++] = a.wu; d[o++] = a.wv; d[o++] = a.wc; d[o++] = a.wn; d[o++] = a.wa;
+    d[o++] = a.w4;
+    d[o] = a.bt;
     if (a.wa > 0) this.weldUsed = true;
+    if (a.bt >= 0) this.tintUsed = true;
     return this.nv++;
   }
 
@@ -129,7 +138,9 @@ export class MeshAccumulator {
       v.r = d[o++] as number; v.g = d[o++] as number; v.b = d[o++] as number; v.ao = d[o++] as number;
       v.pvx = d[o++] as number; v.pvy = d[o++] as number; v.pvz = d[o++] as number;
       v.w0 = d[o++] as number; v.w1 = d[o++] as number; v.w2 = d[o++] as number; v.w3 = d[o++] as number;
-      v.wb = d[o++] as number; v.wu = d[o++] as number; v.wv = d[o++] as number; v.wc = d[o++] as number; v.wn = d[o++] as number; v.wa = d[o] as number;
+      v.wb = d[o++] as number; v.wu = d[o++] as number; v.wv = d[o++] as number; v.wc = d[o++] as number; v.wn = d[o++] as number; v.wa = d[o++] as number;
+      v.w4 = d[o++] as number;
+      v.bt = d[o] as number;
       fn(v, i);
       o = i * STRIDE;
       d[o++] = v.px; d[o++] = v.py; d[o++] = v.pz;
@@ -139,7 +150,9 @@ export class MeshAccumulator {
       d[o++] = v.r; d[o++] = v.g; d[o++] = v.b; d[o++] = v.ao;
       d[o++] = v.pvx; d[o++] = v.pvy; d[o++] = v.pvz;
       d[o++] = v.w0; d[o++] = v.w1; d[o++] = v.w2; d[o++] = v.w3;
-      d[o++] = v.wb; d[o++] = v.wu; d[o++] = v.wv; d[o++] = v.wc; d[o++] = v.wn; d[o] = v.wa;
+      d[o++] = v.wb; d[o++] = v.wu; d[o++] = v.wv; d[o++] = v.wc; d[o++] = v.wn; d[o++] = v.wa;
+      d[o++] = v.w4;
+      d[o] = v.bt;
     }
   }
 
@@ -171,7 +184,9 @@ export class MeshAccumulator {
       v.r = m[o++] as number; v.g = m[o++] as number; v.b = m[o++] as number; v.ao = m[o++] as number;
       v.pvx = m[o++] as number; v.pvy = m[o++] as number; v.pvz = m[o++] as number;
       v.w0 = m[o++] as number; v.w1 = m[o++] as number; v.w2 = m[o++] as number; v.w3 = m[o++] as number;
-      v.wb = m[o++] as number; v.wu = m[o++] as number; v.wv = m[o++] as number; v.wc = m[o++] as number; v.wn = m[o++] as number; v.wa = A[o] as number;
+      v.wb = m[o++] as number; v.wu = m[o++] as number; v.wv = m[o++] as number; v.wc = m[o++] as number; v.wn = m[o++] as number; v.wa = A[o++] as number;
+      v.w4 = m[o++] as number;
+      v.bt = A[o] as number;
       const index = this.addVertex(v);
       mids.set(key, index);
       return index;
@@ -289,7 +304,9 @@ export class MeshAccumulator {
     const ao = new Float32Array(n);
     const pivot = new Float32Array(withWind ? n * 3 : 0);
     const weights = new Float32Array(withWind ? n * 4 : 0);
+    const phase1 = new Float32Array(withWind ? n : 0);
     const weldOn = this.weldUsed;
+    const tint = new Float32Array(this.tintUsed ? n : 0);
     const wBlend = new Float32Array(weldOn ? n : 0);
     const wUv = new Float32Array(weldOn ? n * 2 : 0);
     const wStyle = new Float32Array(weldOn ? n * 3 : 0);
@@ -315,6 +332,7 @@ export class MeshAccumulator {
       colors[i * 4 + 2] = d[o + 16] as number;
       colors[i * 4 + 3] = 1;
       ao[i] = d[o + 17] as number;
+      if (this.tintUsed) tint[i] = Math.max(0, d[o + 32] as number);
       if (withWind) {
         pivot[i * 3] = d[o + 18] as number;
         pivot[i * 3 + 1] = d[o + 19] as number;
@@ -323,6 +341,7 @@ export class MeshAccumulator {
         weights[i * 4 + 1] = d[o + 22] as number;
         weights[i * 4 + 2] = d[o + 23] as number;
         weights[i * 4 + 3] = d[o + 24] as number;
+        phase1[i] = d[o + 31] as number;
       }
       if (weldOn) {
         wBlend[i] = d[o + 25] as number;
@@ -336,8 +355,9 @@ export class MeshAccumulator {
     const indices = this.idx.slice(0, this.ni);
     const slots = this.slotList.length > 0 ? this.slotList.map((s) => ({ ...s })) : [{ materialId: defaultMaterial, indexStart: 0, indexCount: this.ni }];
     const mesh: MeshData = { positions, normals, tangents, uv0, uv1, colors, ao, indices, slots };
-    if (withWind) mesh.wind = { pivot, weights };
+    if (withWind) mesh.wind = { pivot, weights, phase1 };
     if (weldOn) mesh.weld = { blend: wBlend, parentUv: wUv, style: wStyle };
+    if (this.tintUsed) mesh.branchTint = tint;
     return mesh;
   }
 }

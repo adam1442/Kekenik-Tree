@@ -4,6 +4,7 @@ import type { InstanceTable } from '@/instances/types';
 import type { Skeleton } from './skeleton';
 import type { AttachmentSet } from './attachment';
 import type { LeafLightingSettings } from './lighting';
+import type { SeasonState } from './season';
 
 /**
  * Ports & data kinds.
@@ -71,6 +72,8 @@ export interface StructureData {
   attachments?: AttachmentSet;
   /** Tree-level (global) leaf lighting; handed down the hierarchy by the generators. */
   lighting?: LeafLightingSettings;
+  /** Season of the Tree and the Descendant offsets of the ancestors (set by the Tree node, advanced by generators). */
+  season?: SeasonState;
   /** Cumulative Size scalar of this node and its ancestors (children multiply their own value into it). Absent = 1. */
   sizeScalar?: number;
   /** Node type of the generator that produced this structure (e.g. `generator.meshes`). */

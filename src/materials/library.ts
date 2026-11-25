@@ -150,9 +150,10 @@ export class MaterialLibrary implements MaterialSource {
   season(): number {
     return this.seasonValue;
   }
-  setSeason(v: number): void {
+  /** `silent`: only store the value (the Tree node drives regeneration through the graph). */
+  setSeason(v: number, silent = false): void {
     this.seasonValue = Math.min(1, Math.max(0, v));
-    this.emit({ kind: 'season' });
+    if (!silent) this.emit({ kind: 'season' });
   }
 
   material(id: string | null | undefined): MaterialDef | undefined {

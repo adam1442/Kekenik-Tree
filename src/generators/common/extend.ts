@@ -4,9 +4,9 @@ export const EXTEND_TYPES = ['none', 'any', 'split-1', 'split-2', 'skinny', 'fat
 export type ExtendType = (typeof EXTEND_TYPES)[number];
 
 /** Node types that may use Extend parent (the parent must be a Branch or the Trunk). */
-export const EXTEND_CHILD_TYPES: ReadonlySet<string> = new Set(['generator.branch', 'generator.cap', 'generator.leaf', 'generator.batchedLeaf']);
+export const EXTEND_CHILD_TYPES: ReadonlySet<string> = new Set(['generator.branch', 'generator.root', 'generator.cap', 'generator.leaf', 'generator.batchedLeaf']);
 /** Parent node types whose open ends can be extended: the Trunk is the first branch of the tree (trunk -> boughs -> twig tips). */
-export const EXTEND_PARENT_TYPES: ReadonlySet<string> = new Set(['generator.branch', 'generator.trunk']);
+export const EXTEND_PARENT_TYPES: ReadonlySet<string> = new Set(['generator.branch', 'generator.trunk', 'generator.root']);
 
 export const asExtendType = (v: string): ExtendType => ((EXTEND_TYPES as readonly string[]).includes(v) ? (v as ExtendType) : 'none');
 

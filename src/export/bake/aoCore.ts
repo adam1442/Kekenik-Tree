@@ -136,6 +136,12 @@ export function applyAoToGeometry(g: PlantGeometry, baked: Float32Array, offset:
   for (let i = 0; i < n; i++) ao[i] = (baked[offset + i] as number) * (g.ao ? (g.ao[i] as number) : 1);
   g.ao = ao;
   if (mode === 'off') return;
+  if (mode === 'channelB') {
+    const own = g.colors ?? new Float32Array(n * 4).fill(1);
+    for (let i = 0; i < n; i++) own[i * 4 + 2] = baked[offset + i] as number;
+    g.colors = own;
+    return;
+  }
   const colors = g.colors && mode === 'multiply' ? g.colors : new Float32Array(n * 4).fill(1);
   for (let i = 0; i < n; i++) {
     const v = baked[offset + i] as number;

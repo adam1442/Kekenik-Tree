@@ -20,13 +20,6 @@ export const SplitFlag = {
   Fat: 8,
 } as const;
 
-/** Rings of a split side (tube from the fused base to the open end). */
-export const SPLIT_SIDE_RINGS = 5;
-/** Side length in parent radii. */
-export const SPLIT_SIDE_LENGTH_RADII = 3.2;
-/** Smallest radius of a split side (metres). */
-export const SPLIT_MIN_RADIUS = 0.0005;
-
 export interface SplitSettings {
   /** 0..1: 0.5 = equal radii, above 0.5 Side 1 is thicker. */
   balance: number;
@@ -40,16 +33,110 @@ export interface SplitSettings {
   smoothInner: number;
   /** 0 = hard outer bend, 1 = the bend is spread over the whole side. */
   smoothOuter: number;
+  /** Pipe-model exponent: `r1^e + r2^e = R^e` (2 = the halves keep the parent's cross-section area). */
+  areaExponent: number;
+  /**
+   * 0..1: both halves turn toward gravity after the lateral balance (roots: default 0.4). 0 / missing = no tilt. The tilt never
+   * lets a half point higher than its parent.
+   */
+  downBias?: number;
+  /** Skin > Splits > Split shape (T08). Missing = neutral = the former cusp outline. See {@link SplitShape}. */
+  waist?: number;
+  neckSwell?: number;
+  valleyRadius?: number;
+  ridge?: number;
+  ridgeLength?: number;
+  stretch?: number;
+  ease?: number;
+  /** T10: 0..1 dominant leader: towards 1 the fat half continues the parent direction and the skinny half leaves at its full Spread. 0 / missing = Balance only. */
+  dominance?: number;
+  /** T10: fork type. `y` (default / missing) = symmetric Y, `lateral` = the parent goes on, a clearly thinner side branch leaves. */
+  mode?: SplitForkMode;
+  /** T10: 0..1 chance that a fork of mode `y` is a lateral one (the draw uses the Splits seed). */
+  lateralChance?: number;
+  /** T10: 0..1 narrow, dark, V-shaped crevice with a bark ridge (codominant stems). 0 / missing = off. */
+  includedBark?: number;
+}
+
+/** Kinds of fork a split can make. */
+export type SplitForkMode = 'y' | 'lateral';
+
+/**
+ * Shape of the fork cross-section (the "figure-8"). Neutral values reproduce the former outline (two circle arcs that meet in a cusp).
+ * `ringBias` is derived: the curvature-adaptive ring spacing is used exactly when any other value is not neutral.
+ */
+export interface SplitShape {
+  /** Neck width at mid transition relative to the narrower lobe (1 = old look, 0.6 = pronounced peanut). */
+  waist: number;
+  /** Radius swell (fraction) just before the fork; the lobes' area reservoir pays for it, the open ends are unchanged. */
+  neckSwell: number;
+  /** Fillet radius of the valley as a fraction of the smaller lobe radius. */
+  valleyRadius: number;
+  /** Height of the bark ridge on the pinch axis as a fraction of the smaller lobe radius. */
+  ridge: number;
+  /** The ridge fades into the parent over this many parent radii. */
+  ridgeLength: number;
+  /** Elongation of the section along the divergence axis early in the transition. */
+  stretch: number;
+  /** 0 = smoothstep separation, 1 = late, sudden pinch. */
+  ease: number;
+  /** Strength of the curvature-adaptive ring spacing (0 = uniform). */
+  ringBias: number;
+  /** T10: included bark 0..1: only drives the valley AO strength / width here (the geometry comes from valley, ridge and waist). */
+  includedBark: number;
+}
+
+export const NEUTRAL_SPLIT_SHAPE: SplitShape = { waist: 1, neckSwell: 0, valleyRadius: 0, ridge: 0, ridgeLength: 2, stretch: 1, ease: 0, ringBias: 0, includedBark: 0 };
+/** Ring spacing strength of a non-neutral shape (rings per unit transition are 0.65 x at the ends .. 1.35 x in the middle). */
+export const SPLIT_ADAPTIVE_RING_BIAS = 0.35;
+
+/** Skeleton attribute (on both lobes) of every {@link SplitShape} field; only written when the value is not neutral. */
+export const SPLIT_SHAPE_ATTRS: readonly { key: keyof SplitShape; attr: string }[] = [
+  { key: 'waist', attr: 'splitWaist' },
+  { key: 'neckSwell', attr: 'splitNeckSwell' },
+  { key: 'valleyRadius', attr: 'splitValleyRadius' },
+  { key: 'ridge', attr: 'splitRidge' },
+  { key: 'ridgeLength', attr: 'splitRidgeLength' },
+  { key: 'stretch', attr: 'splitStretch' },
+  { key: 'ease', attr: 'splitEase' },
+  { key: 'ringBias', attr: 'splitRingBias' },
+  { key: 'includedBark', attr: 'splitIncludedBark' },
+];
+
+const clampShape = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, Number.isFinite(x) ? x : lo));
+
+/** True when no shape value changes the former outline (ridge length alone never does). */
+export function isSplitShapeNeutral(s: Partial<SplitShape> | undefined): boolean {
+  if (!s) return true;
+  return (s.waist ?? 1) >= 1 && (s.neckSwell ?? 0) <= 0 && (s.valleyRadius ?? 0) <= 0 && (s.ridge ?? 0) <= 0 && (s.stretch ?? 1) === 1 && (s.ease ?? 0) <= 0 && (s.includedBark ?? 0) <= 0;
+}
+
+/** The complete, clamped shape of some settings (`ringBias` follows from the other values). */
+export function splitShapeOf(s: Partial<SplitShape> | undefined): SplitShape {
+  const out: SplitShape = {
+    waist: clampShape(s?.waist ?? 1, 0.2, 1),
+    neckSwell: clampShape(s?.neckSwell ?? 0, 0, 0.5),
+    valleyRadius: clampShape(s?.valleyRadius ?? 0, 0, 1),
+    ridge: clampShape(s?.ridge ?? 0, 0, 1),
+    ridgeLength: clampShape(s?.ridgeLength ?? 2, 0.25, 8),
+    stretch: clampShape(s?.stretch ?? 1, 0.8, 1.6),
+    ease: clampShape(s?.ease ?? 0, 0, 1),
+    ringBias: 0,
+    includedBark: clampShape(s?.includedBark ?? 0, 0, 1),
+  };
+  out.ringBias = isSplitShapeNeutral(out) ? 0 : (s?.ringBias ?? SPLIT_ADAPTIVE_RING_BIAS);
+  return out;
 }
 
 export const DEFAULT_SPLIT_SETTINGS: SplitSettings = {
   balance: 0.5,
-  spread1Deg: 25,
-  spread2Deg: 25,
+  spread1Deg: 22,
+  spread2Deg: 22,
   expand1: 1,
   expand2: 1,
   smoothInner: 0.25,
   smoothOuter: 0.5,
+  areaExponent: 2,
 };
 
 /** One open end of a split (or of a broken branch). */
@@ -62,40 +149,31 @@ export interface OpenEnd {
   side: 0 | 1 | 2;
   /** The thicker of the two sides (broken ends are never fat or skinny). */
   fat: boolean;
+  /** Split ends only: fat / skinny (the same information as `fat`, in the Extend parent vocabulary). */
+  kind?: 'fat' | 'skinny';
+  /** Split ends only: orthonormal frame around `direction` (`normal` x `binormal` = `direction`). */
+  frame?: OpenEndFrame;
+  /** Split ends only: number of U tiles the half carries around its tube (half of the parent's). */
+  uTiles?: number;
+  /** Split ends only: first U tile of the half in the parent's tile numbering. */
+  uStart?: number;
+  /** Split ends only: id of the branch (spine) that split. */
+  parentSpineId?: number;
 }
 
-export interface SplitSide {
-  side: 1 | 2;
-  fat: boolean;
-  radius: number;
-  /** Ring centres, `SPLIT_SIDE_RINGS * 3`; ring 0 sits on the fused base, the last ring is the open end. */
-  positions: Float32Array;
-  radii: Float32Array;
-  openEnd: OpenEnd;
+/** Orthonormal frame of an open end (the third axis is its `direction`). */
+export interface OpenEndFrame {
+  normal: Vec3;
+  binormal: Vec3;
 }
 
-export interface SplitInput {
-  /** Centre and radius of the parent's last ring, and its unit direction. */
-  tip: Vec3;
-  radius: number;
-  tangent: Vec3;
-  /** Direction away from the centre of the tree (any vector; projected onto the plane of the split). */
-  away: Vec3;
-  /** Radians around the parent direction the plane of the split is turned from `away` (seeded jitter). */
-  roll?: number;
-  settings: SplitSettings;
-}
-
-const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
-const scale = (a: Vec3, k: number): Vec3 => [a[0] * k, a[1] * k, a[2] * k];
 const dot = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-const len = (a: Vec3): number => Math.hypot(a[0], a[1], a[2]);
 
-function norm(a: Vec3, fallback: Vec3): Vec3 {
-  const l = len(a);
-  return l < 1e-9 ? fallback : [a[0] / l, a[1] / l, a[2] / l];
-}
+const smooth01 = (x: number): number => {
+  const t = Math.min(1, Math.max(0, x));
+  return t * t * (3 - 2 * t);
+};
 
 /** Rodrigues rotation of `v` around the unit `axis`. */
 export function rotateAbout(v: Vec3, axis: Vec3, angle: number): Vec3 {
@@ -106,79 +184,8 @@ export function rotateAbout(v: Vec3, axis: Vec3, angle: number): Vec3 {
   return [v[0] * c + k[0] * s + axis[0] * d, v[1] * c + k[1] * s + axis[1] * d, v[2] * c + k[2] * s + axis[2] * d];
 }
 
-const smooth01 = (x: number): number => {
-  const t = Math.min(1, Math.max(0, x));
-  return t * t * (3 - 2 * t);
-};
-
-/**
- * Radii of the two sides. The pipe model keeps the cross-section area: `r1^2 + r2^2 = R^2` (at Expand 1). Balance 0.5 gives equal
- * radii; Balance shifts the area between the sides; Expand scales each radius on top.
- */
-export function splitRadii(radius: number, balance: number, expand1 = 1, expand2 = 1, minRadius = SPLIT_MIN_RADIUS): [number, number] {
-  const share = Math.min(0.98, Math.max(0.02, balance));
-  const r1 = radius * Math.sqrt(share) * Math.max(0.05, expand1);
-  const r2 = radius * Math.sqrt(1 - share) * Math.max(0.05, expand2);
-  return [Math.max(minRadius, r1), Math.max(minRadius, r2)];
-}
-
-/** The unit direction, perpendicular to `tangent`, in which Side 1 leans (away from the tree centre; any perpendicular when degenerate). */
-export function splitPlaneDirection(tangent: Vec3, away: Vec3, roll = 0): Vec3 {
-  const t = norm(tangent, [0, 0, 1]);
-  let p: Vec3 = add(away, scale(t, -dot(away, t)));
-  if (len(p) < 1e-6) {
-    const ref: Vec3 = Math.abs(t[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
-    p = add(ref, scale(t, -dot(ref, t)));
-  }
-  const out = norm(p, [1, 0, 0]);
-  return Math.abs(roll) > 1e-9 ? norm(rotateAbout(out, t, roll), out) : out;
-}
-
-/**
- * Builds the two sides of a split. Both start parallel to the parent at its tip, offset toward their own side so the outer wall is
- * tangent to the parent's wall (Smooth > Inner shrinks the offset: 1 = both start on the axis, no crease). The direction then eases
- * from the parent direction to the side's own angle over Smooth > Outer x the side length (0 = hard bend).
- */
-export function computeSplit(input: SplitInput): [SplitSide, SplitSide] {
-  const s = input.settings;
-  const T = norm(input.tangent, [0, 0, 1]);
-  const out = splitPlaneDirection(T, input.away, input.roll ?? 0);
-  const axis = norm(cross(T, out), [0, 1, 0]);
-  const [r1, r2] = splitRadii(input.radius, s.balance, s.expand1, s.expand2);
-  const fat1 = r1 >= r2;
-  const build = (side: 1 | 2): SplitSide => {
-    const r = side === 1 ? r1 : r2;
-    const sign = side === 1 ? 1 : -1;
-    const angle = (((side === 1 ? s.spread1Deg : s.spread2Deg) * Math.PI) / 180) * sign;
-    const lean = scale(out, sign);
-    const offset = Math.max(0, input.radius - r) * (1 - Math.min(1, Math.max(0, s.smoothInner)));
-    const origin = add(input.tip, scale(lean, offset));
-    const length = Math.max(0.02, SPLIT_SIDE_LENGTH_RADII * Math.max(input.radius, r));
-    const blend = Math.min(1, Math.max(0, s.smoothOuter)) * length;
-    const positions = new Float32Array(SPLIT_SIDE_RINGS * 3);
-    const radii = new Float32Array(SPLIT_SIDE_RINGS);
-    let p = origin;
-    let dir: Vec3 = T;
-    for (let k = 0; k < SPLIT_SIDE_RINGS; k++) {
-      if (k > 0) {
-        const mid = ((k - 0.5) / (SPLIT_SIDE_RINGS - 1)) * length;
-        const w = blend > 1e-9 ? smooth01(mid / blend) : 1;
-        dir = norm(rotateAbout(T, axis, angle * w), T);
-        p = add(p, scale(dir, length / (SPLIT_SIDE_RINGS - 1)));
-      }
-      positions[k * 3] = p[0];
-      positions[k * 3 + 1] = p[1];
-      positions[k * 3 + 2] = p[2];
-      radii[k] = r;
-    }
-    const fat = side === 1 ? fat1 : !fat1;
-    return { side, fat, radius: r, positions, radii, openEnd: { position: p, direction: dir, radius: r, side, fat } };
-  };
-  return [build(1), build(2)];
-}
-
 /** Flags stored on a side branch / on a branch that splits. */
-export function splitFlags(side: SplitSide | 'parent'): number {
+export function splitFlags(side: { side: 1 | 2; fat: boolean } | 'parent'): number {
   if (side === 'parent') return SplitFlag.Parent;
   return (side.side === 1 ? SplitFlag.Side1 : SplitFlag.Side2) | (side.fat ? SplitFlag.Fat : 0);
 }
@@ -197,11 +204,13 @@ export function selectsOpenEnd(type: OpenEndSelector, flags: number, broken: boo
     case 'any':
       return true;
     case 'split-1':
-      return (flags & SplitFlag.Side1) !== 0;
+      // an unsplit end is the single "Split 1" end
+      return (flags & SplitFlag.Side2) === 0;
     case 'split-2':
       return (flags & SplitFlag.Side2) !== 0;
     case 'fat':
-      return isSide && (flags & SplitFlag.Fat) !== 0;
+      // an unsplit end counts as Fat, never as Skinny
+      return !isSide || (flags & SplitFlag.Fat) !== 0;
     case 'skinny':
       return isSide && (flags & SplitFlag.Fat) === 0;
     case 'breaks-only':
@@ -213,6 +222,12 @@ export function selectsOpenEnd(type: OpenEndSelector, flags: number, broken: boo
 
 /** Skeleton attributes written on extension branches. */
 export const EXTENSION_ATTR = 'extensionInfo';
+/** Value of {@link EXTENSION_ATTR} on an extension that shares its open end with siblings (Count 3+); any other extension stores 1. */
+export const EXTENSION_GROUP_VALUE = 2;
+/** Skeleton attributes of the two lobes of a split (one value per point): Expand of the lobe, Smooth > Inner / Outer of the split. */
+export const SPLIT_EXPAND_ATTR = 'splitExpand';
+export const SPLIT_SMOOTH_INNER_ATTR = 'splitSmoothInner';
+export const SPLIT_SMOOTH_OUTER_ATTR = 'splitSmoothOuter';
 export const EXTENSION_SMOOTH_ATTR = 'extensionNormalSmooth';
 export const EXTENSION_DISPLACE_ATTR = 'extensionDisplaceScale';
 

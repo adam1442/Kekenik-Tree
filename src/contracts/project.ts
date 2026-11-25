@@ -64,6 +64,8 @@ export interface ProjectSettings {
   upAxis: 'Z';
   lodCount: number;
   wind: WindSettings;
+  /** Season slider 0..1 (mirror of the Tree node's Season; absent in old projects = 0). */
+  season?: number;
 }
 
 export interface AssetEntry {

@@ -4,8 +4,7 @@ import { findTreeWindNode, setWindParam } from '@/app/windControl';
 import { defaultWindSettings, type WindSettings } from '@/contracts/material';
 import { GraphModel } from '@/graph/model/graphModel';
 import { registerDiscoveredNodes } from '@/graph/registry';
-import { buildSpeciesProject } from '@/presets/builder';
-import { SPECIES } from '@/presets/species';
+import { loadSample } from './helpers/sampleProjects';
 import { windNodeParamId } from '@/viewport/wind/windParams';
 
 beforeAll(() => registerDiscoveredNodes());
@@ -28,22 +27,22 @@ function fakeApp(model: GraphModel, project: WindSettings): { app: AppContext; m
 }
 
 describe('wind controls edit the effective wind source', () => {
-  it('a preset has a Wind node on the Tree; its Enabled switch can be turned off', () => {
-    const model = GraphModel.fromJSON(buildSpeciesProject(SPECIES[0]!).graph);
+  it('a sample with a Wind node on the Tree: its Enabled switch can be toggled', () => {
+    const model = GraphModel.fromJSON(loadSample('birch').graph);
     const wind = findTreeWindNode(model);
     expect(wind?.type).toBe('wind.settings');
-    expect(wind?.params.enabled?.value).toBe(true);
+    const before = wind?.params.enabled?.value === true;
     const project = defaultWindSettings();
     const { app, marked } = fakeApp(model, project);
-    setWindParam(app, 'enabled', false);
-    expect(model.getNode(wind!.id)?.params.enabled?.value).toBe(false);
+    setWindParam(app, 'enabled', !before);
+    expect(model.getNode(wind!.id)?.params.enabled?.value).toBe(!before);
     // The project settings are left alone while a node overrides them.
     expect(project.enabled).toBe(false);
     expect(marked()).toBe(0);
   });
 
   it('maps parameter keys to the Wind node ids', () => {
-    const model = GraphModel.fromJSON(buildSpeciesProject(SPECIES[0]!).graph);
+    const model = GraphModel.fromJSON(loadSample('birch').graph);
     const wind = findTreeWindNode(model)!;
     const { app } = fakeApp(model, defaultWindSettings());
     setWindParam(app, 'directionDeg', 123);

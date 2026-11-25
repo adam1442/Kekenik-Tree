@@ -147,10 +147,18 @@ export class WindSystem {
   /** Meshes without wind data get zero weights (an undeclared attribute would read stale generic values). */
   private ensureAttributes(mesh: Mesh): void {
     const geo = mesh.geometry;
-    if (geo.getAttribute('windWeights')) return;
     const count = geo.getAttribute('position')?.count ?? 0;
-    geo.setAttribute('windPivot', new BufferAttribute(new Float32Array(count * 3), 3));
-    geo.setAttribute('windWeights', new BufferAttribute(new Float32Array(count * 4), 4));
+    if (!geo.getAttribute('windWeights')) {
+      geo.setAttribute('windPivot', new BufferAttribute(new Float32Array(count * 3), 3));
+      geo.setAttribute('windWeights', new BufferAttribute(new Float32Array(count * 4), 4));
+    }
+    // Geometry that predates the level-1 phase channel: copy the leaf-level phase (the documented fallback).
+    if (!geo.getAttribute('windPhase1')) {
+      const w = geo.getAttribute('windWeights') as BufferAttribute;
+      const ph = new Float32Array(count);
+      for (let i = 0; i < count; i++) ph[i] = w.getW(i);
+      geo.setAttribute('windPhase1', new BufferAttribute(ph, 1));
+    }
   }
 
   private variant(base: Material, override: MeshWindOverride | undefined, key: string): Material {

@@ -11,6 +11,7 @@ import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import type { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import type { Skeleton } from '@/contracts/skeleton';
 import { buildSkeletonSegments } from './debug/debugBuffers';
+import { buildOpenEndGlyphs } from './debug/openEndGlyphs';
 import { createRoundPointMaterial } from './debug/roundPoints';
 import { createThickMaterial, thickGeometryFromSegments } from './thickLines';
 
@@ -34,6 +35,8 @@ export interface SkeletonDebugVisibility {
   showPoints: boolean;
   showRadii: boolean;
   showFrames: boolean;
+  /** Rings + arrows at the open ends (break / split halves / bottom). Built on first use, absent from the scene while off. */
+  showOpenEnds?: boolean;
 }
 
 export interface SkeletonDebugMaterials {
@@ -42,6 +45,7 @@ export interface SkeletonDebugMaterials {
   readonly pointMat: ShaderMaterial;
   readonly radiusMat: LineMaterial;
   readonly frameMat: LineMaterial;
+  readonly openEndMat: LineMaterial;
   dispose(): void;
 }
 
@@ -53,18 +57,22 @@ export function createSkeletonDebugMaterials(): SkeletonDebugMaterials {
   const radiusMat = createThickMaterial({ color: 0xffffff, width: 1, opacity: 0.78, vertexColors: true });
   const frameMat = createThickMaterial({ color: 0xffffff, width: 1.25, opacity: 0.92, vertexColors: true });
 
+  const openEndMat = createThickMaterial({ color: 0xffffff, width: 2.25, opacity: 0.95, vertexColors: true, depthTest: false });
+
   return {
     lineMat,
     highlightLineMat,
     pointMat,
     radiusMat,
     frameMat,
+    openEndMat,
     dispose(): void {
       lineMat.dispose();
       highlightLineMat.dispose();
       pointMat.dispose();
       radiusMat.dispose();
       frameMat.dispose();
+      openEndMat.dispose();
     },
   };
 }
@@ -297,6 +305,9 @@ export function buildSkeletonDebugPiece(
   const group = new Group();
   group.userData.nodeId = nodeId;
   group.add(lines, highlightLines, points, radii, frames);
+  // "Show open ends": created the first time it is switched on, so it costs nothing while off
+  let openEnds: LineSegments2 | null = null;
+  let openEndsGeo: ReturnType<typeof thickGeometryFromSegments> | null = null;
 
   return {
     group,
@@ -313,6 +324,23 @@ export function buildSkeletonDebugPiece(
       points.visible = vis.showPoints;
       radii.visible = vis.showRadii;
       frames.visible = vis.showFrames;
+      if (vis.showOpenEnds === true && !openEnds) {
+        const glyphs = buildOpenEndGlyphs(sk);
+        if (glyphs.segments > 0) {
+          const geo = new BufferGeometry();
+          geo.setAttribute('position', new Float32BufferAttribute(glyphs.positions, 3));
+          geo.setAttribute('color', new Float32BufferAttribute(glyphs.colors, 3));
+          openEndsGeo = thickGeometryFromSegments(geo);
+          geo.dispose();
+          openEnds = new LineSegments2(openEndsGeo, mats.openEndMat);
+          openEnds.frustumCulled = false;
+          openEnds.userData.nodeId = nodeId;
+          openEnds.userData.isOverlay = true;
+          openEnds.renderOrder = 6;
+          group.add(openEnds);
+        }
+      }
+      if (openEnds) openEnds.visible = vis.showOpenEnds === true;
     },
     dispose(): void {
       group.removeFromParent();
@@ -323,6 +351,8 @@ export function buildSkeletonDebugPiece(
       ptGeo.dispose();
       radGeo.dispose();
       frmGeo.dispose();
+      openEnds?.removeFromParent();
+      openEndsGeo?.dispose();
     },
   };
 }

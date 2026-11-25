@@ -18,7 +18,7 @@ import {
   type DistributionOptions,
 } from './placement';
 import { StructureSkeletonBuilder } from './skeletonBuild';
-import { compileSpineConfig, growSpineIntoBuilder } from './spine';
+import { compileSpineConfig, growSpineIntoBuilder, newSpineNotes, reportSpineNotes } from './spine';
 
 /** Placement disc handed down by the Tree node (null when the parent is not a Tree). */
 export function extractPlacement(inputs: NodeInputs): TreePlacement | null {
@@ -86,6 +86,7 @@ export function evaluateRootLevel(
   const stemOf = (c: typeof cfg): typeof cfg => (isTrunk && c.crownHeight > 0 ? { ...c, straightness: clamp(c.straightness + c.crownHeight * 0.25, 0, 0.95) } : c);
   const stemCfg = stemOf(cfg);
   const builder = new StructureSkeletonBuilder(set.count * (cfg.baseSegments + 4));
+  const notes = newSpineNotes();
   const scope = new InstanceScope(ctx.nodeId, params, null);
   const cfgFor = createInstanceConfigResolver(cfg, (p) => compileSpineConfig(p, inputs, ctx.lod, ctx.seed, false));
   const worldUp: Vec3 = [0, 0, 1];
@@ -133,6 +134,7 @@ export function evaluateRootLevel(
         isExtension: false,
         lengthScale: inst.lengthScale,
         radiusScale: inst.radiusScale,
+        notes,
       },
       stemRng,
       builder,
@@ -141,5 +143,6 @@ export function evaluateRootLevel(
     scope.finish(inst, builder);
   }
 
+  reportSpineNotes(ctx.logger, notes);
   return emitStructureOutput(builder.build(), params, ctx.lod, 'bark', undefined, undefined, ctx.seed, inputs, scope.table());
 }

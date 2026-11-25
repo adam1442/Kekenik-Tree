@@ -5,6 +5,7 @@ import { getTextureManager } from '@/textures/textureManager';
 import { openExportDialog } from '@/ui/panels/dialogs/exportDialog';
 import type { ExportEnv } from './exportService';
 import { renderImpostor } from './impostor/impostorRender';
+import { exportLevelsFor } from './lod/dynamicLevels';
 import { getLodPreview } from './lod/lodPreview';
 import { getLodSettings } from './settings';
 import { createBrowserMaterialContext } from './materials/materialContext';
@@ -17,7 +18,7 @@ export function createExportEnv(app: AppContext): ExportEnv {
   const meta = app.project.metaOf(doc.id);
   return {
     source: { evaluateAt: (lod, token, progress) => app.engine.evaluateAt(lod, token, progress), seed: doc.seed },
-    levels: getLodSettings().levels,
+    levels: exportLevelsFor(getLodSettings().levels, app.engine.latest?.scene),
     materials: createBrowserMaterialContext(),
     nodeName: (id) => app.graph.model.getNode(id)?.name,
     wind: meta?.settings.wind ?? null,

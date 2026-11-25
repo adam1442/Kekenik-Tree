@@ -46,7 +46,7 @@ export const ribsLevelOf = (generation: number): number => Math.max(0, Math.min(
  * Wind weights of a vertex at arc fraction `t` and lateral position `u` (-1..1, 0 = spine), starting from the parent weights
  * `base`. Writes `out[0..3]`.
  */
-export function frondWindAt(base: readonly number[], t: number, u: number, wind: FrondWind, out: number[]): void {
+export function frondWindAt(base: readonly (number | undefined)[], t: number, u: number, wind: FrondWind, out: number[]): void {
   const tt = clamp01(t);
   const across = Math.min(1, Math.abs(u));
   const fade = rootFade(tt);

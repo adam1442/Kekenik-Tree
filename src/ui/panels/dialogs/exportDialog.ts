@@ -1,10 +1,11 @@
 import type { AppContext } from '@/app/context';
+import { PACKERS } from '@/export/packing/presets';
 import { activeDocument } from '@/app/state';
 import { CancelledError, CancellationSource } from '@/contracts/nodes';
 import { createExportEnv, downloadFile, estimateTextureBytes } from '@/export/install';
 import { runExport, type ExportResult } from '@/export/exportService';
 import { getLodPreview } from '@/export/lod/lodPreview';
-import { getLodSettings, loadExportSettings, onLodSettingsChange, saveExportSettings } from '@/export/settings';
+import { loadExportSettings, onLodSettingsChange, saveExportSettings } from '@/export/settings';
 import { formatBytes, formatCount, sceneMaterialIds, sceneStats } from '@/export/stats';
 import type { ExportFormat, ExportSettings, ExportUnits } from '@/export/types';
 import { h } from '@/ui/components/dom';
@@ -72,7 +73,7 @@ export function openExportDialog(app: AppContext): void {
     await preview.ensureBuilt();
     if (token !== statsToken) return;
     const scenes = preview.builtScenes;
-    const levels = getLodSettings().levels;
+    const levels = preview.levels();
     const rows = settings.lods.filter((i) => scenes[i]).map((i) => ({ i, s: sceneStats(scenes[i] as NonNullable<(typeof scenes)[number]>, settings.mergeMode) }));
     const ids = [...new Set(rows.flatMap((r) => sceneMaterialIds(scenes[r.i] as NonNullable<(typeof scenes)[number]>)))];
     const texBytes = settings.textures.enabled ? await estimateTextureBytes(settings, ids) : 0;
@@ -89,7 +90,7 @@ export function openExportDialog(app: AppContext): void {
   // --- tabs --------------------------------------------------------------------------------------------------------
   const lodList = h('div', 'kt-xp-lodlist');
   const renderLodList = (): void => {
-    const levels = getLodSettings().levels;
+    const levels = preview.levels();
     settings = { ...settings, lods: settings.lods.filter((i) => i < levels.length).length > 0 ? settings.lods.filter((i) => i < levels.length) : [0] };
     lodList.replaceChildren(
       ...levels.map((_, i) => {
@@ -157,6 +158,13 @@ export function openExportDialog(app: AppContext): void {
       formRow('Padding (dilation, px)', numberInput(settings.textures.padding, { min: 0, max: 64, step: 1, decimals: 0, onChange: (v) => setTex({ padding: Math.round(v) }) })),
       formRow('Write as separate files (glTF)', toggle(settings.textures.external, (v) => setTex({ external: v })), 'GLB always embeds; glTF uses data URIs unless this is on.'),
     ),
+    section(
+      'Texture packer',
+      formRow('Packer', choice([{ value: 'legacy', label: 'None (glTF materials only)' }, ...PACKERS.map((p) => ({ value: p.id, label: p.label }))], settings.textures.packer, (v) => setTex({ packer: v })), 'Writes extra packed maps next to the model, channels as defined in src/export/packing/presets.ts (Kekenik default, Unity URP, Unreal).'),
+      formRow('Force textures', toggle(settings.textures.forceTextures, (v) => setTex({ forceTextures: v })), 'Write a tiny texture even when a packed map is only constants (otherwise the constant is listed in the metadata).'),
+      formRow('Packed format', choice([{ value: 'png', label: 'PNG (base level)' }, { value: 'dds', label: 'DDS RGBA8 with mip chain' }], settings.textures.packedFormat, (v) => setTex({ packedFormat: v === 'dds' ? 'dds' : 'png' })), 'DDS keeps the full mip chain built with the packer flags (AlphaIsOpacity keeps the alpha-test coverage, RgbIsNormal renormalises the normals).'),
+      formRow('V-tiling (atlas)', toggle(settings.vTiling, (v) => set({ vTiling: v })), 'Branch textures that tile in V are stretched to a whole number of repeats so their top and bottom touch the atlas cell edges. Materials with Atlas handling = Force out are skipped. Shows the U tile count and the resolution loss in the report.'),
+    ),
     h('div', 'kt-xp-note', 'Colour + Opacity are merged into one RGBA albedo map. Custom / Custom2 maps and constants travel in material extras.'),
   );
 
@@ -165,7 +173,7 @@ export function openExportDialog(app: AppContext): void {
     'kt-xp-page',
     section(
       'Ambient occlusion (vertices)',
-      formRow('Bake AO', choice([{ value: 'off', label: 'Off' }, { value: 'multiply', label: 'Multiply into vertex colours' }, { value: 'replace', label: 'Replace vertex colours' }], settings.bake.aoMode, (v) => setBake({ aoMode: v }))),
+      formRow('Bake AO', choice([{ value: 'off', label: 'Off' }, { value: 'multiply', label: 'Multiply into vertex colours' }, { value: 'replace', label: 'Replace vertex colours' }, { value: 'channelB', label: 'Bake AO into vertex colour B' }], settings.bake.aoMode, (v) => setBake({ aoMode: v }))),
       formRow('Rays per vertex', numberInput(settings.bake.aoSamples, { min: 4, max: 128, step: 4, decimals: 0, onChange: (v) => setBake({ aoSamples: Math.round(v) }) })),
       formRow('Radius (× plant size)', numberInput(settings.bake.aoRadius, { min: 0.01, max: 1, step: 0.01, decimals: 2, onChange: (v) => setBake({ aoRadius: v }) })),
       formRow('Strength', numberInput(settings.bake.aoStrength, { min: 0, max: 1, step: 0.05, decimals: 2, onChange: (v) => setBake({ aoStrength: v }) })),
@@ -203,6 +211,13 @@ export function openExportDialog(app: AppContext): void {
     const rows: HTMLElement[] = [h('div', 'kt-xp-ok', `Exported ${r.files.length} file(s) → ${r.download.name}`)];
     for (const f of r.files) rows.push(h('div', 'kt-xp-dim', `${f.name} · ${formatBytes(typeof f.data === 'string' ? f.data.length : f.data.byteLength)}`));
     for (const v of r.verification) rows.push(h('div', v.ok ? 'kt-xp-ok' : 'kt-xp-warn', v.ok ? `✓ ${v.file}: re-import matches (${formatCount(v.actual.triangles)} triangles${v.loaderTriangles !== undefined ? ', GLTFLoader OK' : ''})` : `✗ ${v.file}: ${v.mismatches.join('; ')}`));
+    for (const d of r.dynamicLevels) rows.push(h('div', 'kt-xp-dim', `Dynamic LOD ${d.index} (value ${d.report.value.toFixed(2)}): ${formatCount(d.triangles)} triangles, ${(d.report.interiorRemovedShare * 100).toFixed(0)} % of the removed triangles were interior`));
+    for (const { lod, audit } of r.windAuditLods) {
+      if (audit.checked) rows.push(h('div', audit.ok ? 'kt-xp-ok' : 'kt-xp-warn', `${r.windAuditLods.length > 1 ? `LOD${lod} ` : ''}Wind seam audit: ${audit.note} (coincident gap max ${(audit.coincidentMaxGap * 1000).toFixed(3)} mm, touching ${(audit.contactMaxGap * 1000).toFixed(3)} mm)`));
+    }
+    if (r.lightmap) rows.push(h('div', 'kt-xp-dim', `Lightmap UV (${r.lightmap.layout}): ${r.lightmap.resolution} px, ${r.lightmap.texelsPerMetre.toFixed(1)} texels / m achieved, ${r.lightmap.islands.length} islands${r.lightmap.layout === 'atlas' ? `, ${(r.lightmap.fill * 100).toFixed(0)} % filled` : ''}`));
+    for (const e of r.vTiling) rows.push(h('div', 'kt-xp-dim', `V-tiling ${e.geometry} / ${e.materialId}: ${e.applied ? `${e.repeats} repeat(s), U tiles ${e.uTiles.toFixed(2)}, resolution loss ${e.resolutionLossPercent.toFixed(0)} %` : `unchanged (${e.reason ?? ''})`}`));
+    if (r.packedTextures.length > 0) rows.push(h('div', 'kt-xp-dim', `Packed textures: ${r.packedTextures.length}`));
     for (const w of r.warnings) rows.push(h('div', 'kt-xp-warn', `! ${w}`));
     results.replaceChildren(...rows);
   };

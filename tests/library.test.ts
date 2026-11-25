@@ -6,8 +6,8 @@ import { hasTranslation, translate } from '@/i18n';
 import { listNodeDefs, registerDiscoveredNodes } from '@/graph/registry';
 import { PARAM_HELP_ENTRIES } from '@/graph/registry/paramHelp';
 import { builtinPresets, filterPresets, PresetCatalog } from '@/presets/catalog';
-import { SPECIES } from '@/presets/species';
-import { buildSpeciesProject } from '@/presets/builder';
+import { SAMPLES } from '@/presets/samples';
+import { loadSample } from './helpers/sampleProjects';
 import { resolveNavMode } from '@/viewport/navScheme';
 
 beforeAll(() => registerDiscoveredNodes());
@@ -30,22 +30,22 @@ describe('preset catalog', () => {
   it('filters by text and category', () => {
     const all = builtinPresets();
     expect(filterPresets(all, 'oak', 'All').map((p) => p.id)).toContain('oak');
-    expect(filterPresets(all, '', 'Conifer').every((p) => p.category === 'Conifer')).toBe(true);
+    expect(filterPresets(all, '', 'Broadleaf').every((p) => p.category === 'Broadleaf')).toBe(true);
     expect(filterPresets(all, 'tropical frond', 'All').map((p) => p.id)).toEqual(['palm']);
     expect(filterPresets(all, 'zzzz', 'All')).toHaveLength(0);
   });
 
   it('stores, lists, exports and deletes user presets', async () => {
     const catalog = new PresetCatalog(new MemoryKeyValueStore());
-    const def = SPECIES[0]!;
-    const entry = await catalog.saveUser('My Oak', buildSpeciesProject(def));
+    const sample = loadSample('grass');
+    const entry = await catalog.saveUser('My Oak', sample);
     expect(entry.category).toBe('User');
-    expect((await catalog.all()).length).toBe(SPECIES.length + 1);
+    expect((await catalog.all()).length).toBe(SAMPLES.length + 1);
     const out = await catalog.exportBytes(entry);
     expect(out.name).toBe('My Oak.ktree');
     const imported = await catalog.importBytes('Copy.ktree', out.bytes);
     expect(imported.name).toBe('Copy');
-    expect((await entry.load()).graph.nodes.length).toBe(buildSpeciesProject(def).graph.nodes.length);
+    expect((await entry.load()).graph.nodes.length).toBe(sample.graph.nodes.length);
     await catalog.deleteUser(entry.id);
     expect((await catalog.userPresets()).map((p) => p.name)).toEqual(['Copy']);
     await expect(catalog.importBytes('bad.ktree', new Uint8Array([1, 2, 3]))).rejects.toThrow();

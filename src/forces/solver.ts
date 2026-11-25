@@ -1,9 +1,10 @@
 import type { ForceDef } from '@/contracts/material';
 import { curveToLUT, sampleCurveLUT } from '@/contracts/curve';
-import { getBool, getNumber } from '@/contracts/params';
+import { getBool, getNumber, type NodeParams } from '@/contracts/params';
 import type { Skeleton } from '@/contracts/skeleton';
 import { clamp } from '@/core/math';
-import { registerBuiltinForceTypes } from './fields';
+import { registerBuiltinForceTypes, readVec3 } from './fields';
+import { constrainChain, type ForceCollider } from './geometry/collide';
 import { getForceType } from './registry';
 import type { FieldFn, FieldPoint, ForceContext, ForceMode, ForceStats, V3 } from './types';
 
@@ -29,7 +30,33 @@ interface Compiled {
   stiffness: number;
   /** Radius (m) with nominal stiffness for this force. */
   refRadius: number;
+  /** Align strength: influence on the first segment (the initial orientation). */
+  align: number;
+  attenuation: Attenuation | null;
+  collider: ForceCollider | null;
 }
+
+/** Common Attenuation: the effect fades with the distance to `center` and ends at `radius`. */
+interface Attenuation {
+  center: V3;
+  radius: number;
+  exponent: number;
+}
+
+function readAttenuation(params: NodeParams): Attenuation | null {
+  if (!getBool(params, 'attenuationEnabled', false)) return null;
+  return {
+    center: readVec3(params, 'attenuationCenter', [0, 0, 0]),
+    radius: Math.max(0.001, getNumber(params, 'attenuationRadius', 5)),
+    exponent: Math.max(0.05, getNumber(params, 'attenuationFalloff', 1)),
+  };
+}
+
+const attenuationAt = (a: Attenuation | null, x: number, y: number, z: number): number => {
+  if (!a) return 1;
+  const d = Math.hypot(x - a.center[0], y - a.center[1], z - a.center[2]);
+  return d >= a.radius ? 0 : Math.pow(1 - d / a.radius, a.exponent);
+};
 
 type Quat = [number, number, number, number];
 
@@ -85,7 +112,9 @@ function compileForces(forces: readonly ForceDef[]): Compiled[] {
     if (!type) continue;
     const strength = getNumber(def.params, 'strength', 1);
     const influence = clamp(getNumber(def.params, 'influence', 1), 0, 1);
-    if (strength === 0 || influence === 0) continue;
+    const collider = type.collider ? type.collider(def.params) : null;
+    if (type.inert && !collider) continue;
+    if (!collider && (strength === 0 || influence === 0)) continue;
     const curve = def.params.strength?.curve;
     out.push({
       mode: type.mode,
@@ -99,6 +128,9 @@ function compileForces(forces: readonly ForceDef[]): Compiled[] {
       generationFalloff: clamp(getNumber(def.params, 'generationFalloff', 0), 0, 1),
       stiffness: clamp(getNumber(def.params, 'stiffness', 0.5), 0, 1),
       refRadius: Math.max(0.005, getNumber(def.params, 'refRadius', REF_RADIUS)),
+      align: clamp(getNumber(def.params, 'alignStrength', 1), 0, 1),
+      attenuation: readAttenuation(def.params),
+      collider,
     });
   }
   return out;
@@ -122,6 +154,7 @@ export function applyForces(sk: Skeleton, forces: readonly ForceDef[], ctx: Forc
   const maxStep = ctx.maxSegmentAngle ?? 0.5;
   const maxTotal = ctx.maxTotalAngle ?? (110 * Math.PI) / 180;
   const iterations = Math.max(1, Math.round(ctx.iterations ?? 3));
+  const genAlign = clamp(ctx.align ?? 1, 0, 2);
   const original = new Float32Array(sk.position);
   const pos = sk.position;
   const rot = new Float64Array(sk.count * 4);
@@ -130,12 +163,25 @@ export function applyForces(sk: Skeleton, forces: readonly ForceDef[], ctx: Forc
   let minGen = Infinity;
   for (const b of sk.branches) minGen = Math.min(minGen, b.generation);
   const order = [...sk.branches].sort((a, b) => a.start - b.start);
-  const point: FieldPoint = { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1, t: 0, radius: 0, generation: 0 };
+  const point: FieldPoint = { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1, ox: 0, oy: 0, oz: 1, t: 0, radius: 0, generation: 0 };
   const f: V3 = [0, 0, 0];
+
+  /** Branch id -> first removed global point index (geometry Prune / Stop). */
+  const cutFrom = new Map<number, number>();
+  const hasColliders = compiled.some((c) => c.collider !== null);
 
   for (const b of order) {
     const n = b.count;
     const s0 = b.start;
+    if (hasColliders) {
+      const parentCut = cutFrom.get(b.parentBranch);
+      if (parentCut !== undefined && b.parentPoint >= parentCut) {
+        b.count = 0;
+        b.length = 0;
+        cutFrom.set(b.id, s0);
+        continue;
+      }
+    }
     if (n < 2) continue;
     stats.branches++;
     const gen = b.generation - minGen;
@@ -219,6 +265,9 @@ export function applyForces(sk: Skeleton, forces: readonly ForceDef[], ctx: Forc
         point.dx = ((P[i1] as number) - (P[i0] as number)) / L;
         point.dy = ((P[i1 + 1] as number) - (P[i0 + 1] as number)) / L;
         point.dz = ((P[i1 + 2] as number) - (P[i0 + 2] as number)) / L;
+        point.ox = point.dx;
+        point.oy = point.dy;
+        point.oz = point.dz;
         point.t = t;
         point.radius = r;
         point.generation = gen;
@@ -227,7 +276,7 @@ export function applyForces(sk: Skeleton, forces: readonly ForceDef[], ctx: Forc
           const c = compiled[fi] as Compiled;
           if (c.mode !== 'load') continue;
           c.field(point, f);
-          const m = (branchStrength[fi] as number) * (c.lengthLut ? sampleCurveLUT(c.lengthLut, t) : 1) * infl * L * Math.pow(r / c.refRadius, c.loadExponent);
+          const m = attenuationAt(c.attenuation, cx, cy, cz) * (branchStrength[fi] as number) * (c.lengthLut ? sampleCurveLUT(c.lengthLut, t) : 1) * infl * L * Math.pow(r / c.refRadius, c.loadExponent);
           W[i0] = (W[i0] as number) + f[0] * m;
           W[i0 + 1] = (W[i0 + 1] as number) + f[1] * m;
           W[i0 + 2] = (W[i0 + 2] as number) + f[2] * m;
@@ -298,17 +347,20 @@ export function applyForces(sk: Skeleton, forces: readonly ForceDef[], ctx: Forc
           if (pl > 1e-12) {
             let stiff = 0;
             let cnt = 0;
+            let alignSum = 0;
             for (const c of compiled) {
               if (c.mode === 'load') {
                 stiff += c.stiffness;
+                alignSum += c.align;
                 cnt++;
               }
             }
+            const alignLoad = k === 0 && cnt > 0 ? (alignSum / cnt) * genAlign : 1;
             const s = cnt > 0 ? stiff / cnt : 0.5;
             const mul = (0.25 + 3.5 * s * s) * Math.max(0.01, stiffCurve);
             const ei = S0 * mul * Math.pow(rr / REF_RADIUS, 4);
             const raw = (pl / ei) * L;
-            const angle = maxStep * Math.tanh(raw / maxStep);
+            const angle = maxStep * Math.tanh((raw * alignLoad) / maxStep);
             const dq = qAxisAngle(px / pl, py / pl, pz / pl, angle);
             R = qNorm(qMul(dq, R));
             d = qRot(dq, d[0], d[1], d[2]);
@@ -324,6 +376,9 @@ export function applyForces(sk: Skeleton, forces: readonly ForceDef[], ctx: Forc
           point.dx = d[0];
           point.dy = d[1];
           point.dz = d[2];
+          point.ox = ref[0];
+          point.oy = ref[1];
+          point.oz = ref[2];
           point.t = t;
           point.radius = rr;
           point.generation = gen;
@@ -331,7 +386,8 @@ export function applyForces(sk: Skeleton, forces: readonly ForceDef[], ctx: Forc
             const c = compiled[fi] as Compiled;
             if (c.mode !== 'steer') continue;
             c.field(point, f);
-            const rig = 1 / (1 + 4 * c.stiffness * stiffCurve * Math.pow(rr / c.refRadius, 2));
+            const first = k === 0 ? c.align * genAlign : 1;
+            const rig = attenuationAt(c.attenuation, point.x, point.y, point.z) * first / (1 + 4 * c.stiffness * stiffCurve * Math.pow(rr / c.refRadius, 2));
             const m = (branchStrength[fi] as number) * (c.lengthLut ? sampleCurveLUT(c.lengthLut, t) : 1) * infl * L * STEER_GAIN * rig;
             ax += f[0] * m;
             ay += f[1] * m;
@@ -347,7 +403,12 @@ export function applyForces(sk: Skeleton, forces: readonly ForceDef[], ctx: Forc
             const ql = Math.hypot(qx, qy, qz);
             if (ql > 1e-12) {
               const angle = maxStep * Math.tanh(Math.atan(ql) / maxStep);
-              const dq = qAxisAngle(qx / ql, qy / ql, qz / ql, angle);
+              // Rotation axis = d x q turns d towards q (rotating about q itself would turn it sideways).
+              const rx = d[1] * qz - d[2] * qy;
+              const ry = d[2] * qx - d[0] * qz;
+              const rz = d[0] * qy - d[1] * qx;
+              const rl = Math.hypot(rx, ry, rz) || 1;
+              const dq = qAxisAngle(rx / rl, ry / rl, rz / rl, angle);
               R = qNorm(qMul(dq, R));
               d = qRot(dq, d[0], d[1], d[2]);
             }
@@ -390,6 +451,12 @@ export function applyForces(sk: Skeleton, forces: readonly ForceDef[], ctx: Forc
       }
     }
 
+    // Geometry colliders (Obstruct / Prune / Stop) constrain the finished chain.
+    let keep = n;
+    if (hasColliders && Pfinal.every((v) => Number.isFinite(v))) {
+      for (const c of compiled) if (c.collider) keep = Math.min(keep, constrainChain(Pfinal, keep, c.collider));
+    }
+
     // Commit (Pfinal holds the last result). Fall back to the undeformed shape on numerical trouble.
     let finite = true;
     for (let i = 0; i < n * 3; i++) if (!Number.isFinite(Pfinal[i] as number)) finite = false;
@@ -408,6 +475,10 @@ export function applyForces(sk: Skeleton, forces: readonly ForceDef[], ctx: Forc
         for (let c = 0; c < 3; c++) pos[gi * 3 + c] = original[gi * 3 + c] as number;
         for (let c = 0; c < 4; c++) rot[gi * 4 + c] = c === 3 ? 1 : 0;
       }
+    }
+    if (keep < n) {
+      b.count = keep;
+      cutFrom.set(b.id, s0 + keep);
     }
   }
 

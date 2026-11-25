@@ -23,7 +23,7 @@ export interface MaterialSource {
   cutoutMeshes?(): readonly CutoutMesh[];
   /** Optional UV areas list. */
   uvAreas?(): readonly UVAreaDef[];
-  /** Global season 0..1 (Lighting panel). */
+  /** Season 0..1 used when a node is evaluated without a Tree above it (mirror of the Tree node's Season). */
   season(): number;
 }
 
@@ -60,13 +60,15 @@ export function pickFromSet(set: MaterialSetDef, materials: readonly MaterialDef
 /**
  * Turns a Material property value (material id, material name, material-set id/name or legacy placeholder ids like
  * `leaf`) into a concrete material id. Set picks consume exactly one RNG draw; plain materials consume none.
+ * `season` is the node's transition value (members are weighted by weight x season curve at it); it defaults to the
+ * library's season.
  */
-export function resolveMaterialRef(ref: string, rng: Rng, src: MaterialSource | null = source): string {
+export function resolveMaterialRef(ref: string, rng: Rng, src: MaterialSource | null = source, season?: number): string {
   if (!src || !ref) return ref;
   const materials = src.materials();
   if (materials.some((m) => m.id === ref)) return ref;
   const set = src.sets().find((s) => s.id === ref) ?? (materials.some((m) => m.name === ref) ? undefined : src.sets().find((s) => s.name === ref));
-  if (set) return pickFromSet(set, materials, src.season(), rng) ?? ref;
+  if (set) return pickFromSet(set, materials, season ?? src.season(), rng) ?? ref;
   return materials.find((m) => m.name === ref)?.id ?? ref;
 }
 

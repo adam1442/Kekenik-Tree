@@ -1,5 +1,5 @@
 import { BufferAttribute, BufferGeometry } from 'three';
-import type { MeshData } from '@/contracts/mesh';
+import { windPhase1Array, type MeshData } from '@/contracts/mesh';
 
 /** Convert engine-agnostic MeshData into a three.js BufferGeometry (caller disposes it). */
 export function meshDataToGeometry(data: MeshData): BufferGeometry {
@@ -11,9 +11,11 @@ export function meshDataToGeometry(data: MeshData): BufferGeometry {
   if (data.tangents) geo.setAttribute('tangent', new BufferAttribute(data.tangents, 4));
   if (data.colors) geo.setAttribute('color', new BufferAttribute(data.colors, 4));
   if (data.ao) geo.setAttribute('ao', new BufferAttribute(data.ao, 1));
+  if (data.branchTint) geo.setAttribute('branchTint', new BufferAttribute(data.branchTint, 1));
   if (data.wind) {
     geo.setAttribute('windPivot', new BufferAttribute(data.wind.pivot, 3));
     geo.setAttribute('windWeights', new BufferAttribute(data.wind.weights, 4));
+    geo.setAttribute('windPhase1', new BufferAttribute(windPhase1Array(data.wind), 1));
   }
   if (data.weld) {
     geo.setAttribute('weldBlend', new BufferAttribute(data.weld.blend, 1));

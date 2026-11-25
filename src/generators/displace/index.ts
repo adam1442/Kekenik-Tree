@@ -1,5 +1,7 @@
 export {
   applySharpness,
+  barkActive,
+  barkOffset,
   createBranchDisplacer,
   creaseOffset,
   displaceFade,
@@ -16,3 +18,16 @@ export {
   type DisplaceSource,
 } from './branchDisplace';
 export { branchSeed, hashLattice, periodicFbm2, periodicNoise2 } from './noise';
+export {
+  BARK_STYLES,
+  barkGrid,
+  barkHeight,
+  barkMaturityFactor,
+  barkSpacing,
+  creviceLut,
+  lookup01,
+  type BarkInput,
+  type BarkMaturity,
+  type BarkSpec,
+  type BarkStyle,
+} from './bark';

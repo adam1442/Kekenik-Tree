@@ -9,6 +9,7 @@ import type {
   LodSettings,
   UpAxis,
 } from './types';
+import { PACKER_IDS } from './packing/presets';
 
 const KEY = 'kekenik.export.settings';
 const LOD_KEY = 'kekenik.export.lods';
@@ -45,7 +46,8 @@ export function defaultExportSettings(name = 'Plant'): ExportSettings {
     vertexColors: true,
     metadata: true,
     verify: true,
-    textures: { enabled: true, format: 'png', quality: 0.9, maxSize: 0, packing: 'orm', padding: 4, external: false },
+    vTiling: false,
+    textures: { enabled: true, format: 'png', quality: 0.9, maxSize: 0, packing: 'orm', padding: 4, external: false, packer: 'legacy', forceTextures: false, packedFormat: 'png' },
     bake: { aoMode: 'off', aoSamples: 24, aoRadius: 0.12, aoStrength: 0.8 },
     impostor: { mode: 'off', views: 8, topView: false, frameSize: 256, padding: 4, normals: true, depth: true, sourceLod: 0 },
   };
@@ -99,6 +101,7 @@ export function sanitizeExportSettings(raw: unknown, lodCount: number, name = 'P
     vertexColors: bool(raw.vertexColors, d.vertexColors),
     metadata: bool(raw.metadata, d.metadata),
     verify: bool(raw.verify, d.verify),
+    vTiling: bool(raw.vTiling, d.vTiling),
     textures: {
       enabled: bool(tex.enabled, d.textures.enabled),
       format: oneOf<ImageFormat>(tex.format, ['png', 'jpg', 'webp'], d.textures.format),
@@ -107,9 +110,12 @@ export function sanitizeExportSettings(raw: unknown, lodCount: number, name = 'P
       packing: oneOf(tex.packing, ['none', 'orm'], d.textures.packing),
       padding: Math.round(num(tex.padding, d.textures.padding, 0, 64)),
       external: bool(tex.external, d.textures.external),
+      packer: oneOf(tex.packer, PACKER_IDS, d.textures.packer),
+      forceTextures: bool(tex.forceTextures, d.textures.forceTextures),
+      packedFormat: oneOf<'png' | 'dds'>(tex.packedFormat, ['png', 'dds'], d.textures.packedFormat),
     },
     bake: {
-      aoMode: oneOf(bake.aoMode, ['off', 'multiply', 'replace'], d.bake.aoMode),
+      aoMode: oneOf(bake.aoMode, ['off', 'multiply', 'replace', 'channelB'], d.bake.aoMode),
       aoSamples: Math.round(num(bake.aoSamples, d.bake.aoSamples, 4, 128)),
       aoRadius: num(bake.aoRadius, d.bake.aoRadius, 0.01, 1),
       aoStrength: num(bake.aoStrength, d.bake.aoStrength, 0, 1),

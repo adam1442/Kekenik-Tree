@@ -1,9 +1,10 @@
-import { OUTPUT_KEY, type EvaluationSummary, type NodeDiagnostic, type NodeMessage, type NodeState } from '@/contracts/engine';
+import { OUTPUT_KEY, type EvaluationSummary, type SceneCollisionStats, type NodeDiagnostic, type NodeMessage, type NodeState } from '@/contracts/engine';
 import { meshTriangleCount } from '@/contracts/mesh';
 import { CancelledError, type CancellationToken, type NodeDef, type NodeInputs, type NodeOutputs } from '@/contracts/nodes';
-import { getNumber } from '@/contracts/params';
+import { getBool, getNumber, getString } from '@/contracts/params';
 import { readPass, validatePasses } from '@/generators/common/pass';
 import { listNames, readForceVolume, type ForceVolume } from '@/generators/common/volumes';
+import { collectEndClaims, type ClaimCandidate } from '@/generators/split/endClaims';
 import type { PortValue } from '@/contracts/ports';
 import { createLogger, type Logger } from '@/core/logger';
 import { Rng } from '@/core/rng';
@@ -11,6 +12,7 @@ import { getParentAttachments } from '@/geometry/attachments';
 import { getNodeDef } from '@/graph/registry';
 import { PORT } from '@/graph/ports';
 import { assembleScene, type NodeResult } from './assemble';
+import { runCollisionPass, type CollisionPassResult } from './collisionPass';
 import { EvalCache, estimateBytes } from './cache';
 import { hashString } from './hash';
 import { now, yieldToEventLoop } from './scheduler';
@@ -31,6 +33,8 @@ export interface EvaluateOptions {
   lookup?: (type: string) => NodeDef | undefined;
   onProgress?: (done: number, total: number, nodeId: string) => void;
   logger?: Logger;
+  /** Run the leaf-collision post pass (default true). The host turns it off for the first, plain pass so the leaves pop in when it is done. */
+  collision?: boolean;
 }
 
 const KEY_VERSION = 'k1';
@@ -86,6 +90,8 @@ function validateOutputs(raw: unknown): NodeOutputs {
 export class GraphEvaluator {
   readonly cache: EvalCache;
   private runCounter = 0;
+  /** Last collision pass result (key = settings + keys of every participating node). */
+  private readonly collisionMemo = new Map<string, CollisionPassResult>();
 
   constructor(cache: EvalCache = new EvalCache()) {
     this.cache = cache;
@@ -116,6 +122,15 @@ export class GraphEvaluator {
       if (vol) forceVolumes.push(vol);
     }
     const volumesKey = hashString(JSON.stringify(forceVolumes));
+    // Sibling claim list (Cap must not close an end another generator extends): derived from parameters only, so it is cache-safe.
+    const claimCandidates: ClaimCandidate[] = snap.nodes.map((n) => ({
+      id: n.id,
+      type: n.type,
+      parentId: hierarchyParent.get(n.id) ?? null,
+      live: n.enabled && !n.bypass,
+      active: getBool(n.params, 'active', true),
+      extendType: getString(n.params, 'extendParent', 'none'),
+    }));
     const usesContainers = (params: SnapshotNode['params']): boolean => listNames(params, 'forceInclude', 'forceName').length + listNames(params, 'forceExclude', 'forceName').length > 0;
     const passErrors = validatePasses(
       snap.nodes.filter((n) => n.hierarchy).map((n) => ({ id: n.id, pass: readPass(n.params), parentId: hierarchyParent.get(n.id) ?? null })),
@@ -219,7 +234,9 @@ export class GraphEvaluator {
       const perNodeSeed = getNumber(node.params, 'seed', 0);
       const nodeSeed = deriveNodeSeed(opts.seed, id, perNodeSeed);
       const named = NAMED_CATEGORIES.has(def.category) ? `|${node.name}` : '';
-      const key = `${id}:${hashString([KEY_VERSION, def.type, def.version ?? 1, node.paramsHash, nodeSeed, opts.lod, inputTokens.join(','), named, def.dependencyKey?.(node.params) ?? '', usesContainers(node.params) ? volumesKey : ''].join('|'))}`;
+      const endClaims = collectEndClaims(claimCandidates, id);
+      const claimsKey = endClaims.length > 0 ? JSON.stringify(endClaims) : '';
+      const key = `${id}:${hashString([KEY_VERSION, def.type, def.version ?? 1, node.paramsHash, nodeSeed, opts.lod, inputTokens.join(','), named, def.dependencyKey?.(node.params) ?? '', usesContainers(node.params) ? volumesKey : '', claimsKey].join('|'))}`;
       const hit = this.cache.get(key);
       if (hit) {
         cached += 1;
@@ -240,7 +257,7 @@ export class GraphEvaluator {
       try {
         const parentIn = inputs[PORT.parent]?.[0];
         const parentAttach = parentIn && parentIn.kind === 'Structure' ? parentIn.value.attachments : undefined;
-        const raw = await def.evaluate({ nodeId: id, name: node.name, rng: new Rng(nodeSeed), seed: nodeSeed, cancel: opts.token, lod: opts.lod, logger, getParentAttachments: (key) => getParentAttachments(parentAttach, key), forceVolumes, ...(hierarchyParent.has(id) ? { parentType: byId.get(hierarchyParent.get(id) as string)?.type } : {}) }, inputs, node.params);
+        const raw = await def.evaluate({ nodeId: id, name: node.name, rng: new Rng(nodeSeed), seed: nodeSeed, cancel: opts.token, lod: opts.lod, logger, getParentAttachments: (key) => getParentAttachments(parentAttach, key), forceVolumes, ...(endClaims.length > 0 ? { endClaims } : {}), ...(hierarchyParent.has(id) ? { parentType: byId.get(hierarchyParent.get(id) as string)?.type } : {}) }, inputs, node.params);
         opts.token.throwIfCancelled();
         const outputs = validateOutputs(inheritLighting(raw, parentIn));
         const ms = now() - started;
@@ -269,7 +286,15 @@ export class GraphEvaluator {
       if (d && d.state !== 'skipped') d.messages = [...d.messages, { level: 'error', text }];
     }
     this.cache.retainNodes(new Set(snap.nodes.map((n) => n.id)));
-    const scene = assembleScene(snap, order, results, lookup);
+    let collisionStats: SceneCollisionStats | undefined;
+    if (opts.collision !== false) {
+      const pass = await runCollisionPass(snap, order, results, lookup, { lod: opts.lod, token: opts.token, budgetMs: budget, yieldFn }, this.collisionMemo);
+      if (pass) {
+        for (const [id, res] of pass.patched) results.set(id, res);
+        collisionStats = pass.stats;
+      }
+    }
+    const scene = assembleScene(snap, order, results, lookup, collisionStats);
     const edgeLabels = new Map<string, string>();
     for (const e of snap.edges) {
       if (e.kind !== 'hierarchy') continue;

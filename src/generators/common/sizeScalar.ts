@@ -12,8 +12,9 @@ export const SIZE_PARAMS: Readonly<Record<string, readonly string[]>> = {
   'generator.cluster': ['postScale'],
   'generator.cap': ['capRadiusScale'],
   'generator.frond': ['frondWidth'],
-  'generator.decoration': ['decoScale'],
   'generator.knot': ['outerSize', 'outerOffset', 'outerLip', 'coreOffset'],
+  'generator.decal': ['decalSize', 'decalOffset', 'decalHeight'],
+  'generator.fin': ['finSize', 'finWidth', 'finVertexAmount'],
 };
 
 /** Size scalar of a node (own value only). */

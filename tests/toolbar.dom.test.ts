@@ -32,6 +32,8 @@ vi.mock('@/viewport/viewport', async () => {
     }
     resetCamera(): void {}
     refreshContent(): void {}
+    setVertexColorPacking(): void {}
+    setLightmapResolution(): void {}
     requestRender(): void {}
     dispose(): void {}
   },
