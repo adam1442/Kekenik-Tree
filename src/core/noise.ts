@@ -1,4 +1,4 @@
-import { Rng } from './rng';
+import { mixSeeds, Rng } from './rng';
 
 /** Seeded 3D simplex noise, output range approximately [-1, 1]. */
 export interface SimplexNoise {
@@ -73,4 +73,27 @@ export function createSimplex(seed: number): SimplexNoise {
   };
 
   return { noise3, noise2: (x, y) => noise3(x, y, 0) };
+}
+
+/** Hash of a lattice corner to [-1, 1). */
+function lattice(seed: number, ix: number, iy: number): number {
+  return mixSeeds(mixSeeds(seed, ix >>> 0), iy >>> 0) / 2147483648 - 1;
+}
+
+/**
+ * Smooth 2D value noise in [-1, 1] with a (seed, x, y) hash instead of a permutation table: allocation-free and cheap
+ * enough to evaluate per instance. Neighbouring inputs give neighbouring outputs; integer steps are independent.
+ */
+export function valueNoise2(seed: number, x: number, y: number): number {
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const fx = x - x0;
+  const fy = y - y0;
+  const sx = fx * fx * (3 - 2 * fx);
+  const sy = fy * fy * (3 - 2 * fy);
+  const a = lattice(seed, x0, y0);
+  const b = lattice(seed, x0 + 1, y0);
+  const c = lattice(seed, x0, y0 + 1);
+  const d = lattice(seed, x0 + 1, y0 + 1);
+  return a + (b - a) * sx + (c - a + (a - b - c + d) * sx) * sy;
 }

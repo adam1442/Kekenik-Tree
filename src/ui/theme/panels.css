@@ -807,6 +807,7 @@
   color: var(--kt-text);
   cursor: ew-resize;
 }
+.kt-row-var:not(.has-badge) { color: var(--kt-text-dim); }
 .kt-row-var:hover,
 .kt-row-var.open {
   color: var(--kt-text-strong);
@@ -1736,3 +1737,12 @@
 .kt-pop-btn:disabled { color: var(--kt-text-disabled); cursor: default; }
 .kt-pop-btns { display: flex; gap: 4px; flex-wrap: wrap; }
 .kt-tb-break { flex-basis: 100%; height: 0; }
+
+/* Variance Editor popup ("+/-" button): group title, 23-sample strip and histogram preview. */
+.kt-pop-group { margin-top: 4px; color: var(--kt-text-dim); font-size: var(--kt-fs-xs); text-transform: uppercase; letter-spacing: 0.04em; }
+.kt-var-preview { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.kt-var-strip { position: relative; height: 36px; background: var(--kt-bg-input); border: 1px solid var(--kt-border-soft); border-radius: var(--kt-radius-sm); }
+.kt-var-strip-bar { position: absolute; background: var(--kt-accent); }
+.kt-var-hist { display: flex; align-items: flex-end; gap: 1px; height: 28px; background: var(--kt-bg-input); border: 1px solid var(--kt-border-soft); border-radius: var(--kt-radius-sm); }
+.kt-var-hist-bar { flex: 1; background: var(--kt-accent-soft); }
+.kt-row-var.has-badge .kt-badge { background: var(--kt-variance-badge); }

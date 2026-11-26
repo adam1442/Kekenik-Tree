@@ -7,7 +7,7 @@ import type { PortValue } from '@/contracts/ports';
 import { emptySkeleton, type Branch, type Skeleton } from '@/contracts/skeleton';
 import { deg2rad } from '@/core/math';
 import type { Rng } from '@/core/rng';
-import { sampleVariance } from '@/graph/engine/seeds';
+import { atSite, sampleVariance } from '@/graph/engine/seeds';
 import { pickMaterialMesh, readMaterialSlots, type PickedMaterialMesh } from '@/materials/meshSelection';
 import { WIND_ATTRIBUTES, windPhase1OfTuple, type WindTuple } from '@/geometry/windAttributes';
 import { parentWindAt, windArraysOf } from '@/geometry/weldWind';
@@ -68,7 +68,7 @@ export function collectPlacements(ctx: NodeContext, parent: Skeleton, params: No
         branch: pb,
         sample: sampleParentBranch(prep, placement.u),
         placement,
-        rng: branchRng.fork(`ch:${placement.slotIndex}`),
+        rng: atSite(branchRng.fork(`ch:${placement.slotIndex}`), placement.u, pb.id, ctx.seed),
         index: out.length,
       });
     }

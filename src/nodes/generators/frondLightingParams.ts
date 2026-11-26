@@ -1,4 +1,5 @@
 import { getNumber, getString, type NodeParams, type ParamDef } from '@/contracts/params';
+import { varianceAmount } from '@/contracts/variance';
 import { LIGHT_ANCHORS, NEUTRAL_LEAF_LIGHTING, type LeafLightingSettings, type LightAnchor } from '@/contracts/lighting';
 import type { FrondLightingExtras } from '@/geometry/leafLighting';
 import { section } from '../shared/builders';
@@ -75,9 +76,9 @@ export function resolveFrondLighting(p: NodeParams, global: LeafLightingSettings
       up: num('Up', 0),
       right: num('Right', 0),
       out: num('Out', 0),
-      upVariance: p[id('Up')]?.variance ?? 0,
-      rightVariance: p[id('Right')]?.variance ?? 0,
-      outVariance: p[id('Out')]?.variance ?? 0,
+      upVariance: varianceAmount(p[id('Up')]?.variance),
+      rightVariance: varianceAmount(p[id('Right')]?.variance),
+      outVariance: varianceAmount(p[id('Out')]?.variance),
     },
     extras: { alignment: num('Alignment', 0), spread: num('Spread', 0) },
   };

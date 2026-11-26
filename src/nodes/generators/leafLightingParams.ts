@@ -1,4 +1,5 @@
 import { getNumber, getString, type NodeParams, type ParamDef } from '@/contracts/params';
+import { varianceAmount } from '@/contracts/variance';
 import { LIGHT_ANCHORS, NEUTRAL_LEAF_LIGHTING, type LeafLightingSettings, type LightAnchor } from '@/contracts/lighting';
 import { section } from '../shared/builders';
 
@@ -85,9 +86,9 @@ export function readLeafLighting(p: NodeParams, prefix: string): LeafLightingSet
     up: num('Up', d.up),
     right: num('Right', d.right),
     out: num('Out', d.out),
-    upVariance: p[idOf(prefix, 'Up')]?.variance ?? 0,
-    rightVariance: p[idOf(prefix, 'Right')]?.variance ?? 0,
-    outVariance: p[idOf(prefix, 'Out')]?.variance ?? 0,
+    upVariance: varianceAmount(p[idOf(prefix, 'Up')]?.variance),
+    rightVariance: varianceAmount(p[idOf(prefix, 'Right')]?.variance),
+    outVariance: varianceAmount(p[idOf(prefix, 'Out')]?.variance),
     worldUp: num('WorldUp', d.worldUp),
   };
 }

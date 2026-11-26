@@ -99,9 +99,12 @@ export function keepsRootLevelNode(env: GenerationEnv, params: NodeParams, lod: 
   return !envFiltersByPosition(env) || keepsAtPosition(env, position, [0, 0, 1]);
 }
 
+/** Metres the Sink variance spans per unit of amount (Sink itself is usually 0, so a relative spread would do nothing). */
+const SINK_SPAN = 1;
+
 /** Sink of one node: the Sink value with its variance applied (metres into the parent; negative = out of it). */
 export function sampledSink(params: NodeParams, rng: Rng): number {
-  return sampleVariance(rng.fork('snk'), getNumber(params, 'sink', 0), params.sink?.variance ?? 0);
+  return sampleVariance(rng.fork('snk'), getNumber(params, 'sink', 0), params.sink?.variance, SINK_SPAN);
 }
 
 /** Cache-key text: the assigned mask definitions (editing a mask re-evaluates only the generators that use it). */

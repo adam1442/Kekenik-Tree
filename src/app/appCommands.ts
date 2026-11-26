@@ -1,4 +1,5 @@
 import { VIEW_MODES, VIEW_MODE_LABELS, type ViewMode } from '@/contracts/app';
+import { hasActiveVariance } from '@/contracts/params';
 import { h } from '@/ui/components/dom';
 import { showInfoDialog, showPromptDialog } from '@/ui/components/dialogs';
 import type { MenuItem } from '@/ui/components/menu';
@@ -115,7 +116,8 @@ export function registerAppCommands(app: AppContext): void {
       const setSeed = (seed: number): void =>
         store.set((s) => ({ documents: s.documents.map((d) => (d.id === doc.id ? { ...d, seed } : d)) }));
       app.undo.execute({ label: 'Randomize', do: () => setSeed(newSeed), undo: () => setSeed(oldSeed) });
-      app.notify(`Seed ${newSeed}`);
+      const hasVariance = app.graph.model.nodes().some((n) => hasActiveVariance(n.params));
+      app.notify(hasVariance ? `Seed ${newSeed}` : `Seed ${newSeed} - Add variance first (the "+/-" button) so the new seed changes the tree.`);
     },
   });
   add({ id: 'tree.regenerate', label: 'Regenerate', shortcut: 'Shift+G', run: () => app.events.emit('tree:regenerate', undefined) });

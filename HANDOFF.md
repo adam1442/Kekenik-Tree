@@ -119,3 +119,8 @@
 - Second pass (done): wind audit for every exported LOD (`windAuditLods`), packed maps as DDS with the full mip chain (`textures.packedFormat`, `ddsWriter.ts`), Reset Lightmap also resets library materials; per-branch lightmap islands verified to exist already (uv1 cell grid in `tubeMesher`). `tests/exportParity.test.ts` now has 30 tests.
 - Remaining exact items: (a) browser / GPU check of the density shader, export dialog (Packed format, per-LOD wind rows) and menu entry; (b) real atlas builder that merges branch cells using `VTilingEntry.repeats`; (c) seams on crotch rings of splits; (d) KTX2 / block-compressed packed output.
 
+
+## K09 — status: partial
+- Done: `VarianceSpec` model (`contracts/variance.ts`), Gaussian + Cohesion sampling (`graph/engine/seeds.ts`, `atSite` on branch / trunk / root / foliage placements), Variance Editor popup, load migration, Randomize hint, coverage audit. Log: `AgentProgress/K09.md`.
+- Next agent must know: (1) `ParamState.variance` is a `VarianceValue` - read it with `varianceAmount` / `sampleVariance`, never as a plain number; (2) the +/- button now needs `def.variance`; (3) `graph/registry/unwiredVariance.ts` lists params whose variance still does nothing (default-0 ones lose the button); (4) the zip had an empty `AgentProgress/` and empty `public/Sample Projects/`, so the golden test uses the oak reference graph; (5) template leftovers were deleted again.
+- Remaining: wire the unwired params (table in K09.md) and delete their entries; Distribution / Cohesion for lighting, forces, splits, UV; atSite for frond / knot / decal / fin; browser check of the popup.

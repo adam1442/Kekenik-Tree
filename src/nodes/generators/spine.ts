@@ -1,4 +1,5 @@
 import { curveToLUT, evaluateCurve, sampleCurveLUT, type Curve } from '@/contracts/curve';
+import type { VarianceValue } from '@/contracts/variance';
 import { lodLengthFactor, readGeneratorLod } from './dynamicLodParams';
 import type { CancellationToken, NodeInputs } from '@/contracts/nodes';
 import { getBool, getNumber, getString, type NodeParams } from '@/contracts/params';
@@ -152,7 +153,7 @@ export interface CompiledSpineConfig {
   readonly radialBasis: string;
 
   readonly lengthBase: number;
-  readonly lengthVar: number;
+  readonly lengthVar: VarianceValue;
   readonly matchOneVTile: boolean;
   readonly vTileAspect: number;
   readonly stopShapeControl: boolean;
@@ -174,7 +175,7 @@ export interface CompiledSpineConfig {
   readonly crownHeight: number;
 
   readonly radiusBase: number;
-  readonly radiusVar: number;
+  readonly radiusVar: VarianceValue;
   readonly minRadius: number;
   readonly taperBase: number;
   readonly parentRadiusInfluence: number;
@@ -183,21 +184,21 @@ export interface CompiledSpineConfig {
   readonly skinRadius: SkinRadiusSettings;
 
   readonly spreadDeg: number;
-  readonly spreadVar: number;
+  readonly spreadVar: VarianceValue;
   readonly startRollDeg: number;
-  readonly startRollVar: number;
+  readonly startRollVar: VarianceValue;
   readonly pitchDeg: number;
-  readonly pitchVar: number;
+  readonly pitchVar: VarianceValue;
   readonly spineRollDeg: number;
   readonly alignment: number;
   readonly weldStart: boolean;
   readonly unify: boolean;
 
   readonly curvatureBase: number;
-  readonly curvatureVar: number;
+  readonly curvatureVar: VarianceValue;
   readonly straightness: number;
   readonly twistDeg: number;
-  readonly twistVar: number;
+  readonly twistVar: VarianceValue;
 
   readonly earlyNoiseAmount: number;
   readonly earlyNoiseFreq: number;
@@ -218,7 +219,7 @@ export interface CompiledSpineConfig {
   readonly termination: string;
   readonly breakChance: number;
   readonly breakSpot: number;
-  readonly breakSpotVar: number;
+  readonly breakSpotVar: VarianceValue;
   readonly breakSeed: number;
 
   readonly jinkAmount: number;
@@ -230,7 +231,7 @@ export interface CompiledSpineConfig {
   readonly pathAmount: number;
   readonly pathLength: number;
   readonly pathOffset: number;
-  readonly pathOffsetVar: number;
+  readonly pathOffsetVar: VarianceValue;
   readonly pathTwistRad: number;
   readonly pathLut: Float32Array | null;
 

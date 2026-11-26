@@ -3,7 +3,7 @@ import type { NodeContext, NodeInputs, NodeOutputs } from '@/contracts/nodes';
 import { getBool, getNumber, type NodeParams } from '@/contracts/params';
 import { emptySkeleton, type Skeleton } from '@/contracts/skeleton';
 import { clamp, deg2rad } from '@/core/math';
-import { sampleVariance } from '@/graph/engine/seeds';
+import { atSite, sampleVariance } from '@/graph/engine/seeds';
 import { alignedNormal, randomUpRoll, startAngleFromDegrees, unifiedStartRoll } from '@/generators/spine';
 import { InstanceScope, type InstanceHandle } from '@/instances/scope';
 import { emitStructureOutput, extractParentSkeleton, extractParentTable, isGeneratorActive, MAX_BRANCHES_PER_NODE } from './common';
@@ -109,7 +109,7 @@ function growOneLevel(
       const pairMode = pl.isExtension && usesVirtualSplit(extensionCount) && pl.u >= 0.5;
       // The second extension of a virtual split is the other half of the first one's fork
       if (pairMode && extIndex > 0) continue;
-      const childRng = branchRng.fork(`ch:${pl.slotIndex}`);
+      const childRng = atSite(branchRng.fork(`ch:${pl.slotIndex}`), pl.u, pb.id, ctx.seed);
       const inst = scope.spawn({ parentBranch: pb.id, index: pl.slotIndex, level: levelIndex, baseU: pl.u }, builder);
       if (inst.pruned) continue;
       const icfg = cfgFor(inst);

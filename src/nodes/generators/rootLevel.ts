@@ -1,4 +1,5 @@
 import { createGenerationEnv, keepsRootLevelNode } from './generationEnv';
+import { varianceAmount } from '@/contracts/variance';
 import type { NodeContext, NodeInputs, NodeOutputs } from '@/contracts/nodes';
 import { getNumber, getString, type NodeParams } from '@/contracts/params';
 import type { TreePlacement } from '@/contracts/ports';
@@ -34,15 +35,15 @@ export function distributionOptionsFromParams(params: NodeParams, count: number)
     mode,
     count,
     position: getNumber(params, 'distPosition', 0.5),
-    positionVar: params.distPosition?.variance ?? 0,
+    positionVar: varianceAmount(params.distPosition?.variance),
     rotation: getNumber(params, 'distRotation', 0),
-    rotationVar: params.distRotation?.variance ?? 0,
+    rotationVar: varianceAmount(params.distRotation?.variance),
     sweep: clamp(getNumber(params, 'sweep', 1), 0.01, 1),
     jumble: clamp(getNumber(params, 'jumble', 0), 0, 1),
     roll: getNumber(params, 'roll', 0) * Math.PI,
     minDistance: Math.max(0, getNumber(params, 'distMinDistance', 0.5)),
     sink: getNumber(params, 'sink', 0),
-    sinkVar: params.sink?.variance ?? 0,
+    sinkVar: varianceAmount(params.sink?.variance),
     splayDeg: getNumber(params, 'distSplay', 0),
   };
 }

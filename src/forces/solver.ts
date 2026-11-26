@@ -1,4 +1,5 @@
 import type { ForceDef } from '@/contracts/material';
+import { varianceAmount } from '@/contracts/variance';
 import { curveToLUT, sampleCurveLUT } from '@/contracts/curve';
 import { getBool, getNumber, type NodeParams } from '@/contracts/params';
 import type { Skeleton } from '@/contracts/skeleton';
@@ -122,7 +123,7 @@ function compileForces(forces: readonly ForceDef[]): Compiled[] {
       field: type.compile(def.params),
       def,
       strength,
-      strengthVariance: clamp(def.params.strength?.variance ?? 0, 0, 1),
+      strengthVariance: clamp(varianceAmount(def.params.strength?.variance), 0, 1),
       lengthLut: curve ? curveToLUT(curve, 128) : null,
       influence,
       generationFalloff: clamp(getNumber(def.params, 'generationFalloff', 0), 0, 1),

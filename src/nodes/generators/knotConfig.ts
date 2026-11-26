@@ -1,4 +1,5 @@
 import { getNumber, getString, type NodeParams, type ParamState } from '@/contracts/params';
+import type { VarianceValue } from '@/contracts/variance';
 import { clamp, deg2rad } from '@/core/math';
 import type { Rng } from '@/core/rng';
 import { sampleVariance } from '@/graph/engine/seeds';
@@ -9,7 +10,7 @@ import { DEFAULT_ROW, rowsOf } from './uvConfig';
 /** A parameter value with its "±" variance (fraction of the value). */
 interface Varied {
   value: number;
-  variance: number;
+  variance: VarianceValue;
 }
 
 const varied = (p: NodeParams, id: string, fallback: number): Varied => ({ value: getNumber(p, id, fallback), variance: p[id]?.variance ?? 0 });

@@ -1,3 +1,4 @@
+import { varianceAmount } from '@/contracts/variance';
 import { defaultParamState, type NodeParams, type ParamDef, type ParamState } from '@/contracts/params';
 import { formatParamNumber } from './valueOps';
 
@@ -95,8 +96,8 @@ export function buildParamTooltip(def: ParamDef, state?: ParamState, mixed = fal
     details.push(`Default: (${def.default.join(', ')})`);
   }
   if (mixed) details.push('Mixed values across selected nodes');
-  else if (state && typeof state.variance === 'number' && state.variance > 0) {
-    details.push(`Variance: ±${state.variance}`);
+  else if (state && varianceAmount(state.variance) > 0) {
+    details.push(`Variance: ±${varianceAmount(state.variance)}`);
   }
   if (details.length > 0) lines.push(details.join(' · '));
   lines.push('Drag label to scrub (Shift=fine, Ctrl=coarse) · Double-click to reset · Right-click for menu');

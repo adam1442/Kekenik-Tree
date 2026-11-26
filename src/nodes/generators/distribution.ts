@@ -33,6 +33,8 @@ import { findCurvaturePeaks, sampleParentBranch, type PreparedParentBranch } fro
 
 export { GOLDEN_ANGLE_RAD };
 
+/** Degrees the Rotation offset variance spans per unit of amount (the offset itself is usually 0). */
+const ROTATION_OFFSET_SPAN_DEG = 180;
 const LOD_COUNT_SCALE = [1, 0.72, 0.45, 0.25] as const;
 
 export interface ChildPlacement {
@@ -85,7 +87,7 @@ function phyllotaxyStyle(params: NodeParams): PhyllotaxyStyle {
 /** Reads the parameters of `mode` into a pure `ModeRequest`. */
 function readModeRequest(mode: ModeId, params: NodeParams, modeRng: Rng, jumble: number, sweep: number): ModeRequest {
   const resolvedNumber = (fallback: number): number => {
-    const raw = sampleVariance(modeRng.fork('num'), getNumber(params, 'number', fallback), params.number?.variance ?? 0);
+    const raw = sampleVariance(modeRng.fork('num'), getNumber(params, 'number', fallback), params.number?.variance);
     return raw * evalParamCurve(params, 'number', 0.5, 1);
   };
   const spread = { jumble, sweep, alignStyle: countAlignStyle(params) };
@@ -183,8 +185,8 @@ export function generateChildPlacements(
   const jumble = clamp(getNumber(params, 'jumble', 0), 0, 1);
   const sweep = clamp(getNumber(params, 'sweep', 1), 0.01, 1);
   const groupRoll = getNumber(params, 'roll', 0) * Math.PI;
-  const rotationOffset = deg2rad(sampleVariance(branchRng.fork('rot'), getNumber(params, 'rotationOffset', 0), params.rotationOffset?.variance ?? 0));
-  const positionOffset = sampleVariance(branchRng.fork('posOff'), getNumber(params, 'positionOffset', 0), params.positionOffset?.variance ?? 0, 0.5);
+  const rotationOffset = deg2rad(sampleVariance(branchRng.fork('rot'), getNumber(params, 'rotationOffset', 0), params.rotationOffset?.variance, ROTATION_OFFSET_SPAN_DEG));
+  const positionOffset = sampleVariance(branchRng.fork('posOff'), getNumber(params, 'positionOffset', 0), params.positionOffset?.variance, 0.5);
   const favorSplits = clamp(getNumber(params, 'favorSplits', 0), -1, 1);
 
   const distCurve = getCurveParam(params, 'distributionCurve');

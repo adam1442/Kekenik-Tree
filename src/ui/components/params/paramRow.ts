@@ -1,10 +1,12 @@
 import { cloneCurve, flatCurve, getCurvePreset, type Curve } from '@/core/curve';
 import { defaultParamState, type BoolParamDef, type NodeParams, type ParamDef, type ParamState } from '@/contracts/params';
+import { isVarianceActive, varianceAmount, withVarianceAmount } from '@/contracts/variance';
 import { mountMiniCurve, type MiniCurveInstance } from '../curve';
 import { h } from '../dom';
 import { showMenu, type MenuItem } from '../menu';
 import { mountParamWidget, type ParamWidgetInstance } from '../paramWidgetRegistry';
 import { icon } from '../../icons/icons';
+import { openVarianceEditor } from './varianceEditor';
 import { openCurveDialog } from '../../panels/dialogs/curveDialog';
 import {
   buildParamTooltip,
@@ -192,7 +194,7 @@ export function mountParamRow(host: HTMLElement, opts: ParamRowMountOptions): Pa
   });
 
   // --- Variance Control (`±/` button or `.10` blue badge + expandable sub-row) ---
-  const supportsVariance = def.variance !== undefined || def.kind === 'float' || def.kind === 'int';
+  const supportsVariance = def.variance !== undefined;
   let varSlotEl: HTMLElement;
   let varianceSubRow: HTMLElement | null = null;
   let syncVarianceUi: (() => void) | null = null;
@@ -230,15 +232,15 @@ export function mountParamRow(host: HTMLElement, opts: ParamRowMountOptions): Pa
     );
     varianceSubRow.hidden = true;
 
-    const getVarVal = (): number => (typeof curState.variance === 'number' ? curState.variance : 0);
+    const getVarVal = (): number => varianceAmount(curState.variance);
 
     syncVarianceUi = (): void => {
       const v = getVarVal();
-      const hasV = v > 1e-5;
+      const hasV = isVarianceActive(curState.variance);
       varBtn.classList.toggle('has-badge', hasV);
       varBtn.classList.toggle('open', varianceOpen);
       if (hasV) {
-        varBtn.replaceChildren(h('span', 'kt-badge', formatVarianceBadge(v)));
+        varBtn.replaceChildren(h('span', 'kt-badge', formatVarianceBadge(curState.variance)));
         varBtn.title = `Variance: ±${formatParamNumber(v)} (click to edit, drag to scrub, right-click to clear)`;
       } else {
         varBtn.replaceChildren(icon('plusMinus', 14));
@@ -259,7 +261,7 @@ export function mountParamRow(host: HTMLElement, opts: ParamRowMountOptions): Pa
     const setVariance = (nextV: number, merge: boolean, startState?: ParamState): void => {
       const clamped = Math.max(varMin, Math.min(varMax * 10, Math.round(nextV * 1000) / 1000));
       const prevState = startState ?? structuredClone(curState);
-      curState = { ...curState, variance: clamped };
+      curState = { ...curState, variance: withVarianceAmount(curState.variance, clamped) };
       syncVarianceUi?.();
       syncRowIndicators();
       opts.onChange(structuredClone(curState), merge);
@@ -267,6 +269,30 @@ export function mountParamRow(host: HTMLElement, opts: ParamRowMountOptions): Pa
         opts.onCommit?.(structuredClone(curState), prevState);
       }
     };
+
+    /** Variance Editor popup: amount, distribution, cohesion and a live preview (one undo step per finished edit). */
+    const openEditor = (): void => {
+      if (opts.disabled) return;
+      openVarianceEditor(varBtn, {
+        label: def.label,
+        value: curState.variance,
+        max: varMax,
+        onChange: (next, merge) => {
+          curState = { ...curState, variance: next };
+          syncVarianceUi?.();
+          syncRowIndicators();
+          opts.onChange(structuredClone(curState), merge);
+        },
+        onCommit: (next, prev) => opts.onCommit?.(structuredClone({ ...curState, variance: next }), { ...structuredClone(curState), variance: prev }),
+      });
+    };
+
+    varBtn.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openEditor();
+      }
+    });
 
     // Click vs drag-scrub on the `±/` / `.10` variance button
     varBtn.addEventListener('pointerdown', (e: PointerEvent) => {
@@ -299,8 +325,7 @@ export function mountParamRow(host: HTMLElement, opts: ParamRowMountOptions): Pa
         if (dragged) {
           opts.onCommit?.(structuredClone(curState), startState);
         } else {
-          varianceOpen = !varianceOpen;
-          syncVarianceUi?.();
+          openEditor();
         }
       };
 
@@ -314,6 +339,7 @@ export function mountParamRow(host: HTMLElement, opts: ParamRowMountOptions): Pa
       e.stopPropagation();
       showMenu(
         [
+          { label: 'Variance Editor...', run: openEditor },
           {
             label: varianceOpen ? 'Hide Variance Slider' : 'Show Variance Slider',
             run: () => {
@@ -428,7 +454,7 @@ export function mountParamRow(host: HTMLElement, opts: ParamRowMountOptions): Pa
           nodeId: opts.nodeId,
           paramId: def.id,
           valueScale: typeof curState.value === 'number' ? curState.value : 1,
-          variance: curState.variance,
+          variance: varianceAmount(curState.variance),
           onChange: (c) => {
             primaryMiniCurve?.setCurve(c, c.level && c.level > 1 ? c.level : initialBadge);
             curState = { ...curState, curve: cloneCurve(c) };

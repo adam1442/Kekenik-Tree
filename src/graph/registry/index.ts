@@ -1,4 +1,5 @@
 import { withParamHelp } from './paramHelp';
+import { withoutUnwiredVariance } from './unwiredVariance';
 import type { NodeCategory, NodeDef } from '@/contracts/nodes';
 import type { NodeParams } from '@/contracts/params';
 
@@ -21,7 +22,7 @@ export function registerNode(def: NodeDef): void {
     paramIds.add(p.id);
   }
   if (def.version !== undefined && (!Number.isInteger(def.version) || def.version < 1)) throw new Error(`Invalid version on node ${def.type}`);
-  nodes.set(def.type, withParamHelp(def));
+  nodes.set(def.type, withParamHelp(withoutUnwiredVariance(def)));
 }
 
 /** Idempotent bulk registration (HMR / repeated bootstraps): types that are already registered are skipped. */

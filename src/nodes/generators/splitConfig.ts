@@ -1,4 +1,5 @@
 import { curveToLUT } from '@/contracts/curve';
+import { varianceAmount } from '@/contracts/variance';
 import { getNumber, getString, type NodeParams } from '@/contracts/params';
 import { clamp } from '@/core/math';
 import type { SplitSettings, SplitVariance } from '@/generators/split';
@@ -29,7 +30,7 @@ export interface ExtensionConfig {
   readonly displaceScale: number;
 }
 
-const varianceOf = (params: NodeParams, id: string): number => clamp(params[id]?.variance ?? 0, 0, 1);
+const varianceOf = (params: NodeParams, id: string): number => clamp(varianceAmount(params[id]?.variance), 0, 1);
 
 export function readSplitConfig(params: NodeParams): SplitConfig {
   const uv = readUvMapping(params);

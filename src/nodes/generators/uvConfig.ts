@@ -1,4 +1,5 @@
 import { getBool, getNumber, getString, type ListItem, type NodeParams } from '@/contracts/params';
+import { varianceAmount } from '@/contracts/variance';
 import type { Rng } from '@/core/rng';
 import type { UvMaterialOptions } from '@/geometry/tubeUv';
 import { DEFAULT_UV_MAPPING, MATERIAL_INHERITED, UV_AREA_WHOLE, type ExtensionUvStyle, type PatchRow, type TilingStyle, type UvAreaLike, type UvMapping, type UvStyle, type VAnchor, type VStyle } from '@/generators/uv';
@@ -30,7 +31,7 @@ export function readUvMapping(params: NodeParams): UvMapping {
     uAbsolute: Math.max(0, getNumber(params, 'uvUAbsolute', d.uAbsolute)),
     uRelative: Math.max(0, getNumber(params, 'uvURelative', d.uRelative)) * legacyU,
     uOffset: getNumber(params, 'uvOffsetU', d.uOffset),
-    uOffsetVariance: clamp(params.uvOffsetU?.variance ?? 0, 0, 1),
+    uOffsetVariance: clamp(varianceAmount(params.uvOffsetU?.variance), 0, 1),
     fractional: {
       enabled: getBool(params, 'uvFractional', false),
       auto: getBool(params, 'uvFractionalAuto', false),
@@ -44,7 +45,7 @@ export function readUvMapping(params: NodeParams): UvMapping {
     skew: clamp(getNumber(params, 'uvSkew', d.skew), 0, 1),
     pinch: clamp(getNumber(params, 'uvPinch', d.pinch), 0, 1),
     vOffset: getNumber(params, 'uvOffsetV', d.vOffset),
-    vOffsetVariance: clamp(params.uvOffsetV?.variance ?? 0, 0, 1),
+    vOffsetVariance: clamp(varianceAmount(params.uvOffsetV?.variance), 0, 1),
     tiling: parseTiling(getString(params, 'uvTilingStyle', 'tiling')),
     optimizeSegments: getBool(params, 'uvOptimize', d.optimizeSegments),
     vTolerance: clamp(getNumber(params, 'uvVTolerance', d.vTolerance), 0, 0.5),

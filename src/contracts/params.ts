@@ -1,4 +1,7 @@
 import type { Curve, Ramp } from './curve';
+import { isVarianceActive, type VarianceValue } from './variance';
+
+export * from './variance';
 
 /**
  * Parameter definitions (ParamDef) — the schema of every node property.
@@ -161,7 +164,8 @@ export type ParamValue = number | boolean | string | number[] | RGBA | Curve | R
 /** Runtime/persisted state of one parameter: value + optional variance + optional driving curve. */
 export interface ParamState {
   value: ParamValue;
-  variance?: number;
+  /** Per-instance randomness; a number is the classic uniform +/- amount (see `VarianceValue`). */
+  variance?: VarianceValue;
   curve?: Curve | null;
 }
 export type NodeParams = Record<string, ParamState>;
@@ -211,6 +215,11 @@ export function clampParam(def: ParamDef, value: number): number {
   if (def.max !== undefined) v = Math.min(def.max, v);
   if (def.kind === 'int') v = Math.round(v);
   return v;
+}
+
+/** True when any parameter of the node has a variance that changes its result. */
+export function hasActiveVariance(params: NodeParams): boolean {
+  return Object.values(params).some((state) => isVarianceActive(state.variance));
 }
 
 export function getNumber(params: NodeParams, id: string, fallback = 0): number {

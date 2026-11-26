@@ -4,7 +4,7 @@ import { getNumber, getString, type NodeParams } from '@/contracts/params';
 import { emptySkeleton } from '@/contracts/skeleton';
 import { markSkeletonWindStatic } from '@/geometry/windAttributes';
 import { clamp, deg2rad } from '@/core/math';
-import { sampleVariance } from '@/graph/engine/seeds';
+import { atSite, sampleVariance } from '@/graph/engine/seeds';
 import { emitStructureOutput as emitStructure, extractParentSkeleton, isGeneratorActive, MAX_BRANCHES_PER_NODE } from './common';
 import { generateChildPlacements, GOLDEN_ANGLE_RAD } from './distribution';
 import { createGenerationEnv } from './generationEnv';
@@ -172,7 +172,7 @@ export function evaluateRoot(ctx: NodeContext, inputs: NodeInputs, params: NodeP
         // Lateral roots never leave the fused halves of a root parent
         continue;
       }
-      const childRng = branchRng.fork(`rch:${pl.slotIndex}`);
+      const childRng = atSite(branchRng.fork(`rch:${pl.slotIndex}`), pl.u, pb.id, ctx.seed);
       const sample = sampleParentBranch(prep, pl.u);
 
       let frame: Frame3;

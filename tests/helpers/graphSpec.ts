@@ -1,4 +1,4 @@
-import type { ParamValue } from '@/contracts/params';
+import type { ParamValue, VarianceValue } from '@/contracts/params';
 import { GraphModel } from '@/graph/model/graphModel';
 import { H_SPACING, tidyTreeLayout } from '@/graph/model/layout';
 
@@ -7,7 +7,7 @@ export interface NodeSpec {
   type: string;
   name?: string;
   parent: string | null;
-  params?: Record<string, ParamValue | { value: ParamValue; variance?: number }>;
+  params?: Record<string, ParamValue | { value: ParamValue; variance?: VarianceValue }>;
 }
 
 /** Build a graph from a flat spec list (parents before children). Registry must be populated by the caller. */
@@ -19,7 +19,7 @@ export function buildGraph(specs: NodeSpec[]): GraphModel {
       const cur = node.params[pid];
       if (!cur) throw new Error(`Unknown param ${s.type}.${pid}`);
       const isObj = typeof raw === 'object' && raw !== null && !Array.isArray(raw) && 'value' in raw;
-      node.params[pid] = isObj ? { ...cur, ...(raw as { value: ParamValue; variance?: number }) } : { ...cur, value: raw as ParamValue };
+      node.params[pid] = isObj ? { ...cur, ...(raw as { value: ParamValue; variance?: VarianceValue }) } : { ...cur, value: raw as ParamValue };
     }
   }
   for (const s of specs) {

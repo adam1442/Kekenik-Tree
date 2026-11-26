@@ -3,7 +3,7 @@ import type { NodeParams } from '@/contracts/params';
 import { emptySkeleton } from '@/contracts/skeleton';
 import { clamp, deg2rad } from '@/core/math';
 import { InstanceScope } from '@/instances/scope';
-import { sampleVariance } from '@/graph/engine/seeds';
+import { atSite, sampleVariance } from '@/graph/engine/seeds';
 import { emitStructureOutput, extractParentSkeleton, extractParentTable, isGeneratorActive, MAX_BRANCHES_PER_NODE } from './common';
 import { createInstanceConfigResolver } from './instanceSupport';
 import { generateChildPlacements } from './distribution';
@@ -50,7 +50,7 @@ export function evaluateTrunk(ctx: NodeContext, inputs: NodeInputs, params: Node
       const placements = generateChildPlacements(prep, params, branchRng, ctx.lod, MAX_BRANCHES_PER_NODE - total, env);
 
       for (const pl of placements) {
-        const childRng = branchRng.fork(`tc:${pl.slotIndex}`);
+        const childRng = atSite(branchRng.fork(`tc:${pl.slotIndex}`), pl.u, pb.id, ctx.seed);
         const inst = scope.spawn({ parentBranch: pb.id, index: pl.slotIndex, baseU: pl.u }, builder);
         if (inst.pruned) continue;
         const icfg = cfgFor(inst);

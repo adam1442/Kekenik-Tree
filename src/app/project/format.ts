@@ -13,6 +13,7 @@ import { defaultWindSettings } from '@/contracts/material';
 import type { NodeParams } from '@/contracts/params';
 import { migrateProject, PROJECT_VERSION, type AssetEntry, type GraphJSON, type ProjectFile, type ProjectSettings } from '@/contracts/project';
 import { migrateNodeParams, nodeVersion } from '@/graph/registry';
+import { migrateParamVariance } from './varianceMigration';
 import { removeRetiredNodes } from './retiredNodes';
 
 export const FILE_EXTENSION = '.ktree';
@@ -82,7 +83,7 @@ export function migrateGraphNodes(graphIn: GraphJSON, nodeVersions: Record<strin
     ...graph,
     nodes: graph.nodes.map((n) => {
       const from = nodeVersions?.[n.type] ?? 1;
-      const params: NodeParams = migrateNodeParams(n.type, n.params, from);
+      const params: NodeParams = migrateParamVariance(migrateNodeParams(n.type, n.params, from));
       return params === n.params ? n : { ...n, params };
     }),
   };

@@ -1,4 +1,6 @@
 import { curveToLUT, sampleCurveLUT } from '@/contracts/curve';
+import { isVarianceActive, type VarianceValue } from '@/contracts/variance';
+import { sampleVariance } from '@/graph/engine/seeds';
 import type { ForceDef } from '@/contracts/material';
 import type { SeasonState } from '@/contracts/season';
 import { getNumber, type NodeParams } from '@/contracts/params';
@@ -57,8 +59,7 @@ export function transitionValue(season: number, start: number, timeScale: number
 export function sampleDescendantOffset(params: NodeParams, rng: Rng): number {
   const st = params.seasonDescendantOffset;
   if (!st || typeof st.value !== 'number') return 0;
-  const variance = st.variance ?? 0;
-  return st.value + (variance > 0 ? (rng.next() * 2 - 1) * variance : 0);
+  return isVarianceActive(st.variance) ? sampleVariance(rng, st.value, st.variance, 1) : st.value;
 }
 
 export interface SeasonSampler {
@@ -78,7 +79,7 @@ export interface SeasonSampler {
 
 interface Channel {
   base: number;
-  variance: number;
+  variance: VarianceValue;
   lut: Float32Array | null;
 }
 
@@ -93,7 +94,7 @@ function channel(params: NodeParams, id: string, fallback: number): Channel {
 
 const sampleChannel = (c: Channel, rng: Rng | null, u: number, span: number): number => {
   const scaled = c.base * (c.lut ? sampleCurveLUT(c.lut, u) : 1);
-  return c.variance > 0 && rng ? scaled + (rng.next() * 2 - 1) * c.variance * span : scaled;
+  return rng && isVarianceActive(c.variance) ? sampleVariance(rng, scaled, c.variance, span) : scaled;
 };
 
 export function createSeasonSampler(params: NodeParams): SeasonSampler {

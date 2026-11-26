@@ -1,4 +1,5 @@
 import { curveHash, rampHash, type Curve, type Ramp } from '@/core/curve';
+import { sameVariance, varianceAmount, type VarianceValue } from '@/contracts/variance';
 import {
   defaultParamState,
   evalCondition,
@@ -177,8 +178,9 @@ export function formatParamNumber(value: number, step?: number, isInt = false): 
 }
 
 /** Format variance badge text like `.10` or `1.2`. */
-export function formatVarianceBadge(variance: number): string {
-  if (!Number.isFinite(variance) || variance <= 0) return '0';
+export function formatVarianceBadge(value: VarianceValue | undefined): string {
+  const variance = varianceAmount(value);
+  if (variance <= 0) return '0';
   const rounded = Math.round(variance * 100) / 100;
   if (rounded > 0 && rounded < 1) {
     const s = rounded.toFixed(2);
@@ -308,9 +310,7 @@ export function isParamModified(def: ParamDef, state: ParamState | undefined): b
   if (!state) return false;
   const defState = defaultParamState(def);
   if (!isParamValueEqual(state.value, defState.value)) return true;
-  const varNow = state.variance ?? defState.variance ?? 0;
-  const varDef = defState.variance ?? 0;
-  if (Math.abs(varNow - varDef) > 1e-6) return true;
+  if (!sameVariance(state.variance ?? defState.variance, defState.variance)) return true;
   if (def.curveAllowed) {
     const cNow = state.curve ?? null;
     const cDef = defState.curve ?? null;
@@ -340,14 +340,13 @@ export function computeMixedParamState(def: ParamDef, states: readonly (ParamSta
   let varianceMixed = false;
   let curveMixed = false;
 
-  const firstVar = first.variance ?? fallback.variance ?? 0;
+  const firstVar = first.variance ?? fallback.variance;
   const firstCurve = first.curve ?? null;
 
   for (let i = 1; i < states.length; i++) {
     const s = states[i] ?? fallback;
     if (!valueMixed && !isParamValueEqual(first.value, s.value)) valueMixed = true;
-    const sVar = s.variance ?? fallback.variance ?? 0;
-    if (!varianceMixed && Math.abs(firstVar - sVar) > 1e-6) varianceMixed = true;
+    if (!varianceMixed && !sameVariance(firstVar, s.variance ?? fallback.variance)) varianceMixed = true;
     const sCurve = s.curve ?? null;
     if (!curveMixed) {
       if ((firstCurve === null) !== (sCurve === null)) curveMixed = true;
